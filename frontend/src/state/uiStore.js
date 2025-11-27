@@ -27,8 +27,10 @@ const useUIStore = create((set, get) => ({
   fetchTones: async () => {
     try {
       const result = await letterApi.getTones();
-      set({ availableTones: result.tones });
-      return result.tones;
+      // API returns [{id, name, description}], extract just the IDs
+      const toneIds = result.tones.map(t => typeof t === 'string' ? t : t.id);
+      set({ availableTones: toneIds });
+      return toneIds;
     } catch (error) {
       console.error('Failed to fetch tones:', error);
       // Keep defaults on error
