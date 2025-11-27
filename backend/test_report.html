@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+<head><title>Credit Report - TransUnion</title></head>
+<body>
+<h1>TransUnion Credit Report</h1>
+<div class="consumer-info">
+    <p>Name: John Test Doe</p>
+    <p>Address: 123 Test Street</p>
+    <p>City: Los Angeles</p>
+    <p>State: CA</p>
+    <p>Zip: 90001</p>
+    <p>SSN: XXX-XX-1234</p>
+    <p>Date of Birth: 01/15/1985</p>
+</div>
+
+<div class="report-date">Report Date: 01/15/2024</div>
+
+<h2>Accounts</h2>
+
+<!-- Account 1: Collection with missing DOFD -->
+<div class="account">
+    <h3>Account: MIDLAND FUNDING</h3>
+    <p>Account Number: ****5678</p>
+    <p>Account Type: Collection</p>
+    <p>Account Status: Collection</p>
+    <p>Balance: $2,500.00</p>
+    <p>Date Opened: 03/15/2019</p>
+    <p>Original Creditor: CHASE BANK NA</p>
+    <!-- Missing DOFD - should trigger violation -->
+</div>
+
+<!-- Account 2: Charge-off missing DOFD -->
+<div class="account">
+    <h3>Account: CAPITAL ONE</h3>
+    <p>Account Number: ****1234</p>
+    <p>Account Type: Credit Card</p>
+    <p>Account Status: Chargeoff</p>
+    <p>Balance: $3,750.00</p>
+    <p>High Credit: $3,000.00</p>
+    <p>Date Opened: 06/01/2018</p>
+    <!-- Missing DOFD on charge-off - should trigger violation -->
+    <!-- Balance exceeds high credit - should trigger violation -->
+</div>
+
+<!-- Account 3: Past due exceeds balance -->
+<div class="account">
+    <h3>Account: WELLS FARGO</h3>
+    <p>Account Number: ****9999</p>
+    <p>Account Type: Auto Loan</p>
+    <p>Account Status: Open</p>
+    <p>Balance: $5,000.00</p>
+    <p>Past Due Amount: $7,500.00</p>
+    <p>Date Opened: 01/01/2020</p>
+    <!-- Past due > balance - should trigger violation -->
+</div>
+
+<!-- Account 4: Clean account -->
+<div class="account">
+    <h3>Account: DISCOVER</h3>
+    <p>Account Number: ****4444</p>
+    <p>Account Type: Credit Card</p>
+    <p>Account Status: Open</p>
+    <p>Balance: $500.00</p>
+    <p>Credit Limit: $5,000.00</p>
+    <p>Date Opened: 09/15/2021</p>
+    <p>Date Last Activity: 11/01/2024</p>
+    <!-- This account should be clean -->
+</div>
+
+<!-- Account 5: Obsolete account -->
+<div class="account">
+    <h3>Account: OLD COLLECTION CO</h3>
+    <p>Account Number: ****0001</p>
+    <p>Account Type: Collection</p>
+    <p>Account Status: Collection</p>
+    <p>Balance: $1,200.00</p>
+    <p>Date Opened: 01/01/2010</p>
+    <p>Date of First Delinquency: 06/15/2016</p>
+    <p>Original Creditor: BANK OF AMERICA</p>
+    <!-- DOFD is > 7 years ago - should trigger obsolete violation -->
+</div>
+
+</body>
+</html>
