@@ -11,6 +11,7 @@ const useUIStore = create((set, get) => ({
   groupingStrategy: 'by_violation_type',
   availableTones: ['formal', 'assertive', 'conversational', 'narrative'],
   currentLetter: null,
+  editableLetter: null,
   isGeneratingLetter: false,
   notification: null,
   error: null,
@@ -47,7 +48,7 @@ const useUIStore = create((set, get) => ({
         tone: state.selectedTone,
         grouping_strategy: state.groupingStrategy,
       });
-      set({ currentLetter: letter, isGeneratingLetter: false });
+      set({ currentLetter: letter, editableLetter: letter.content, isGeneratingLetter: false });
       return letter;
     } catch (error) {
       set({ error: error.message, isGeneratingLetter: false });
@@ -56,7 +57,11 @@ const useUIStore = create((set, get) => ({
   },
 
   clearLetter: () => {
-    set({ currentLetter: null, error: null });
+    set({ currentLetter: null, editableLetter: null, error: null });
+  },
+
+  updateEditableLetter: (content) => {
+    set({ editableLetter: content });
   },
 
   showNotification: (message, type = 'info') => {
@@ -73,6 +78,19 @@ const useUIStore = create((set, get) => ({
 
   clearError: () => {
     set({ error: null });
+  },
+
+  resetState: () => {
+    set({
+      selectedTone: 'formal',
+      groupingStrategy: 'by_violation_type',
+      availableTones: ['formal', 'assertive', 'conversational', 'narrative'],
+      currentLetter: null,
+      editableLetter: null,
+      isGeneratingLetter: false,
+      notification: null,
+      error: null,
+    });
   },
 }));
 

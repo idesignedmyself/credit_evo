@@ -40,6 +40,25 @@ export const reportApi = {
     const response = await apiClient.get('/reports');
     return response.data;
   },
+
+  /**
+   * Delete a specific report
+   * @param {string} reportId - The report UUID
+   * @returns {Promise<{status, report_id}>}
+   */
+  deleteReport: async (reportId) => {
+    const response = await apiClient.delete(`/reports/${reportId}`);
+    return response.data;
+  },
+
+  /**
+   * Delete all reports
+   * @returns {Promise<{status, deleted_count}>}
+   */
+  deleteAllReports: async () => {
+    const response = await apiClient.delete('/reports');
+    return response.data;
+  },
 };
 
 export default reportApi;

@@ -52,7 +52,7 @@ const UploadPage = () => {
           <Box component="ol" sx={{ pl: 2 }}>
             <li>
               <Typography variant="body2" sx={{ mb: 1 }}>
-                <strong>Upload your credit report</strong> - We accept HTML exports from major credit bureaus
+                <strong>Upload your credit report</strong> - We accept HTML reports from IdentityIQ or similar services
               </Typography>
             </li>
             <li>

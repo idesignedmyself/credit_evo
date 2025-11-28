@@ -100,26 +100,14 @@ const LetterPage = () => {
                 {selectedViolationIds.length} violation{selectedViolationIds.length !== 1 ? 's' : ''} will be included in your letter.
               </Typography>
 
-              {!currentLetter ? (
-                <Button
-                  variant="contained"
-                  fullWidth
-                  onClick={handleGenerate}
-                  disabled={isGeneratingLetter || selectedViolationIds.length === 0}
-                >
-                  {isGeneratingLetter ? 'Generating...' : 'Generate Letter'}
-                </Button>
-              ) : (
-                <Button
-                  variant="outlined"
-                  fullWidth
-                  startIcon={<AutorenewIcon />}
-                  onClick={handleRegenerate}
-                  disabled={isGeneratingLetter}
-                >
-                  Regenerate Letter
-                </Button>
-              )}
+              <Button
+                variant="contained"
+                fullWidth
+                onClick={handleGenerate}
+                disabled={isGeneratingLetter || selectedViolationIds.length === 0 || currentLetter}
+              >
+                {isGeneratingLetter ? 'Generating...' : 'Generate Letter'}
+              </Button>
             </Paper>
 
             <Box sx={{ mt: 3 }}>
@@ -135,6 +123,18 @@ const LetterPage = () => {
           </Grid>
 
           <Grid item xs={12} md={8}>
+            {currentLetter && (
+              <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
+                <Button
+                  variant="outlined"
+                  startIcon={<AutorenewIcon />}
+                  onClick={handleRegenerate}
+                  disabled={isGeneratingLetter}
+                >
+                  Regenerate Letter
+                </Button>
+              </Box>
+            )}
             <LetterPreview
               letter={currentLetter}
               isLoading={isGeneratingLetter}

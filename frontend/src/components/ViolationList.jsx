@@ -90,7 +90,7 @@ const ViolationList = () => {
         </Box>
 
         <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-          {selectedViolationIds.length} of {violations.length} selected for dispute letter
+          {selectedViolationIds.length} selected · {violations.length} total
         </Typography>
       </Paper>
 

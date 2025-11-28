@@ -18,6 +18,7 @@ import { useReportStore } from '../state';
 const FileUploader = ({ onUploadSuccess }) => {
   const [dragActive, setDragActive] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
+  const [fileError, setFileError] = useState(null);
   const { uploadReport, isUploading, uploadProgress, error, clearError } = useReportStore();
 
   const handleDrag = useCallback((e) => {
@@ -50,12 +51,14 @@ const FileUploader = ({ onUploadSuccess }) => {
 
   const validateAndSetFile = (file) => {
     clearError();
+    setFileError(null);
     const validTypes = ['text/html', 'application/pdf', '.html', '.htm', '.pdf'];
     const isValid = validTypes.some(type =>
       file.type.includes(type) || file.name.toLowerCase().endsWith(type)
     );
 
     if (!isValid) {
+      setFileError(`"${file.name}" is not supported. Please upload an HTML or PDF file.`);
       return;
     }
 
@@ -114,7 +117,7 @@ const FileUploader = ({ onUploadSuccess }) => {
             or click to browse files
           </Typography>
           <Typography variant="caption" color="text.secondary">
-            Supports HTML and PDF formats
+            Export your report from IdentityIQ, Credit Karma, or your bureau as HTML
           </Typography>
         </label>
       </Paper>
@@ -146,6 +149,12 @@ const FileUploader = ({ onUploadSuccess }) => {
             />
           )}
         </Paper>
+      )}
+
+      {fileError && (
+        <Alert severity="warning" sx={{ mt: 2 }} onClose={() => setFileError(null)}>
+          {fileError}
+        </Alert>
       )}
 
       {error && (

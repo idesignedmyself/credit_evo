@@ -5,3 +5,4 @@
 export { default as UploadPage } from './UploadPage';
 export { default as AuditPage } from './AuditPage';
 export { default as LetterPage } from './LetterPage';
+export { default as ReportHistoryPage } from './ReportHistoryPage';

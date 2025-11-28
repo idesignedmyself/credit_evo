@@ -61,16 +61,16 @@ const ToneSelector = () => {
             </Select>
           </FormControl>
           <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-            {toneDescriptions[selectedTone]}
+            {toneDescriptions[selectedTone] || 'Choose a tone for your letter.'}
           </Typography>
         </Grid>
 
         <Grid item xs={12} md={6}>
           <FormControl fullWidth>
-            <InputLabel>Grouping Strategy</InputLabel>
+            <InputLabel>Organize Letter By</InputLabel>
             <Select
               value={groupingStrategy}
-              label="Grouping Strategy"
+              label="Organize Letter By"
               onChange={(e) => setGroupingStrategy(e.target.value)}
             >
               <MenuItem value="by_violation_type">
@@ -85,7 +85,7 @@ const ToneSelector = () => {
             </Select>
           </FormControl>
           <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-            {groupingDescriptions[groupingStrategy]}
+            {groupingDescriptions[groupingStrategy] || 'Choose how to organize violations in your letter.'}
           </Typography>
         </Grid>
       </Grid>

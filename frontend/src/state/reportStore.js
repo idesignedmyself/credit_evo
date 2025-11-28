@@ -54,6 +54,16 @@ const useReportStore = create((set, get) => ({
   clearError: () => {
     set({ error: null });
   },
+
+  resetState: () => {
+    set({
+      currentReport: null,
+      reports: [],
+      uploadProgress: 0,
+      isUploading: false,
+      error: null,
+    });
+  },
 }));
 
 export default useReportStore;

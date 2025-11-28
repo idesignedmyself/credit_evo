@@ -12,6 +12,7 @@ import {
   Chip,
   CircularProgress,
   Alert,
+  TextField,
 } from '@mui/material';
 import DownloadIcon from '@mui/icons-material/Download';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
@@ -26,18 +27,19 @@ import {
 
 const LetterPreview = ({ letter, isLoading, error }) => {
   const [copied, setCopied] = React.useState(false);
-  const { selectedTone } = useUIStore();
+  const { selectedTone, editableLetter, updateEditableLetter } = useUIStore();
 
   const handleDownload = () => {
-    if (letter) {
+    if (editableLetter) {
       const filename = `dispute_letter_${new Date().toISOString().split('T')[0]}.txt`;
-      downloadLetterAsText(letter, filename);
+      // Create a letter-like object for the download function
+      downloadLetterAsText({ content: editableLetter }, filename);
     }
   };
 
   const handleCopy = async () => {
-    if (letter) {
-      const success = await copyLetterToClipboard(letter);
+    if (editableLetter) {
+      const success = await copyLetterToClipboard({ content: editableLetter });
       if (success) {
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
@@ -57,7 +59,7 @@ const LetterPreview = ({ letter, isLoading, error }) => {
           </style>
         </head>
         <body>
-          <pre style="white-space: pre-wrap; font-family: inherit;">${letter?.content || ''}</pre>
+          <pre style="white-space: pre-wrap; font-family: inherit;">${editableLetter || ''}</pre>
         </body>
       </html>
     `);
@@ -86,7 +88,7 @@ const LetterPreview = ({ letter, isLoading, error }) => {
     return (
       <Paper sx={{ p: 4, textAlign: 'center', backgroundColor: 'grey.50' }}>
         <Typography variant="body1" color="text.secondary">
-          Select violations and click "Generate Letter" to preview your dispute letter.
+          Click "Generate Letter" to create your dispute letter.
         </Typography>
       </Paper>
     );
@@ -136,22 +138,26 @@ const LetterPreview = ({ letter, isLoading, error }) => {
 
         <Divider sx={{ mb: 2 }} />
 
-        <Paper
+        <TextField
+          fullWidth
+          multiline
+          minRows={20}
+          maxRows={30}
+          value={editableLetter || ''}
+          onChange={(e) => updateEditableLetter(e.target.value)}
           variant="outlined"
           sx={{
-            p: 3,
-            backgroundColor: 'grey.50',
-            fontFamily: '"Times New Roman", serif',
-            fontSize: '14px',
-            lineHeight: 1.8,
-            maxHeight: '600px',
-            overflow: 'auto',
+            '& .MuiInputBase-root': {
+              fontFamily: '"Times New Roman", serif',
+              fontSize: '14px',
+              lineHeight: 1.8,
+              backgroundColor: 'grey.50',
+            },
+            '& .MuiOutlinedInput-notchedOutline': {
+              borderColor: 'grey.300',
+            },
           }}
-        >
-          <pre style={{ whiteSpace: 'pre-wrap', margin: 0, fontFamily: 'inherit' }}>
-            {letter.content}
-          </pre>
-        </Paper>
+        />
       </Paper>
     </Box>
   );

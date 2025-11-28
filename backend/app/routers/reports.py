@@ -69,9 +69,58 @@ class UploadResponse(BaseModel):
     total_violations: int
 
 
+class ReportListItem(BaseModel):
+    report_id: str
+    filename: str
+    uploaded: str
+    accounts: int
+    violations: int
+
+
+class DeleteResponse(BaseModel):
+    status: str
+    report_id: Optional[str] = None
+    deleted_count: Optional[int] = None
+
+
 # =============================================================================
 # API ENDPOINTS
 # =============================================================================
+
+@router.get("", response_model=List[ReportListItem])
+async def list_reports():
+    """
+    List all uploaded reports.
+
+    Returns summary of each report including:
+    - report_id
+    - filename
+    - upload timestamp
+    - account count
+    - violation count
+    """
+    reports_list = []
+    for report_id, report in REPORTS_STORAGE.items():
+        audit = AUDIT_RESULTS_STORAGE.get(report_id)
+        violations_count = audit.total_violations_found if audit else 0
+
+        # Get just the filename, not the full path
+        filename = report.source_file or "Unknown"
+        if "/" in filename:
+            filename = filename.split("/")[-1]
+
+        reports_list.append(ReportListItem(
+            report_id=report_id,
+            filename=filename,
+            uploaded=str(report.parse_timestamp),
+            accounts=len(report.accounts),
+            violations=violations_count
+        ))
+
+    # Sort by upload time (newest first)
+    reports_list.sort(key=lambda x: x.uploaded, reverse=True)
+    return reports_list
+
 
 @router.post("/upload", response_model=UploadResponse)
 async def upload_report(file: UploadFile = File(...)):
@@ -79,14 +128,28 @@ async def upload_report(file: UploadFile = File(...)):
     Upload and process a credit report HTML file.
 
     Pipeline:
-    1. Save uploaded file
-    2. Parse HTML → NormalizedReport (SSOT #1)
-    3. Audit → AuditResult (SSOT #2)
-    4. Return summary
+    1. Auto-purge old reports (single active report mode)
+    2. Save uploaded file
+    3. Parse HTML → NormalizedReport (SSOT #1)
+    4. Audit → AuditResult (SSOT #2)
+    5. Return summary
     """
     # Validate file type
     if not file.filename.endswith(('.html', '.htm')):
         raise HTTPException(status_code=400, detail="Only HTML files are supported")
+
+    # Auto-purge: Clear all old reports before saving new one (single active report mode)
+    upload_dir = os.path.join(os.path.dirname(__file__), "..", "..", "data", "uploads")
+    if os.path.exists(upload_dir):
+        for old_file in os.listdir(upload_dir):
+            if old_file.endswith('.html'):
+                try:
+                    os.remove(os.path.join(upload_dir, old_file))
+                except Exception:
+                    pass  # Best effort cleanup
+    REPORTS_STORAGE.clear()
+    AUDIT_RESULTS_STORAGE.clear()
+    logger.info("Auto-purged old reports for new upload")
 
     # Create upload directory
     upload_dir = os.path.join(os.path.dirname(__file__), "..", "..", "data", "uploads")
@@ -211,3 +274,55 @@ async def get_violations(report_id: str, severity: Optional[str] = None, violati
         )
         for v in violations
     ]
+
+
+@router.delete("/{report_id}", response_model=DeleteResponse)
+async def delete_report(report_id: str):
+    """
+    Delete a specific report and its audit results.
+
+    Removes:
+    - Report from REPORTS_STORAGE
+    - Audit result from AUDIT_RESULTS_STORAGE
+    - Uploaded file from disk
+    """
+    if report_id not in REPORTS_STORAGE:
+        raise HTTPException(status_code=404, detail="Report not found")
+
+    # Remove from storage
+    del REPORTS_STORAGE[report_id]
+
+    # Remove audit result if exists
+    if report_id in AUDIT_RESULTS_STORAGE:
+        del AUDIT_RESULTS_STORAGE[report_id]
+
+    # Try to delete uploaded file
+    upload_dir = os.path.join(os.path.dirname(__file__), "..", "..", "data", "uploads")
+    file_path = os.path.join(upload_dir, f"{report_id}.html")
+    if os.path.exists(file_path):
+        os.remove(file_path)
+
+    return DeleteResponse(status="deleted", report_id=report_id)
+
+
+@router.delete("", response_model=DeleteResponse)
+async def delete_all_reports():
+    """
+    Delete ALL reports and audit results.
+
+    Use with caution - this clears all data.
+    """
+    count = len(REPORTS_STORAGE)
+
+    # Clear all storage
+    REPORTS_STORAGE.clear()
+    AUDIT_RESULTS_STORAGE.clear()
+
+    # Clear upload directory
+    upload_dir = os.path.join(os.path.dirname(__file__), "..", "..", "data", "uploads")
+    if os.path.exists(upload_dir):
+        for f in os.listdir(upload_dir):
+            if f.endswith('.html'):
+                os.remove(os.path.join(upload_dir, f))
+
+    return DeleteResponse(status="all_deleted", deleted_count=count)

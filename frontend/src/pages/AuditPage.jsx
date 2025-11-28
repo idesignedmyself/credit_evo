@@ -87,7 +87,13 @@ const AuditPage = () => {
           <ViolationList />
         </Box>
 
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 4 }}>
+        {violations.length > 0 && selectedViolationIds.length === 0 && (
+          <Alert severity="info" sx={{ mt: 4, mb: 2 }}>
+            Select at least one violation to create your dispute letter.
+          </Alert>
+        )}
+
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: violations.length > 0 && selectedViolationIds.length === 0 ? 0 : 4 }}>
           <Button
             variant="outlined"
             startIcon={<ArrowBackIcon />}
@@ -102,15 +108,9 @@ const AuditPage = () => {
             onClick={handleContinue}
             disabled={selectedViolationIds.length === 0}
           >
-            Continue to Letter ({selectedViolationIds.length} selected)
+            Create Dispute Letter ({selectedViolationIds.length} items)
           </Button>
         </Box>
-
-        {violations.length > 0 && selectedViolationIds.length === 0 && (
-          <Alert severity="info" sx={{ mt: 2 }}>
-            Select at least one violation to generate a dispute letter.
-          </Alert>
-        )}
       </Box>
     </Container>
   );

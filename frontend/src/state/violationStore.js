@@ -101,6 +101,16 @@ const useViolationStore = create((set, get) => ({
   clearError: () => {
     set({ error: null });
   },
+
+  resetState: () => {
+    set({
+      auditResult: null,
+      violations: [],
+      selectedViolationIds: [],
+      isLoading: false,
+      error: null,
+    });
+  },
 }));
 
 export default useViolationStore;

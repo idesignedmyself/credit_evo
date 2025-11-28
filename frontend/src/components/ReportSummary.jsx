@@ -112,8 +112,8 @@ const ReportSummary = ({ report, auditResult }) => {
       {violationsCount > 0 && (
         <Paper sx={{ p: 2, backgroundColor: 'warning.light' }}>
           <Typography variant="body1">
-            <strong>{violationsCount} violations</strong> were detected that may be disputed.
-            Review and select the violations you want to include in your dispute letter.
+            We found <strong>{violationsCount} potential issues</strong> in your report.
+            Select the ones you want to dispute below.
           </Typography>
         </Paper>
       )}
