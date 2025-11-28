@@ -110,20 +110,9 @@ class Consumer:
 
 
 @dataclass
-class Account:
-    """Single tradeline account - fully normalized."""
-    account_id: str = field(default_factory=lambda: str(uuid4()))
-    creditor_name: str = ""
-    original_creditor: Optional[str] = None
-    account_number: str = ""
-    account_number_masked: str = ""
-
-    # Bureau that reported this account (REQUIRED for multi-bureau reports)
+class BureauAccountData:
+    """Bureau-specific data for a single account."""
     bureau: Bureau = Bureau.TRANSUNION
-
-    # Classification (SSOT - once set, final)
-    furnisher_type: FurnisherType = FurnisherType.UNKNOWN
-    account_status: AccountStatus = AccountStatus.UNKNOWN
 
     # Key dates
     date_opened: Optional[date] = None
@@ -133,22 +122,88 @@ class Account:
     date_last_payment: Optional[date] = None
     date_reported: Optional[date] = None
 
-    # Balances (Metro-2 Fields)
+    # Balances
     balance: Optional[float] = None
     credit_limit: Optional[float] = None
     high_credit: Optional[float] = None
-    past_due_amount: Optional[float] = None  # Field 17B
-    current_balance: Optional[float] = None   # Field 17A
+    past_due_amount: Optional[float] = None
     scheduled_payment: Optional[float] = None
     monthly_payment: Optional[float] = None
 
-    # Status codes
+    # Status
     payment_status: Optional[str] = None
-    payment_pattern: Optional[str] = None  # 24-month history like "CCCCCCCC111..."
+    payment_pattern: Optional[str] = None
+    account_status_raw: Optional[str] = None
+    remarks: Optional[str] = None
+
+    # Raw HTML for debugging
+    raw_html: Optional[str] = None
+
+
+@dataclass
+class Account:
+    """
+    Single tradeline account - fully normalized.
+
+    NEW MODEL: Each Account represents ONE canonical tradeline.
+    Bureau-specific data is stored in the `bureaus` dict.
+    This gives us 31 accounts instead of 63 bureau-duplicated records.
+    """
+    account_id: str = field(default_factory=lambda: str(uuid4()))
+    creditor_name: str = ""
+    original_creditor: Optional[str] = None
+    account_number: str = ""
+    account_number_masked: str = ""
+
+    # Classification (SSOT - once set, final)
+    furnisher_type: FurnisherType = FurnisherType.UNKNOWN
+    account_status: AccountStatus = AccountStatus.UNKNOWN
     account_type: Optional[str] = None
 
-    # Raw data for reference (but NEVER used downstream)
+    # Bureau-specific data (TU/EX/EQ merged into one Account)
+    # Key is Bureau enum, value is BureauAccountData
+    bureaus: Dict[Bureau, BureauAccountData] = field(default_factory=dict)
+
+    # LEGACY FIELDS - kept for backward compatibility with existing code
+    # These are populated from the "primary" bureau (first one with data)
+    bureau: Bureau = Bureau.TRANSUNION  # Primary bureau for this account
+
+    # Key dates (legacy - use bureaus[bureau].date_* for bureau-specific)
+    date_opened: Optional[date] = None
+    date_closed: Optional[date] = None
+    date_of_first_delinquency: Optional[date] = None
+    date_last_activity: Optional[date] = None
+    date_last_payment: Optional[date] = None
+    date_reported: Optional[date] = None
+
+    # Balances (legacy - use bureaus[bureau].* for bureau-specific)
+    balance: Optional[float] = None
+    credit_limit: Optional[float] = None
+    high_credit: Optional[float] = None
+    past_due_amount: Optional[float] = None
+    current_balance: Optional[float] = None
+    scheduled_payment: Optional[float] = None
+    monthly_payment: Optional[float] = None
+
+    # Status codes (legacy)
+    payment_status: Optional[str] = None
+    payment_pattern: Optional[str] = None
+
+    # Raw data for reference
     raw_data: Dict[str, Any] = field(default_factory=dict)
+
+    def get_bureau_data(self, bureau: Bureau) -> Optional[BureauAccountData]:
+        """Get data for a specific bureau."""
+        return self.bureaus.get(bureau)
+
+    def has_bureau(self, bureau: Bureau) -> bool:
+        """Check if account has data for a specific bureau."""
+        return bureau in self.bureaus
+
+    @property
+    def bureau_count(self) -> int:
+        """Number of bureaus reporting this account."""
+        return len(self.bureaus)
 
 
 @dataclass

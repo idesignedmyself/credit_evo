@@ -3,6 +3,9 @@ Credit Engine 2.0 - IdentityIQ HTML Parser
 
 This parser reads IdentityIQ HTML files and outputs NormalizedReport (SSOT #1).
 All downstream modules MUST use NormalizedReport - never raw HTML data.
+
+NEW MODEL: Each Account represents ONE canonical tradeline with bureau-specific
+data merged into the `bureaus` dict. This gives us 31 accounts (not 63).
 """
 from __future__ import annotations
 import logging
@@ -14,7 +17,7 @@ from typing import Dict, List, Optional, Any
 from bs4 import BeautifulSoup, Tag
 
 from ...models.ssot import (
-    NormalizedReport, Account, Consumer, Inquiry, PublicRecord,
+    NormalizedReport, Account, BureauAccountData, Consumer, Inquiry, PublicRecord,
     Bureau, FurnisherType, AccountStatus
 )
 
@@ -37,6 +40,13 @@ CHARGEOFF_KEYWORDS = [
 ]
 
 NOT_REPORTED = {"", "-", "—", "–", "N/A", "NOT REPORTED", "NOTREPORTED", "NOT AVAILABLE"}
+
+# Sections to skip (not actual creditor accounts)
+NON_ACCOUNT_SECTIONS = {
+    "RISK", "RISK FACTORS", "PERSONAL INFORMATION", "ALERTS",
+    "ADDRESSES", "ADDRESS HISTORY", "EMPLOYMENT", "INQUIRIES",
+    "PUBLIC RECORDS", "CREDIT SCORE", "SCORE FACTORS", "SUMMARY"
+}
 
 
 # =============================================================================
@@ -102,15 +112,7 @@ def _classify_furnisher_type(
     original_creditor: Optional[str],
     comments: Optional[str]
 ) -> FurnisherType:
-    """
-    Classify furnisher type - THIS IS SSOT, cannot be changed downstream.
-
-    Classification hierarchy:
-    1. If has original_creditor -> COLLECTOR
-    2. If account_type contains "collection" -> COLLECTOR
-    3. If status is "charged off" -> OC_CHARGEOFF
-    4. Otherwise -> OC_NON_CHARGEOFF
-    """
+    """Classify furnisher type - THIS IS SSOT, cannot be changed downstream."""
     combined_text = " ".join(filter(None, [
         creditor_name, account_type_detail, status, comments
     ])).lower()
@@ -158,12 +160,7 @@ def _classify_account_status(status_str: Optional[str], comments: Optional[str])
 
 
 def _extract_original_creditor(creditor_name: str) -> tuple[str, Optional[str]]:
-    """
-    Extract original creditor from creditor name if present.
-
-    Example: "MIDLAND CREDIT MANAGEMEN (Original Creditor: SYNCHRONY BANK)"
-    Returns: ("MIDLAND CREDIT MANAGEMEN", "SYNCHRONY BANK")
-    """
+    """Extract original creditor from creditor name if present."""
     match = re.search(r"\(Original Creditor:\s*([^)]+)\)", creditor_name, re.IGNORECASE)
     if match:
         original = match.group(1).strip()
@@ -176,15 +173,23 @@ def _mask_account_number(account_number: Optional[str]) -> str:
     """Create masked account number showing last 4 digits."""
     if not account_number:
         return ""
-
-    # Already masked
     if "*" in account_number or "#" in account_number:
         return account_number
-
-    # Mask all but last 4
     if len(account_number) > 4:
         return "*" * (len(account_number) - 4) + account_number[-4:]
     return account_number
+
+
+def _normalize_account_number(text: Optional[str]) -> str:
+    """Normalize account number for canonical key matching."""
+    if not text:
+        return "unknown"
+    return text.strip().lower().replace("x", "*")
+
+
+def _create_canonical_key(creditor_name: str, account_number: str) -> str:
+    """Create canonical key for account deduplication."""
+    return f"{creditor_name.lower().strip()}::{_normalize_account_number(account_number)}"
 
 
 # =============================================================================
@@ -195,20 +200,12 @@ class IdentityIQHTMLParser:
     """
     Parse IdentityIQ HTML reports into NormalizedReport (SSOT #1).
 
-    This is the ONLY parser for IdentityIQ reports.
-    Output is NormalizedReport which all downstream modules MUST use.
+    NEW MODEL: Creates ONE Account per canonical tradeline, with bureau-specific
+    data merged into the Account.bureaus dict. This produces 31 accounts (not 63).
     """
 
     def parse(self, html_path: str) -> NormalizedReport:
-        """
-        Parse HTML file and return NormalizedReport.
-
-        Args:
-            html_path: Path to IdentityIQ HTML file
-
-        Returns:
-            NormalizedReport - the Single Source of Truth for this report
-        """
+        """Parse HTML file and return NormalizedReport."""
         logger.info(f"Parsing HTML file: {html_path}")
 
         try:
@@ -222,12 +219,11 @@ class IdentityIQHTMLParser:
 
         # Extract all components
         consumer = self._extract_consumer(soup)
-        accounts = self._extract_accounts(soup)
+        accounts = self._extract_accounts_merged(soup)
         inquiries = self._extract_inquiries(soup)
         public_records = self._extract_public_records(soup)
         report_date = self._extract_report_date(soup)
 
-        # Build NormalizedReport
         report = NormalizedReport(
             consumer=consumer,
             bureau=Bureau.TRANSUNION,  # Default - IdentityIQ is multi-bureau
@@ -238,7 +234,7 @@ class IdentityIQHTMLParser:
             source_file=str(html_path)
         )
 
-        logger.info(f"Parsed {len(accounts)} accounts, {len(inquiries)} inquiries")
+        logger.info(f"Parsed {len(accounts)} canonical accounts")
         return report
 
     def _extract_consumer(self, soup: BeautifulSoup) -> Consumer:
@@ -247,7 +243,6 @@ class IdentityIQHTMLParser:
         dobs = {"transunion": None, "experian": None, "equifax": None}
         addresses = {"transunion": "", "experian": "", "equifax": ""}
 
-        # Find Personal Information table
         for table in soup.find_all('table', class_='rpt_table4column'):
             for tr in table.find_all('tr'):
                 label_cell = tr.find('td', class_='label')
@@ -275,15 +270,12 @@ class IdentityIQHTMLParser:
                         addresses["experian"] = values[1] if values[1] != '-' else ""
                         addresses["equifax"] = values[2] if values[2] != '-' else ""
 
-        # Use first non-empty value from any bureau
         full_name = names["transunion"] or names["experian"] or names["equifax"] or ""
         dob = dobs["transunion"] or dobs["experian"] or dobs["equifax"]
         address = addresses["transunion"] or addresses["experian"] or addresses["equifax"] or ""
 
-        # Parse address into components
         city, state, zip_code = "", "", ""
         if address:
-            # Try to parse "CITY, ST ZIP" pattern
             match = re.search(r",\s*([^,]+),\s*([A-Z]{2})\s*(\d{5}(?:-\d{4})?)", address)
             if match:
                 city = match.group(1).strip()
@@ -299,18 +291,28 @@ class IdentityIQHTMLParser:
             date_of_birth=dob
         )
 
-    def _extract_accounts(self, soup: BeautifulSoup) -> List[Account]:
-        """Extract all accounts from HTML."""
+    def _extract_accounts_merged(self, soup: BeautifulSoup) -> List[Account]:
+        """
+        Extract accounts with MERGED bureau data.
+
+        Each sub_header = ONE canonical account.
+        Bureau-specific data (TU/EX/EQ columns) is merged into Account.bureaus dict.
+        Returns 31 accounts (one per sub_header block).
+        """
         accounts = []
 
-        # Find all sub_header blocks (each represents one canonical account)
-        sub_headers = soup.find_all('div', class_='sub_header')
+        # IdentityIQ-specific selector for actual creditor headers
+        sub_headers = soup.select("div.sub_header.ng-binding.ng-scope")
 
         for idx, header in enumerate(sub_headers):
             creditor_name = header.get_text(strip=True)
 
             # Skip non-account headers
-            if "Risk Factors" in creditor_name:
+            if not creditor_name or len(creditor_name) < 2:
+                continue
+            if creditor_name.upper() in NON_ACCOUNT_SECTIONS:
+                continue
+            if any(skip in creditor_name.upper() for skip in ["RISK FACTOR", "PERSONAL INFO"]):
                 continue
 
             # Extract original creditor if present
@@ -322,81 +324,103 @@ class IdentityIQHTMLParser:
             if not account_data:
                 continue
 
-            # Create account for each bureau that has data
+            # Get account number from any bureau that has it
+            account_number = ""
+            for bureau_name in ["transunion", "experian", "equifax"]:
+                if account_data.get(bureau_name, {}).get("account_number"):
+                    account_number = account_data[bureau_name]["account_number"]
+                    break
+
+            # Create ONE account per sub_header (no cross-header merging)
+            account = Account(
+                creditor_name=clean_name,
+                original_creditor=original_creditor,
+                account_number=account_number,
+                account_number_masked=_mask_account_number(account_number),
+                bureaus={},
+            )
+
+            # Add bureau-specific data
             for bureau_name in ["transunion", "experian", "equifax"]:
                 bureau_data = account_data.get(bureau_name, {})
 
                 if not bureau_data:
                     continue
 
-                # Extract all fields
-                account_number = bureau_data.get("account_number")
-                account_type = bureau_data.get("account_type")
-                account_type_detail = bureau_data.get("account_type_detail")
-                status = bureau_data.get("status")
-                balance = _parse_money(bureau_data.get("balance"))
-                credit_limit = _parse_money(bureau_data.get("credit_limit"))
-                high_credit = _parse_money(bureau_data.get("high_credit"))
-                past_due = _parse_money(bureau_data.get("past_due"))
-                monthly_payment = _parse_money(bureau_data.get("monthly_payment"))
-                date_opened = _parse_date(bureau_data.get("date_opened"))
-                date_last_activity = _parse_date(bureau_data.get("date_last_active"))
-                date_last_payment = _parse_date(bureau_data.get("date_of_last_payment"))
-                date_reported = _parse_date(bureau_data.get("last_reported"))
-                payment_status = bureau_data.get("payment_status")
-                comments = bureau_data.get("comments")
-                # DOFD extraction (CRITICAL for 7-year obsolescence calculation)
-                dofd = _parse_date(bureau_data.get("dofd"))
-                date_closed = _parse_date(bureau_data.get("date_closed"))
-
-                # Classify furnisher type (SSOT)
-                furnisher_type = _classify_furnisher_type(
-                    clean_name, account_type_detail, status, original_creditor, comments
-                )
-
-                # Classify account status
-                account_status = _classify_account_status(status, comments)
-
-                # Map bureau name to enum (CRITICAL: proper bureau assignment)
                 bureau_enum = {
                     "transunion": Bureau.TRANSUNION,
                     "experian": Bureau.EXPERIAN,
                     "equifax": Bureau.EQUIFAX
                 }[bureau_name]
 
-                account = Account(
-                    creditor_name=clean_name,
-                    original_creditor=original_creditor,
-                    account_number=account_number or "",
-                    account_number_masked=_mask_account_number(account_number),
-                    bureau=bureau_enum,  # FIXED: Each account now has correct bureau
-                    furnisher_type=furnisher_type,
-                    account_status=account_status,
-                    date_opened=date_opened,
-                    date_closed=date_closed,  # Now extracted
-                    date_of_first_delinquency=dofd,  # CRITICAL: Now extracted
-                    date_last_activity=date_last_activity,
-                    date_last_payment=date_last_payment,
-                    date_reported=date_reported,
-                    balance=balance,
-                    credit_limit=credit_limit,
-                    high_credit=high_credit,
-                    past_due_amount=past_due,
-                    current_balance=balance,  # Field 17A
-                    monthly_payment=monthly_payment,
-                    payment_status=payment_status,
-                    account_type=account_type,
-                    raw_data={
-                        "bureau": bureau_name,
-                        "html_index": idx,
-                        "all_fields": bureau_data
-                    }
+                # Create BureauAccountData
+                bureau_account_data = BureauAccountData(
+                    bureau=bureau_enum,
+                    date_opened=_parse_date(bureau_data.get("date_opened")),
+                    date_closed=_parse_date(bureau_data.get("date_closed")),
+                    date_of_first_delinquency=_parse_date(bureau_data.get("dofd")),
+                    date_last_activity=_parse_date(bureau_data.get("date_last_active")),
+                    date_last_payment=_parse_date(bureau_data.get("date_of_last_payment")),
+                    date_reported=_parse_date(bureau_data.get("last_reported")),
+                    balance=_parse_money(bureau_data.get("balance")),
+                    credit_limit=_parse_money(bureau_data.get("credit_limit")),
+                    high_credit=_parse_money(bureau_data.get("high_credit")),
+                    past_due_amount=_parse_money(bureau_data.get("past_due")),
+                    monthly_payment=_parse_money(bureau_data.get("monthly_payment")),
+                    payment_status=bureau_data.get("payment_status"),
+                    account_status_raw=bureau_data.get("status"),
+                    remarks=bureau_data.get("comments"),
                 )
 
-                accounts.append(account)
+                account.bureaus[bureau_enum] = bureau_account_data
 
-        logger.info(f"Extracted {len(accounts)} account records from HTML")
+            # Finalize and append this account
+            self._finalize_account(account)
+            accounts.append(account)
+
+        logger.info(f"Extracted {len(accounts)} canonical accounts (1 per sub_header)")
         return accounts
+
+    def _finalize_account(self, account: Account) -> None:
+        """Populate legacy fields from first bureau with data and classify."""
+        if not account.bureaus:
+            return
+
+        # Set primary bureau (first one with data)
+        primary_bureau = list(account.bureaus.keys())[0]
+        account.bureau = primary_bureau
+
+        primary_data = account.bureaus[primary_bureau]
+
+        # Populate legacy fields from primary bureau
+        account.date_opened = primary_data.date_opened
+        account.date_closed = primary_data.date_closed
+        account.date_of_first_delinquency = primary_data.date_of_first_delinquency
+        account.date_last_activity = primary_data.date_last_activity
+        account.date_last_payment = primary_data.date_last_payment
+        account.date_reported = primary_data.date_reported
+        account.balance = primary_data.balance
+        account.credit_limit = primary_data.credit_limit
+        account.high_credit = primary_data.high_credit
+        account.past_due_amount = primary_data.past_due_amount
+        account.current_balance = primary_data.balance
+        account.monthly_payment = primary_data.monthly_payment
+        account.payment_status = primary_data.payment_status
+
+        # Classify furnisher type
+        account.furnisher_type = _classify_furnisher_type(
+            account.creditor_name,
+            account.account_type,
+            primary_data.account_status_raw,
+            account.original_creditor,
+            primary_data.remarks
+        )
+
+        # Classify account status
+        account.account_status = _classify_account_status(
+            primary_data.account_status_raw,
+            primary_data.remarks
+        )
 
     def _extract_account_data_for_header(self, header: Tag) -> Dict[str, Dict[str, Any]]:
         """Extract account data for all bureaus from a sub_header block."""
@@ -406,10 +430,8 @@ class IdentityIQHTMLParser:
             "equifax": {}
         }
 
-        # Find the next sub_header to know our boundary
         next_header = header.find_next('div', class_='sub_header')
 
-        # Look for table rows between this header and the next
         for elem in header.find_all_next():
             if elem == next_header:
                 break
@@ -422,7 +444,6 @@ class IdentityIQHTMLParser:
                 label = label_cell.get_text(strip=True)
                 info_cells = elem.find_all('td', class_='info')
 
-                # Map label to field name
                 field_map = {
                     "Account #:": "account_number",
                     "Account Type:": "account_type",
@@ -439,7 +460,6 @@ class IdentityIQHTMLParser:
                     "Last Reported:": "last_reported",
                     "Payment Status:": "payment_status",
                     "Comments:": "comments",
-                    # DOFD extraction (CRITICAL - required for 7-year calculation)
                     "Date of First Delinquency:": "dofd",
                     "Date of 1st Delinquency:": "dofd",
                     "DOFD:": "dofd",
@@ -456,8 +476,6 @@ class IdentityIQHTMLParser:
                 if not field_name:
                     continue
 
-                # Extract values for each bureau
-                # Check for ng-repeat elements which identify the bureau
                 for cell in info_cells:
                     ng_repeat = cell.find('ng-repeat')
                     if ng_repeat:
@@ -472,7 +490,6 @@ class IdentityIQHTMLParser:
                             elif "'EQF'" in ng_attr or '"EQF"' in ng_attr:
                                 data["equifax"][field_name] = value
                     else:
-                        # Fallback: positional (TU, EX, EQ in order)
                         value = cell.get_text(strip=True)
                         if value and value != '-':
                             idx = info_cells.index(cell)
@@ -492,18 +509,15 @@ class IdentityIQHTMLParser:
         for tr in soup.find_all('tr'):
             cells = tr.find_all('td', class_='info')
 
-            # Inquiry rows typically have 4 cells
             if len(cells) == 4:
                 creditor = cells[0].get_text(strip=True)
                 business_type = cells[1].get_text(strip=True)
                 inquiry_date = cells[2].get_text(strip=True)
-                bureau_text = cells[3].get_text(strip=True).lower()
 
                 if not creditor or len(creditor) < 3:
                     continue
 
-                # Determine inquiry type (hard vs soft)
-                inquiry_type = "hard"  # Default assumption
+                inquiry_type = "hard"
                 if "soft" in business_type.lower():
                     inquiry_type = "soft"
 
@@ -521,12 +535,10 @@ class IdentityIQHTMLParser:
         """Extract public records from HTML."""
         records = []
 
-        # Check for "None Reported"
         for td in soup.find_all('td', class_='none-reported'):
             if 'None Reported' in td.get_text():
                 return []
 
-        # TODO: Parse actual public records when sample HTML is available
         return records
 
     def _extract_report_date(self, soup: BeautifulSoup) -> Optional[date]:
@@ -549,11 +561,7 @@ def parse_identityiq_html(html_path: str) -> NormalizedReport:
     """
     Factory function to parse IdentityIQ HTML file.
 
-    Args:
-        html_path: Path to HTML file
-
-    Returns:
-        NormalizedReport - SSOT #1 for all downstream modules
+    Returns NormalizedReport with MERGED accounts (one per canonical tradeline).
     """
     parser = IdentityIQHTMLParser()
     return parser.parse(html_path)
