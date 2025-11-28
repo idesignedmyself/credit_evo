@@ -1,8 +1,8 @@
 /**
  * Credit Engine 2.0 - Letter Preview Component
- * Displays generated letter with download options
+ * Displays generated letter with download, edit, and save options
  */
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   Box,
   Paper,
@@ -17,23 +17,79 @@ import {
 import DownloadIcon from '@mui/icons-material/Download';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import PrintIcon from '@mui/icons-material/Print';
+import AutorenewIcon from '@mui/icons-material/Autorenew';
+import EditIcon from '@mui/icons-material/Edit';
+import VisibilityIcon from '@mui/icons-material/Visibility';
+import SaveIcon from '@mui/icons-material/Save';
+import { jsPDF } from 'jspdf';
 import { useUIStore } from '../state';
-import {
-  downloadLetterAsText,
-  copyLetterToClipboard,
-  getLetterStats,
-  formatToneLabel,
-} from '../utils';
+import { copyLetterToClipboard, formatToneLabel } from '../utils';
 
-const LetterPreview = ({ letter, isLoading, error }) => {
+const LetterPreview = ({ letter, isLoading, error, onRegenerate, isRegenerating, stats }) => {
   const [copied, setCopied] = React.useState(false);
-  const { selectedTone, editableLetter, updateEditableLetter } = useUIStore();
+  const [isEditing, setIsEditing] = React.useState(false);
+  const autosaveTimerRef = useRef(null);
 
-  const handleDownload = () => {
+  const {
+    selectedTone,
+    editableLetter,
+    updateEditableLetter,
+    saveLetter,
+    isSavingLetter,
+    hasUnsavedChanges,
+    lastSaved,
+    currentLetter,
+  } = useUIStore();
+
+  // Autosave every 30 seconds if there are unsaved changes
+  useEffect(() => {
+    if (hasUnsavedChanges && editableLetter) {
+      autosaveTimerRef.current = setTimeout(() => {
+        saveLetter();
+      }, 30000);
+    }
+
+    return () => {
+      if (autosaveTimerRef.current) {
+        clearTimeout(autosaveTimerRef.current);
+      }
+    };
+  }, [hasUnsavedChanges, editableLetter, saveLetter]);
+
+  const handleSave = async () => {
+    try {
+      await saveLetter();
+    } catch (err) {
+      console.error('Failed to save letter:', err);
+    }
+  };
+
+  const handleDownloadPDF = () => {
     if (editableLetter) {
-      const filename = `dispute_letter_${new Date().toISOString().split('T')[0]}.txt`;
-      // Create a letter-like object for the download function
-      downloadLetterAsText({ content: editableLetter }, filename);
+      const pdf = new jsPDF({ unit: 'pt', format: 'letter' });
+      const margin = 50;
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const maxWidth = pageWidth - (margin * 2);
+
+      pdf.setFont('times', 'normal');
+      pdf.setFontSize(12);
+
+      const lines = pdf.splitTextToSize(editableLetter, maxWidth);
+      let y = margin;
+      const lineHeight = 18;
+
+      lines.forEach((line) => {
+        if (y + lineHeight > pageHeight - margin) {
+          pdf.addPage();
+          y = margin;
+        }
+        pdf.text(line, margin, y);
+        y += lineHeight;
+      });
+
+      const filename = `dispute_letter_${new Date().toISOString().split('T')[0]}.pdf`;
+      pdf.save(filename);
     }
   };
 
@@ -69,7 +125,15 @@ const LetterPreview = ({ letter, isLoading, error }) => {
 
   if (isLoading) {
     return (
-      <Paper sx={{ p: 4, textAlign: 'center' }}>
+      <Paper
+        elevation={2}
+        sx={{
+          p: 4,
+          textAlign: 'center',
+          borderRadius: 3,
+          boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
+        }}
+      >
         <CircularProgress sx={{ mb: 2 }} />
         <Typography variant="body1">Generating your dispute letter...</Typography>
       </Paper>
@@ -78,7 +142,7 @@ const LetterPreview = ({ letter, isLoading, error }) => {
 
   if (error) {
     return (
-      <Alert severity="error" sx={{ mb: 2 }}>
+      <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>
         {error}
       </Alert>
     );
@@ -86,7 +150,16 @@ const LetterPreview = ({ letter, isLoading, error }) => {
 
   if (!letter) {
     return (
-      <Paper sx={{ p: 4, textAlign: 'center', backgroundColor: 'grey.50' }}>
+      <Paper
+        elevation={2}
+        sx={{
+          p: 4,
+          textAlign: 'center',
+          backgroundColor: 'grey.50',
+          borderRadius: 3,
+          boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
+        }}
+      >
         <Typography variant="body1" color="text.secondary">
           Click "Generate Letter" to create your dispute letter.
         </Typography>
@@ -94,14 +167,46 @@ const LetterPreview = ({ letter, isLoading, error }) => {
     );
   }
 
-  const stats = getLetterStats(letter);
+  // Calculate word count from editable letter, use passed stats for violations/accounts
+  const wordCount = editableLetter ? editableLetter.split(/\s+/).filter(w => w).length : 0;
+  const violationsCount = stats?.violations || 0;
+  const accountsCount = stats?.accounts || 0;
 
   return (
     <Box>
-      <Paper sx={{ p: 3, mb: 2 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+      <Paper
+        elevation={2}
+        sx={{
+          p: 3,
+          mb: 2,
+          borderRadius: 3,
+          boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
+        }}
+      >
+        {/* Action Bar - All buttons together */}
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, flexWrap: 'wrap', gap: 1 }}>
           <Typography variant="h6">Generated Letter</Typography>
-          <Box sx={{ display: 'flex', gap: 1 }}>
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            {onRegenerate && (
+              <Button
+                size="small"
+                startIcon={<AutorenewIcon />}
+                onClick={onRegenerate}
+                variant="outlined"
+                color="primary"
+                disabled={isRegenerating}
+              >
+                {isRegenerating ? 'Regenerating...' : 'Regenerate'}
+              </Button>
+            )}
+            <Button
+              size="small"
+              startIcon={isEditing ? <VisibilityIcon /> : <EditIcon />}
+              onClick={() => setIsEditing(!isEditing)}
+              variant="outlined"
+            >
+              {isEditing ? 'View' : 'Edit'}
+            </Button>
             <Button
               size="small"
               startIcon={<ContentCopyIcon />}
@@ -121,43 +226,90 @@ const LetterPreview = ({ letter, isLoading, error }) => {
             <Button
               size="small"
               startIcon={<DownloadIcon />}
-              onClick={handleDownload}
+              onClick={handleDownloadPDF}
               variant="contained"
             >
               Download
             </Button>
+            <Button
+              size="small"
+              startIcon={isSavingLetter ? <CircularProgress size={16} /> : <SaveIcon />}
+              onClick={handleSave}
+              variant="contained"
+              color="success"
+              disabled={isSavingLetter || !hasUnsavedChanges}
+            >
+              {isSavingLetter ? 'Saving...' : 'Save'}
+            </Button>
           </Box>
         </Box>
 
-        <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
-          <Chip label={`${stats?.wordCount || 0} words`} size="small" />
-          <Chip label={`${stats?.violationsCited || 0} violations`} size="small" />
-          <Chip label={`${stats?.accountsDisputed || 0} accounts`} size="small" />
+        {/* Stats Chips - Only show if > 0 */}
+        <Box sx={{ display: 'flex', gap: 1, mb: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+          {wordCount > 0 && (
+            <Chip label={`${wordCount} words`} size="small" />
+          )}
+          {violationsCount > 0 && (
+            <Chip label={`${violationsCount} violations`} size="small" />
+          )}
+          {accountsCount > 0 && (
+            <Chip label={`${accountsCount} accounts`} size="small" />
+          )}
           <Chip label={formatToneLabel(selectedTone)} size="small" variant="outlined" />
+          {lastSaved && (
+            <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto' }}>
+              Last saved: {lastSaved.toLocaleTimeString()}
+            </Typography>
+          )}
+          {hasUnsavedChanges && (
+            <Chip label="Unsaved changes" size="small" color="warning" variant="outlined" />
+          )}
         </Box>
 
         <Divider sx={{ mb: 2 }} />
 
-        <TextField
-          fullWidth
-          multiline
-          minRows={20}
-          maxRows={30}
-          value={editableLetter || ''}
-          onChange={(e) => updateEditableLetter(e.target.value)}
-          variant="outlined"
-          sx={{
-            '& .MuiInputBase-root': {
+        {/* Letter Content - Edit or View Mode */}
+        {isEditing ? (
+          <TextField
+            fullWidth
+            multiline
+            minRows={25}
+            maxRows={40}
+            value={editableLetter || ''}
+            onChange={(e) => updateEditableLetter(e.target.value)}
+            variant="outlined"
+            placeholder="Edit your letter here..."
+            sx={{
+              '& .MuiInputBase-root': {
+                fontFamily: '"SF Mono", "Consolas", monospace',
+                fontSize: '14px',
+                lineHeight: 1.6,
+                backgroundColor: '#ffffff',
+              },
+              '& .MuiOutlinedInput-notchedOutline': {
+                borderColor: 'primary.main',
+              },
+            }}
+          />
+        ) : (
+          <Box
+            sx={{
               fontFamily: '"Times New Roman", serif',
               fontSize: '14px',
               lineHeight: 1.8,
-              backgroundColor: 'grey.50',
-            },
-            '& .MuiOutlinedInput-notchedOutline': {
-              borderColor: 'grey.300',
-            },
-          }}
-        />
+              backgroundColor: '#ffffff',
+              border: '1px solid #dce3ed',
+              borderRadius: 2,
+              p: 3,
+              whiteSpace: 'pre-wrap',
+              minHeight: 500,
+              maxHeight: 700,
+              overflowY: 'auto',
+            }}
+          >
+            {editableLetter || 'No letter content available.'}
+          </Box>
+        )}
       </Paper>
     </Box>
   );

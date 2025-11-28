@@ -9,13 +9,23 @@ Architecture:
 - AuditResult → StrategySelector → LetterPlan (SSOT #3)
 - LetterPlan → Renderer → DisputeLetter (SSOT #4)
 """
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .routers import reports_router, letters_router
+from .routers import reports_router, letters_router, auth_router
+from .database import init_db
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Initialize database on startup."""
+    init_db()
+    yield
 
 # Create FastAPI app
 app = FastAPI(
+    lifespan=lifespan,
     title="Credit Engine 2.0",
     description="""
     Credit Engine 2.0 - Dispute Letter Generation System
@@ -51,6 +61,7 @@ app.add_middleware(
 )
 
 # Include routers
+app.include_router(auth_router)
 app.include_router(reports_router)
 app.include_router(letters_router)
 

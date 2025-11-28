@@ -6,3 +6,4 @@ export { default as apiClient } from './apiClient';
 export { default as reportApi } from './reportApi';
 export { default as auditApi } from './auditApi';
 export { default as letterApi } from './letterApi';
+export { default as authApi } from './authApi';

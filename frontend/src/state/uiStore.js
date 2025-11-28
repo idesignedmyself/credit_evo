@@ -11,8 +11,12 @@ const useUIStore = create((set, get) => ({
   groupingStrategy: 'by_violation_type',
   availableTones: ['formal', 'assertive', 'conversational', 'narrative'],
   currentLetter: null,
+  currentLetterId: null,
   editableLetter: null,
   isGeneratingLetter: false,
+  isSavingLetter: false,
+  lastSaved: null,
+  hasUnsavedChanges: false,
   notification: null,
   error: null,
 
@@ -48,7 +52,14 @@ const useUIStore = create((set, get) => ({
         tone: state.selectedTone,
         grouping_strategy: state.groupingStrategy,
       });
-      set({ currentLetter: letter, editableLetter: letter.content, isGeneratingLetter: false });
+      set({
+        currentLetter: letter,
+        currentLetterId: letter.letter_id,
+        editableLetter: letter.content,
+        isGeneratingLetter: false,
+        hasUnsavedChanges: false,
+        lastSaved: null,
+      });
       return letter;
     } catch (error) {
       set({ error: error.message, isGeneratingLetter: false });
@@ -56,12 +67,42 @@ const useUIStore = create((set, get) => ({
     }
   },
 
+  saveLetter: async () => {
+    const state = get();
+    if (!state.currentLetterId || !state.editableLetter) {
+      return;
+    }
+
+    set({ isSavingLetter: true, error: null });
+    try {
+      const result = await letterApi.saveLetter(state.currentLetterId, state.editableLetter);
+      set({
+        isSavingLetter: false,
+        hasUnsavedChanges: false,
+        lastSaved: new Date(),
+      });
+      return result;
+    } catch (error) {
+      set({ error: error.message, isSavingLetter: false });
+      throw error;
+    }
+  },
+
   clearLetter: () => {
-    set({ currentLetter: null, editableLetter: null, error: null });
+    set({
+      currentLetter: null,
+      currentLetterId: null,
+      editableLetter: null,
+      error: null,
+      hasUnsavedChanges: false,
+      lastSaved: null,
+    });
   },
 
   updateEditableLetter: (content) => {
-    set({ editableLetter: content });
+    const state = get();
+    const hasChanges = content !== state.currentLetter?.content;
+    set({ editableLetter: content, hasUnsavedChanges: hasChanges });
   },
 
   showNotification: (message, type = 'info') => {
@@ -86,8 +127,12 @@ const useUIStore = create((set, get) => ({
       groupingStrategy: 'by_violation_type',
       availableTones: ['formal', 'assertive', 'conversational', 'narrative'],
       currentLetter: null,
+      currentLetterId: null,
       editableLetter: null,
       isGeneratingLetter: false,
+      isSavingLetter: false,
+      lastSaved: null,
+      hasUnsavedChanges: false,
       notification: null,
       error: null,
     });

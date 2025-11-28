@@ -12,12 +12,10 @@ import {
   Stepper,
   Step,
   StepLabel,
-  Grid,
   Paper,
   Alert,
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import AutorenewIcon from '@mui/icons-material/Autorenew';
 import HomeIcon from '@mui/icons-material/Home';
 import { ToneSelector, LetterPreview } from '../components';
 import { useViolationStore, useUIStore } from '../state';
@@ -27,7 +25,7 @@ const steps = ['Upload Report', 'Review Violations', 'Generate Letter'];
 const LetterPage = () => {
   const { reportId } = useParams();
   const navigate = useNavigate();
-  const { selectedViolationIds, fetchAuditResults } = useViolationStore();
+  const { selectedViolationIds, violations, fetchAuditResults } = useViolationStore();
   const {
     currentLetter,
     isGeneratingLetter,
@@ -67,6 +65,13 @@ const LetterPage = () => {
     navigate('/upload');
   };
 
+  // Calculate stats from SELECTED violations only
+  const selectedViolations = violations.filter(v => selectedViolationIds.includes(v.violation_id));
+  const stats = {
+    violations: selectedViolations.length,
+    accounts: [...new Set(selectedViolations.map(v => v.account_id))].length,
+  };
+
   return (
     <Container maxWidth="lg">
       <Box sx={{ py: 4 }}>
@@ -83,65 +88,64 @@ const LetterPage = () => {
         </Stepper>
 
         {error && (
-          <Alert severity="error" sx={{ mb: 3 }}>
+          <Alert severity="error" sx={{ mb: 3, borderRadius: 2 }}>
             {error}
           </Alert>
         )}
 
-        <Grid container spacing={3}>
-          <Grid item xs={12} md={4}>
-            <ToneSelector />
+        {/* Letter Customization Section - Above Everything */}
+        <Box sx={{ mb: 4 }}>
+          <ToneSelector />
+        </Box>
 
-            <Paper sx={{ p: 3, mt: 3 }}>
-              <Typography variant="h6" gutterBottom>
-                Selected Violations
+        {/* Generate Section */}
+        <Paper
+          elevation={2}
+          sx={{
+            p: 3,
+            mb: 4,
+            borderRadius: 3,
+            boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
+          }}
+        >
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
+            <Box>
+              <Typography variant="h6" gutterBottom sx={{ mb: 0.5 }}>
+                Ready to Generate
               </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                {selectedViolationIds.length} violation{selectedViolationIds.length !== 1 ? 's' : ''} will be included in your letter.
+              <Typography variant="body2" color="text.secondary">
+                {selectedViolationIds.length} violation{selectedViolationIds.length !== 1 ? 's' : ''} selected for your dispute letter.
               </Typography>
-
+            </Box>
+            <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+              <Button
+                variant="text"
+                startIcon={<ArrowBackIcon />}
+                onClick={handleBack}
+              >
+                Back to Violations
+              </Button>
               <Button
                 variant="contained"
-                fullWidth
+                size="large"
                 onClick={handleGenerate}
                 disabled={isGeneratingLetter || selectedViolationIds.length === 0 || currentLetter}
               >
                 {isGeneratingLetter ? 'Generating...' : 'Generate Letter'}
               </Button>
-            </Paper>
-
-            <Box sx={{ mt: 3 }}>
-              <Button
-                variant="text"
-                startIcon={<ArrowBackIcon />}
-                onClick={handleBack}
-                fullWidth
-              >
-                Back to Violations
-              </Button>
             </Box>
-          </Grid>
+          </Box>
+        </Paper>
 
-          <Grid item xs={12} md={8}>
-            {currentLetter && (
-              <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
-                <Button
-                  variant="outlined"
-                  startIcon={<AutorenewIcon />}
-                  onClick={handleRegenerate}
-                  disabled={isGeneratingLetter}
-                >
-                  Regenerate Letter
-                </Button>
-              </Box>
-            )}
-            <LetterPreview
-              letter={currentLetter}
-              isLoading={isGeneratingLetter}
-              error={error}
-            />
-          </Grid>
-        </Grid>
+        {/* Letter Preview - Full Width */}
+        <LetterPreview
+          letter={currentLetter}
+          isLoading={isGeneratingLetter}
+          error={error}
+          onRegenerate={currentLetter ? handleRegenerate : null}
+          isRegenerating={isGeneratingLetter}
+          stats={stats}
+        />
 
         {currentLetter && (
           <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>

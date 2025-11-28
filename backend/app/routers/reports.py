@@ -1,30 +1,34 @@
 """
 Credit Engine 2.0 - Reports API Router
 
-Handles report upload, parsing, and auditing.
+Handles report upload, parsing, and auditing with PostgreSQL persistence.
+All endpoints require authentication.
 """
 from __future__ import annotations
+import json
 import logging
 import os
 import shutil
-from datetime import datetime
+from dataclasses import asdict
+from datetime import datetime, date
+from enum import Enum
 from typing import List, Optional
 from uuid import uuid4
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
+from ..database import get_db
+from ..models.db_models import ReportDB, AuditResultDB, UserDB
 from ..services.parsing import parse_identityiq_html
 from ..services.audit import audit_report
 from ..models import NormalizedReport, AuditResult, Violation, ViolationType, Severity
+from ..auth import get_current_user
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/reports", tags=["reports"])
-
-# In-memory storage for demo (would be database in production)
-REPORTS_STORAGE = {}
-AUDIT_RESULTS_STORAGE = {}
 
 
 # =============================================================================
@@ -84,80 +88,122 @@ class DeleteResponse(BaseModel):
 
 
 # =============================================================================
+# HELPER FUNCTIONS
+# =============================================================================
+
+def serialize_report(report: NormalizedReport) -> dict:
+    """Convert NormalizedReport dataclass to JSON-serializable dict."""
+    def convert(obj):
+        if isinstance(obj, dict):
+            return {k: convert(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [convert(i) for i in obj]
+        elif isinstance(obj, Enum):
+            return obj.value
+        elif isinstance(obj, (date, datetime)):
+            return obj.isoformat()
+        return obj
+    return convert(asdict(report))
+
+
+def serialize_audit(audit: AuditResult) -> dict:
+    """Convert AuditResult dataclass to JSON-serializable dict."""
+    def convert(obj):
+        if isinstance(obj, dict):
+            return {k: convert(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [convert(i) for i in obj]
+        elif isinstance(obj, Enum):
+            return obj.value
+        elif isinstance(obj, (date, datetime)):
+            return obj.isoformat()
+        return obj
+    return convert(asdict(audit))
+
+
+def get_user_storage_dir(user_id: str) -> str:
+    """Get storage directory for a user."""
+    base_dir = os.path.join(os.path.dirname(__file__), "..", "..", "data", "storage")
+    user_dir = os.path.join(base_dir, user_id)
+    os.makedirs(user_dir, exist_ok=True)
+    return user_dir
+
+
+# =============================================================================
 # API ENDPOINTS
 # =============================================================================
 
 @router.get("", response_model=List[ReportListItem])
-async def list_reports():
+async def list_reports(
+    current_user: UserDB = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """
-    List all uploaded reports.
+    List all reports for the authenticated user.
+    """
+    reports = db.query(ReportDB).filter(
+        ReportDB.user_id == current_user.id
+    ).order_by(ReportDB.created_at.desc()).all()
 
-    Returns summary of each report including:
-    - report_id
-    - filename
-    - upload timestamp
-    - account count
-    - violation count
-    """
     reports_list = []
-    for report_id, report in REPORTS_STORAGE.items():
-        audit = AUDIT_RESULTS_STORAGE.get(report_id)
+    for report in reports:
+        # Get audit result for violation count
+        audit = db.query(AuditResultDB).filter(AuditResultDB.report_id == report.id).first()
         violations_count = audit.total_violations_found if audit else 0
 
-        # Get just the filename, not the full path
+        # Get account count from report data
+        report_data = report.report_data or {}
+        accounts = report_data.get('accounts', [])
+
+        # Get just the filename
         filename = report.source_file or "Unknown"
         if "/" in filename:
             filename = filename.split("/")[-1]
 
         reports_list.append(ReportListItem(
-            report_id=report_id,
+            report_id=report.id,
             filename=filename,
-            uploaded=str(report.parse_timestamp),
-            accounts=len(report.accounts),
+            uploaded=str(report.created_at),
+            accounts=len(accounts),
             violations=violations_count
         ))
 
-    # Sort by upload time (newest first)
-    reports_list.sort(key=lambda x: x.uploaded, reverse=True)
     return reports_list
 
 
 @router.post("/upload", response_model=UploadResponse)
-async def upload_report(file: UploadFile = File(...)):
+async def upload_report(
+    file: UploadFile = File(...),
+    current_user: UserDB = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """
     Upload and process a credit report HTML file.
-
-    Pipeline:
-    1. Auto-purge old reports (single active report mode)
-    2. Save uploaded file
-    3. Parse HTML → NormalizedReport (SSOT #1)
-    4. Audit → AuditResult (SSOT #2)
-    5. Return summary
+    Associates report with authenticated user.
     """
     # Validate file type
     if not file.filename.endswith(('.html', '.htm')):
         raise HTTPException(status_code=400, detail="Only HTML files are supported")
 
-    # Auto-purge: Clear all old reports before saving new one (single active report mode)
-    upload_dir = os.path.join(os.path.dirname(__file__), "..", "..", "data", "uploads")
-    if os.path.exists(upload_dir):
-        for old_file in os.listdir(upload_dir):
-            if old_file.endswith('.html'):
-                try:
-                    os.remove(os.path.join(upload_dir, old_file))
-                except Exception:
-                    pass  # Best effort cleanup
-    REPORTS_STORAGE.clear()
-    AUDIT_RESULTS_STORAGE.clear()
-    logger.info("Auto-purged old reports for new upload")
+    # Get user's storage directory
+    user_storage = get_user_storage_dir(current_user.id)
 
-    # Create upload directory
-    upload_dir = os.path.join(os.path.dirname(__file__), "..", "..", "data", "uploads")
-    os.makedirs(upload_dir, exist_ok=True)
+    # Clear old reports for this user (single active report mode per user)
+    old_reports = db.query(ReportDB).filter(ReportDB.user_id == current_user.id).all()
+    for old_report in old_reports:
+        # Delete associated audit results
+        db.query(AuditResultDB).filter(AuditResultDB.report_id == old_report.id).delete()
+        # Delete old file
+        old_file = os.path.join(user_storage, f"{old_report.id}.html")
+        if os.path.exists(old_file):
+            os.remove(old_file)
+        db.delete(old_report)
+    db.commit()
+    logger.info(f"Auto-purged old reports for user {current_user.id}")
 
     # Save file
     file_id = str(uuid4())
-    file_path = os.path.join(upload_dir, f"{file_id}.html")
+    file_path = os.path.join(user_storage, f"{file_id}.html")
 
     try:
         with open(file_path, "wb") as buffer:
@@ -169,14 +215,37 @@ async def upload_report(file: UploadFile = File(...)):
         # Parse HTML → NormalizedReport
         report = parse_identityiq_html(file_path)
 
-        # Store report
-        REPORTS_STORAGE[report.report_id] = report
+        # Save report to database with user_id
+        db_report = ReportDB(
+            id=report.report_id,
+            user_id=current_user.id,
+            consumer_name=report.consumer.full_name,
+            consumer_address=report.consumer.address,
+            consumer_city=report.consumer.city,
+            consumer_state=report.consumer.state,
+            consumer_zip=report.consumer.zip_code,
+            bureau=report.bureau.value,
+            report_date=report.report_date,
+            source_file=file.filename,
+            report_data=serialize_report(report)
+        )
+        db.add(db_report)
 
         # Audit → AuditResult
         audit_result = audit_report(report)
 
-        # Store audit result
-        AUDIT_RESULTS_STORAGE[report.report_id] = audit_result
+        # Save audit result to database
+        db_audit = AuditResultDB(
+            id=audit_result.audit_id,
+            report_id=report.report_id,
+            bureau=audit_result.bureau.value,
+            total_accounts_audited=audit_result.total_accounts_audited,
+            total_violations_found=audit_result.total_violations_found,
+            violations_data=serialize_audit(audit_result).get('violations', []),
+            clean_accounts=audit_result.clean_accounts
+        )
+        db.add(db_audit)
+        db.commit()
 
         return UploadResponse(
             report_id=report.report_id,
@@ -186,119 +255,160 @@ async def upload_report(file: UploadFile = File(...)):
         )
 
     except Exception as e:
+        db.rollback()
         logger.error(f"Error processing report: {e}")
         raise HTTPException(status_code=500, detail=f"Error processing report: {e}")
 
 
 @router.get("/{report_id}", response_model=ReportSummaryResponse)
-async def get_report(report_id: str):
-    """Get report summary by ID."""
-    if report_id not in REPORTS_STORAGE:
+async def get_report(
+    report_id: str,
+    current_user: UserDB = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get report summary by ID. Only returns if owned by current user."""
+    report = db.query(ReportDB).filter(
+        ReportDB.id == report_id,
+        ReportDB.user_id == current_user.id
+    ).first()
+
+    if not report:
         raise HTTPException(status_code=404, detail="Report not found")
 
-    report = REPORTS_STORAGE[report_id]
+    report_data = report.report_data or {}
+    accounts = report_data.get('accounts', [])
 
     return ReportSummaryResponse(
-        report_id=report.report_id,
+        report_id=report.id,
         source_file=report.source_file or "",
-        report_date=str(report.report_date),
-        consumer_name=report.consumer.full_name,
-        total_accounts=len(report.accounts),
-        parse_timestamp=str(report.parse_timestamp)
+        report_date=str(report.report_date) if report.report_date else "",
+        consumer_name=report.consumer_name,
+        total_accounts=len(accounts),
+        parse_timestamp=str(report.created_at)
     )
 
 
 @router.get("/{report_id}/audit", response_model=AuditResultResponse)
-async def get_audit_result(report_id: str):
-    """Get audit results for a report."""
-    if report_id not in AUDIT_RESULTS_STORAGE:
+async def get_audit_result(
+    report_id: str,
+    current_user: UserDB = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get audit results for a report. Only returns if owned by current user."""
+    # First verify ownership
+    report = db.query(ReportDB).filter(
+        ReportDB.id == report_id,
+        ReportDB.user_id == current_user.id
+    ).first()
+
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+
+    audit = db.query(AuditResultDB).filter(AuditResultDB.report_id == report_id).first()
+
+    if not audit:
         raise HTTPException(status_code=404, detail="Audit result not found")
 
-    audit = AUDIT_RESULTS_STORAGE[report_id]
-
+    # Convert stored violations back to response format
+    violations_data = audit.violations_data or []
     violations_response = [
         ViolationResponse(
-            violation_id=v.violation_id,
-            violation_type=v.violation_type.value,
-            severity=v.severity.value,
-            creditor_name=v.creditor_name,
-            account_number_masked=v.account_number_masked,
-            description=v.description,
-            expected_value=v.expected_value,
-            actual_value=v.actual_value,
-            fcra_section=v.fcra_section,
-            metro2_field=v.metro2_field
+            violation_id=v.get('violation_id', ''),
+            violation_type=v.get('violation_type', ''),
+            severity=v.get('severity', ''),
+            creditor_name=v.get('creditor_name', ''),
+            account_number_masked=v.get('account_number_masked', ''),
+            description=v.get('description', ''),
+            expected_value=v.get('expected_value'),
+            actual_value=v.get('actual_value'),
+            fcra_section=v.get('fcra_section'),
+            metro2_field=v.get('metro2_field')
         )
-        for v in audit.violations
+        for v in violations_data
     ]
 
     return AuditResultResponse(
-        audit_id=audit.audit_id,
+        audit_id=audit.id,
         report_id=audit.report_id,
         total_accounts_audited=audit.total_accounts_audited,
         total_violations_found=audit.total_violations_found,
         violations=violations_response,
-        clean_account_count=len(audit.clean_accounts)
+        clean_account_count=len(audit.clean_accounts or [])
     )
 
 
 @router.get("/{report_id}/violations", response_model=List[ViolationResponse])
-async def get_violations(report_id: str, severity: Optional[str] = None, violation_type: Optional[str] = None):
-    """Get violations for a report with optional filtering."""
-    if report_id not in AUDIT_RESULTS_STORAGE:
+async def get_violations(
+    report_id: str,
+    severity: Optional[str] = None,
+    violation_type: Optional[str] = None,
+    current_user: UserDB = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get violations for a report with optional filtering. Only for owned reports."""
+    # First verify ownership
+    report = db.query(ReportDB).filter(
+        ReportDB.id == report_id,
+        ReportDB.user_id == current_user.id
+    ).first()
+
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+
+    audit = db.query(AuditResultDB).filter(AuditResultDB.report_id == report_id).first()
+
+    if not audit:
         raise HTTPException(status_code=404, detail="Audit result not found")
 
-    audit = AUDIT_RESULTS_STORAGE[report_id]
-    violations = audit.violations
+    violations_data = audit.violations_data or []
 
     # Filter by severity
     if severity:
-        violations = [v for v in violations if v.severity.value == severity]
+        violations_data = [v for v in violations_data if v.get('severity') == severity]
 
     # Filter by type
     if violation_type:
-        violations = [v for v in violations if v.violation_type.value == violation_type]
+        violations_data = [v for v in violations_data if v.get('violation_type') == violation_type]
 
     return [
         ViolationResponse(
-            violation_id=v.violation_id,
-            violation_type=v.violation_type.value,
-            severity=v.severity.value,
-            creditor_name=v.creditor_name,
-            account_number_masked=v.account_number_masked,
-            description=v.description,
-            expected_value=v.expected_value,
-            actual_value=v.actual_value,
-            fcra_section=v.fcra_section,
-            metro2_field=v.metro2_field
+            violation_id=v.get('violation_id', ''),
+            violation_type=v.get('violation_type', ''),
+            severity=v.get('severity', ''),
+            creditor_name=v.get('creditor_name', ''),
+            account_number_masked=v.get('account_number_masked', ''),
+            description=v.get('description', ''),
+            expected_value=v.get('expected_value'),
+            actual_value=v.get('actual_value'),
+            fcra_section=v.get('fcra_section'),
+            metro2_field=v.get('metro2_field')
         )
-        for v in violations
+        for v in violations_data
     ]
 
 
 @router.delete("/{report_id}", response_model=DeleteResponse)
-async def delete_report(report_id: str):
-    """
-    Delete a specific report and its audit results.
+async def delete_report(
+    report_id: str,
+    current_user: UserDB = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Delete a specific report. Only if owned by current user."""
+    report = db.query(ReportDB).filter(
+        ReportDB.id == report_id,
+        ReportDB.user_id == current_user.id
+    ).first()
 
-    Removes:
-    - Report from REPORTS_STORAGE
-    - Audit result from AUDIT_RESULTS_STORAGE
-    - Uploaded file from disk
-    """
-    if report_id not in REPORTS_STORAGE:
+    if not report:
         raise HTTPException(status_code=404, detail="Report not found")
 
-    # Remove from storage
-    del REPORTS_STORAGE[report_id]
-
-    # Remove audit result if exists
-    if report_id in AUDIT_RESULTS_STORAGE:
-        del AUDIT_RESULTS_STORAGE[report_id]
+    # Delete from database (cascade will handle audit_results)
+    db.delete(report)
+    db.commit()
 
     # Try to delete uploaded file
-    upload_dir = os.path.join(os.path.dirname(__file__), "..", "..", "data", "uploads")
-    file_path = os.path.join(upload_dir, f"{report_id}.html")
+    user_storage = get_user_storage_dir(current_user.id)
+    file_path = os.path.join(user_storage, f"{report_id}.html")
     if os.path.exists(file_path):
         os.remove(file_path)
 
@@ -306,23 +416,28 @@ async def delete_report(report_id: str):
 
 
 @router.delete("", response_model=DeleteResponse)
-async def delete_all_reports():
-    """
-    Delete ALL reports and audit results.
+async def delete_all_reports(
+    current_user: UserDB = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Delete ALL reports for the current user only."""
+    # Get count of user's reports
+    count = db.query(ReportDB).filter(ReportDB.user_id == current_user.id).count()
 
-    Use with caution - this clears all data.
-    """
-    count = len(REPORTS_STORAGE)
+    # Delete user's audit results
+    user_reports = db.query(ReportDB).filter(ReportDB.user_id == current_user.id).all()
+    for report in user_reports:
+        db.query(AuditResultDB).filter(AuditResultDB.report_id == report.id).delete()
 
-    # Clear all storage
-    REPORTS_STORAGE.clear()
-    AUDIT_RESULTS_STORAGE.clear()
+    # Delete user's reports
+    db.query(ReportDB).filter(ReportDB.user_id == current_user.id).delete()
+    db.commit()
 
-    # Clear upload directory
-    upload_dir = os.path.join(os.path.dirname(__file__), "..", "..", "data", "uploads")
-    if os.path.exists(upload_dir):
-        for f in os.listdir(upload_dir):
+    # Clear user's storage directory
+    user_storage = get_user_storage_dir(current_user.id)
+    if os.path.exists(user_storage):
+        for f in os.listdir(user_storage):
             if f.endswith('.html'):
-                os.remove(os.path.join(upload_dir, f))
+                os.remove(os.path.join(user_storage, f))
 
     return DeleteResponse(status="all_deleted", deleted_count=count)

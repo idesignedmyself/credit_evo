@@ -47,6 +47,19 @@ export const letterApi = {
     const response = await apiClient.get(`/letters/${letterId}`);
     return response.data;
   },
+
+  /**
+   * Save edited letter content
+   * @param {string} letterId - The letter UUID
+   * @param {string} editedContent - The edited letter content
+   * @returns {Promise<{status: string, letter_id: string, word_count: number}>}
+   */
+  saveLetter: async (letterId, editedContent) => {
+    const response = await apiClient.put(`/letters/${letterId}`, {
+      edited_content: editedContent,
+    });
+    return response.data;
+  },
 };
 
 export default letterApi;

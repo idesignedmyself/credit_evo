@@ -39,7 +39,14 @@ const ToneSelector = () => {
   } = useUIStore();
 
   return (
-    <Paper sx={{ p: 3 }}>
+    <Paper
+      elevation={2}
+      sx={{
+        p: 3,
+        borderRadius: 3,
+        boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
+      }}
+    >
       <Typography variant="h6" gutterBottom>
         Letter Customization
       </Typography>

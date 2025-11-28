@@ -7,7 +7,9 @@ import { BrowserRouter as Router, Routes, Route, Navigate, Link, useLocation } f
 import { ThemeProvider, createTheme, CssBaseline, AppBar, Toolbar, Typography, Button, Box } from '@mui/material';
 import HistoryIcon from '@mui/icons-material/History';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
-import { UploadPage, AuditPage, LetterPage, ReportHistoryPage } from './pages';
+import LogoutIcon from '@mui/icons-material/Logout';
+import { UploadPage, AuditPage, LetterPage, ReportHistoryPage, LoginPage, RegisterPage } from './pages';
+import useAuthStore from './state/authStore';
 
 // Create a clean, modern theme
 const theme = createTheme({
@@ -52,10 +54,28 @@ const theme = createTheme({
   },
 });
 
+// Protected Route Component
+const ProtectedRoute = ({ children }) => {
+  const { isAuthenticated } = useAuthStore();
+  const location = useLocation();
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  return children;
+};
+
 // Navigation Bar Component
 const NavBar = () => {
   const location = useLocation();
+  const { isAuthenticated, user, logout } = useAuthStore();
   const isActive = (path) => location.pathname === path || location.pathname.startsWith(path + '/');
+
+  const handleLogout = () => {
+    logout();
+    window.location.href = '/login';
+  };
 
   return (
     <AppBar position="static" color="default" elevation={1} sx={{ mb: 2 }}>
@@ -63,7 +83,7 @@ const NavBar = () => {
         <Typography variant="h6" component={Link} to="/upload" sx={{ flexGrow: 1, textDecoration: 'none', color: 'inherit' }}>
           Credit Engine 2.0
         </Typography>
-        <Box sx={{ display: 'flex', gap: 1 }}>
+        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
           <Button
             component={Link}
             to="/upload"
@@ -82,6 +102,21 @@ const NavBar = () => {
           >
             Reports
           </Button>
+          {isAuthenticated && (
+            <>
+              <Typography variant="body2" sx={{ mx: 1, color: 'text.secondary' }}>
+                {user?.username || user?.email}
+              </Typography>
+              <Button
+                onClick={handleLogout}
+                startIcon={<LogoutIcon />}
+                size="small"
+                color="inherit"
+              >
+                Logout
+              </Button>
+            </>
+          )}
         </Box>
       </Toolbar>
     </AppBar>
@@ -90,14 +125,42 @@ const NavBar = () => {
 
 // App Layout with NavBar inside Router
 const AppLayout = () => {
+  const { isAuthenticated } = useAuthStore();
+
   return (
     <>
-      <NavBar />
       <Routes>
-        <Route path="/upload" element={<UploadPage />} />
-        <Route path="/reports" element={<ReportHistoryPage />} />
-        <Route path="/audit/:reportId" element={<AuditPage />} />
-        <Route path="/letter/:reportId" element={<LetterPage />} />
+        {/* Public routes */}
+        <Route path="/login" element={isAuthenticated ? <Navigate to="/upload" replace /> : <LoginPage />} />
+        <Route path="/register" element={isAuthenticated ? <Navigate to="/upload" replace /> : <RegisterPage />} />
+
+        {/* Protected routes with NavBar */}
+        <Route path="/upload" element={
+          <ProtectedRoute>
+            <NavBar />
+            <UploadPage />
+          </ProtectedRoute>
+        } />
+        <Route path="/reports" element={
+          <ProtectedRoute>
+            <NavBar />
+            <ReportHistoryPage />
+          </ProtectedRoute>
+        } />
+        <Route path="/audit/:reportId" element={
+          <ProtectedRoute>
+            <NavBar />
+            <AuditPage />
+          </ProtectedRoute>
+        } />
+        <Route path="/letter/:reportId" element={
+          <ProtectedRoute>
+            <NavBar />
+            <LetterPage />
+          </ProtectedRoute>
+        } />
+
+        {/* Default redirect */}
         <Route path="/" element={<Navigate to="/upload" replace />} />
         <Route path="*" element={<Navigate to="/upload" replace />} />
       </Routes>
