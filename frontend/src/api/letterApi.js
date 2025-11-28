@@ -6,6 +6,15 @@ import apiClient from './apiClient';
 
 export const letterApi = {
   /**
+   * Get all letters for the current user
+   * @returns {Promise<Array>} List of letter summaries
+   */
+  getAllLetters: async () => {
+    const response = await apiClient.get('/letters/all');
+    return response.data;
+  },
+
+  /**
    * Generate a dispute letter
    * @param {Object} params - Letter generation parameters
    * @param {string} params.report_id - The report UUID
@@ -58,6 +67,16 @@ export const letterApi = {
     const response = await apiClient.put(`/letters/${letterId}`, {
       edited_content: editedContent,
     });
+    return response.data;
+  },
+
+  /**
+   * Delete a letter
+   * @param {string} letterId - The letter UUID
+   * @returns {Promise<{status: string}>}
+   */
+  deleteLetter: async (letterId) => {
+    const response = await apiClient.delete(`/letters/${letterId}`);
     return response.data;
   },
 };

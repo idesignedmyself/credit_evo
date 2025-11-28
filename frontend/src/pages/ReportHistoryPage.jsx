@@ -26,6 +26,7 @@ import VisibilityIcon from '@mui/icons-material/Visibility';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import { reportApi } from '../api';
+import { SavedLetters } from '../components';
 
 const ReportHistoryPage = () => {
   const navigate = useNavigate();
@@ -207,6 +208,14 @@ const ReportHistoryPage = () => {
             </Table>
           </TableContainer>
         )}
+
+        {/* Saved Letters Section */}
+        <Box sx={{ mt: 4 }}>
+          <Typography variant="h5" component="h2" sx={{ mb: 2 }}>
+            Saved Letters
+          </Typography>
+          <SavedLetters />
+        </Box>
       </Box>
     </Container>
   );

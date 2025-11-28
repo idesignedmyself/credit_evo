@@ -349,6 +349,40 @@ async def save_letter(
     )
 
 
+@router.get("/all")
+async def list_all_letters(
+    current_user: UserDB = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get all letters for the current user.
+    Letters are retrieved through their associated reports.
+    """
+    # Join through reports to get user's letters
+    letters = (
+        db.query(LetterDB)
+        .join(ReportDB, LetterDB.report_id == ReportDB.id)
+        .filter(ReportDB.user_id == current_user.id)
+        .order_by(LetterDB.created_at.desc())
+        .all()
+    )
+
+    return [
+        {
+            "id": letter.id,
+            "report_id": letter.report_id,
+            "created_at": letter.created_at.isoformat() if letter.created_at else None,
+            "bureau": letter.bureau,
+            "tone": letter.tone,
+            "word_count": letter.word_count,
+            "violations": len(letter.violations_cited or []),
+            "accounts": len(letter.accounts_disputed or []),
+            "has_edits": letter.edited_content is not None,
+        }
+        for letter in letters
+    ]
+
+
 @router.get("/{letter_id}")
 async def get_letter(
     letter_id: str,
@@ -385,3 +419,33 @@ async def get_letter(
         "created_at": letter.created_at.isoformat() if letter.created_at else None,
         "updated_at": letter.updated_at.isoformat() if letter.updated_at else None,
     }
+
+
+@router.delete("/{letter_id}")
+async def delete_letter(
+    letter_id: str,
+    current_user: UserDB = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Delete a letter by ID.
+    Only works for letters belonging to reports owned by current user.
+    """
+    # Get letter from database
+    letter = db.query(LetterDB).filter(LetterDB.id == letter_id).first()
+    if not letter:
+        raise HTTPException(status_code=404, detail="Letter not found")
+
+    # Verify ownership via report
+    report = db.query(ReportDB).filter(
+        ReportDB.id == letter.report_id,
+        ReportDB.user_id == current_user.id
+    ).first()
+    if not report:
+        raise HTTPException(status_code=403, detail="Not authorized to delete this letter")
+
+    # Delete the letter
+    db.delete(letter)
+    db.commit()
+
+    return {"status": "deleted", "letter_id": letter_id}
