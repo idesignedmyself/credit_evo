@@ -3,7 +3,7 @@
  * Letter customization and generation
  */
 import React, { useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Container,
   Box,
@@ -24,6 +24,8 @@ const steps = ['Upload Report', 'Review Violations', 'Generate Letter'];
 
 const LetterPage = () => {
   const { reportId } = useParams();
+  const [searchParams] = useSearchParams();
+  const letterId = searchParams.get('letterId');
   const navigate = useNavigate();
   const { selectedViolationIds, violations, fetchAuditResults } = useViolationStore();
   const {
@@ -33,15 +35,23 @@ const LetterPage = () => {
     generateLetter,
     clearLetter,
     fetchTones,
+    loadSavedLetter,
   } = useUIStore();
 
   useEffect(() => {
     fetchTones();
-    // If no violations selected, redirect back to audit
+
+    // If we have a letterId, load the saved letter
+    if (letterId) {
+      loadSavedLetter(letterId);
+      return;
+    }
+
+    // Otherwise, if no violations selected, fetch audit results
     if (selectedViolationIds.length === 0) {
       fetchAuditResults(reportId);
     }
-  }, [reportId, selectedViolationIds.length, fetchAuditResults, fetchTones]);
+  }, [reportId, letterId, selectedViolationIds.length, fetchAuditResults, fetchTones, loadSavedLetter]);
 
   const handleBack = () => {
     navigate(`/audit/${reportId}`);

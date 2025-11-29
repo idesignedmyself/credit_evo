@@ -59,8 +59,9 @@ const SavedLetters = () => {
     }
   };
 
-  const handleView = (reportId) => {
-    navigate(`/audit/${reportId}`);
+  const handleView = (reportId, letterId) => {
+    // Navigate to letter page with letterId to load the saved letter
+    navigate(`/letter/${reportId}?letterId=${letterId}`);
   };
 
   const formatDate = (dateString) => {
@@ -146,7 +147,7 @@ const SavedLetters = () => {
               <TableCell align="center">
                 <IconButton
                   color="primary"
-                  onClick={() => handleView(letter.report_id)}
+                  onClick={() => handleView(letter.report_id, letter.id)}
                   title="View Letter"
                 >
                   <VisibilityIcon />

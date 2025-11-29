@@ -33,15 +33,18 @@ const AuditPage = () => {
     isLoading,
     error,
     fetchAuditResults,
+    clearViolations,
   } = useViolationStore();
 
   useEffect(() => {
     if (reportId) {
+      // Clear old violations before fetching new report data
+      clearViolations();
       // Fetch both report and audit results
       fetchReport(reportId);
       fetchAuditResults(reportId);
     }
-  }, [reportId, fetchReport, fetchAuditResults]);
+  }, [reportId, fetchReport, fetchAuditResults, clearViolations]);
 
   const handleBack = () => {
     navigate('/upload');

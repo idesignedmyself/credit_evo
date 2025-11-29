@@ -22,11 +22,37 @@ const useUIStore = create((set, get) => ({
 
   // Actions
   setTone: (tone) => {
-    set({ selectedTone: tone });
+    const state = get();
+    // Clear existing letter when tone changes so user must regenerate
+    if (state.currentLetter) {
+      set({
+        selectedTone: tone,
+        currentLetter: null,
+        currentLetterId: null,
+        editableLetter: null,
+        hasUnsavedChanges: false,
+        lastSaved: null,
+      });
+    } else {
+      set({ selectedTone: tone });
+    }
   },
 
   setGroupingStrategy: (strategy) => {
-    set({ groupingStrategy: strategy });
+    const state = get();
+    // Clear existing letter when grouping changes so user must regenerate
+    if (state.currentLetter) {
+      set({
+        groupingStrategy: strategy,
+        currentLetter: null,
+        currentLetterId: null,
+        editableLetter: null,
+        hasUnsavedChanges: false,
+        lastSaved: null,
+      });
+    } else {
+      set({ groupingStrategy: strategy });
+    }
   },
 
   fetchTones: async () => {
@@ -39,6 +65,27 @@ const useUIStore = create((set, get) => ({
     } catch (error) {
       console.error('Failed to fetch tones:', error);
       // Keep defaults on error
+    }
+  },
+
+  loadSavedLetter: async (letterId) => {
+    set({ isGeneratingLetter: true, error: null });
+    try {
+      const letter = await letterApi.getLetter(letterId);
+      set({
+        currentLetter: letter,
+        currentLetterId: letter.letter_id || letterId,
+        editableLetter: letter.edited_content || letter.content,
+        selectedTone: letter.tone || 'formal',
+        groupingStrategy: letter.grouping_strategy || 'by_violation_type',
+        isGeneratingLetter: false,
+        hasUnsavedChanges: false,
+        lastSaved: letter.updated_at ? new Date(letter.updated_at) : null,
+      });
+      return letter;
+    } catch (error) {
+      set({ error: error.message, isGeneratingLetter: false });
+      throw error;
     }
   },
 

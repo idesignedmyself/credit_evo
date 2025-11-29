@@ -27,9 +27,11 @@ import AddIcon from '@mui/icons-material/Add';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import { reportApi } from '../api';
 import { SavedLetters } from '../components';
+import { useViolationStore } from '../state';
 
 const ReportHistoryPage = () => {
   const navigate = useNavigate();
+  const { clearViolations } = useViolationStore();
   const [reports, setReports] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -64,6 +66,8 @@ const ReportHistoryPage = () => {
     try {
       await reportApi.deleteReport(reportId);
       setReports(reports.filter((r) => r.report_id !== reportId));
+      // Clear cached violations to prevent stale data
+      clearViolations();
     } catch (err) {
       setError(err.message || 'Failed to delete report');
     } finally {
@@ -79,6 +83,8 @@ const ReportHistoryPage = () => {
     try {
       await reportApi.deleteAllReports();
       setReports([]);
+      // Clear cached violations to prevent stale data
+      clearViolations();
     } catch (err) {
       setError(err.message || 'Failed to delete reports');
     } finally {
