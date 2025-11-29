@@ -13,8 +13,8 @@ import {
   CircularProgress,
   Alert,
 } from '@mui/material';
-import SelectAllIcon from '@mui/icons-material/SelectAll';
-import DeselectIcon from '@mui/icons-material/Deselect';
+import CheckBoxIcon from '@mui/icons-material/CheckBox';
+import CheckBoxOutlineBlankIcon from '@mui/icons-material/CheckBoxOutlineBlank';
 import ViolationToggle from './ViolationToggle';
 import { useViolationStore } from '../state';
 import { groupViolationsByType, groupViolationsByAccount } from '../utils';
@@ -69,24 +69,14 @@ const ViolationList = () => {
             {violations.length} Violations Found
           </Typography>
 
-          <Box sx={{ display: 'flex', gap: 1 }}>
-            <Button
-              size="small"
-              startIcon={<SelectAllIcon />}
-              onClick={selectAll}
-              variant="outlined"
-            >
-              Select All
-            </Button>
-            <Button
-              size="small"
-              startIcon={<DeselectIcon />}
-              onClick={deselectAll}
-              variant="outlined"
-            >
-              Deselect All
-            </Button>
-          </Box>
+          <Button
+            size="small"
+            startIcon={selectedViolationIds.length === violations.length ? <CheckBoxIcon /> : <CheckBoxOutlineBlankIcon />}
+            onClick={selectedViolationIds.length === violations.length ? deselectAll : selectAll}
+            variant="outlined"
+          >
+            {selectedViolationIds.length === violations.length ? 'Deselect All' : 'Select All'}
+          </Button>
         </Box>
 
         <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>

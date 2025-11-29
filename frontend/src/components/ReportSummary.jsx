@@ -14,8 +14,6 @@ import {
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import WarningIcon from '@mui/icons-material/Warning';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
-import { formatDate } from '../utils';
 
 const StatCard = ({ icon, label, value, color = 'primary' }) => (
   <Paper sx={{ p: 2, textAlign: 'center' }}>
@@ -59,7 +57,6 @@ const ReportSummary = ({ report, auditResult }) => {
   const violationsCount = auditResult?.total_violations_found || report?.violations_found || 0;
   const cleanCount = auditResult?.clean_accounts?.length || 0;
   const bureau = report?.bureau || auditResult?.bureau;
-  const reportDate = report?.report_date || report?.parse_timestamp;
 
   return (
     <Box>
@@ -74,7 +71,7 @@ const ReportSummary = ({ report, auditResult }) => {
         <Divider sx={{ my: 2 }} />
 
         <Grid container spacing={3}>
-          <Grid item xs={6} sm={3}>
+          <Grid item xs={12} sm={4}>
             <StatCard
               icon={<AccountBalanceIcon fontSize="large" />}
               label="Total Accounts"
@@ -82,7 +79,7 @@ const ReportSummary = ({ report, auditResult }) => {
               color="primary"
             />
           </Grid>
-          <Grid item xs={6} sm={3}>
+          <Grid item xs={12} sm={4}>
             <StatCard
               icon={<WarningIcon fontSize="large" />}
               label="Violations Found"
@@ -90,20 +87,12 @@ const ReportSummary = ({ report, auditResult }) => {
               color="error"
             />
           </Grid>
-          <Grid item xs={6} sm={3}>
+          <Grid item xs={12} sm={4}>
             <StatCard
               icon={<CheckCircleIcon fontSize="large" />}
               label="Clean Accounts"
               value={cleanCount}
               color="success"
-            />
-          </Grid>
-          <Grid item xs={6} sm={3}>
-            <StatCard
-              icon={<CalendarTodayIcon fontSize="large" />}
-              label="Report Date"
-              value={reportDate ? formatDate(reportDate, { month: 'short', day: 'numeric' }) : 'N/A'}
-              color="info"
             />
           </Grid>
         </Grid>
