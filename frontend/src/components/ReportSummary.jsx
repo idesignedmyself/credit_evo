@@ -53,7 +53,7 @@ const ReportSummary = ({ report, auditResult }) => {
     return null;
   }
 
-  const accountsCount = auditResult?.total_accounts_audited || report?.accounts_found || 0;
+  const accountsCount = report?.accounts?.length || 0;
   const violationsCount = auditResult?.total_violations_found || report?.violations_found || 0;
   const cleanCount = auditResult?.clean_accounts?.length || 0;
   const bureau = report?.bureau || auditResult?.bureau;

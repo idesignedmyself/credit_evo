@@ -63,6 +63,7 @@ class ReportSummaryResponse(BaseModel):
     report_date: str
     consumer_name: str
     total_accounts: int
+    accounts: List[dict]
     parse_timestamp: str
 
 
@@ -71,6 +72,7 @@ class UploadResponse(BaseModel):
     message: str
     total_accounts: int
     total_violations: int
+    accounts: List[dict]
 
 
 class ReportListItem(BaseModel):
@@ -251,7 +253,8 @@ async def upload_report(
             report_id=report.report_id,
             message="Report uploaded and processed successfully",
             total_accounts=len(report.accounts),
-            total_violations=audit_result.total_violations_found
+            total_violations=audit_result.total_violations_found,
+            accounts=serialize_report(report).get('accounts', [])
         )
 
     except Exception as e:
@@ -284,6 +287,7 @@ async def get_report(
         report_date=str(report.report_date) if report.report_date else "",
         consumer_name=report.consumer_name,
         total_accounts=len(accounts),
+        accounts=accounts,
         parse_timestamp=str(report.created_at)
     )
 
