@@ -190,19 +190,6 @@ async def upload_report(
     # Get user's storage directory
     user_storage = get_user_storage_dir(current_user.id)
 
-    # Clear old reports for this user (single active report mode per user)
-    old_reports = db.query(ReportDB).filter(ReportDB.user_id == current_user.id).all()
-    for old_report in old_reports:
-        # Delete associated audit results
-        db.query(AuditResultDB).filter(AuditResultDB.report_id == old_report.id).delete()
-        # Delete old file
-        old_file = os.path.join(user_storage, f"{old_report.id}.html")
-        if os.path.exists(old_file):
-            os.remove(old_file)
-        db.delete(old_report)
-    db.commit()
-    logger.info(f"Auto-purged old reports for user {current_user.id}")
-
     # Save file
     file_id = str(uuid4())
     file_path = os.path.join(user_storage, f"{file_id}.html")
