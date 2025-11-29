@@ -41,6 +41,8 @@ class ReportDB(Base):
 
     # Store full report data as JSON for flexibility
     report_data = Column(JSON)
+    # Explicit accounts array for reliable retrieval
+    accounts_json = Column(JSON)
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

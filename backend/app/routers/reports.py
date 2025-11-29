@@ -153,9 +153,8 @@ async def list_reports(
         audit = db.query(AuditResultDB).filter(AuditResultDB.report_id == report.id).first()
         violations_count = audit.total_violations_found if audit else 0
 
-        # Get account count from report data
-        report_data = report.report_data or {}
-        accounts = report_data.get('accounts', [])
+        # Get account count from accounts_json
+        accounts = report.accounts_json or []
 
         # Get just the filename
         filename = report.source_file or "Unknown"
@@ -217,6 +216,9 @@ async def upload_report(
         # Parse HTML → NormalizedReport
         report = parse_identityiq_html(file_path)
 
+        # Serialize report once for reuse
+        serialized_report = serialize_report(report)
+
         # Save report to database with user_id
         db_report = ReportDB(
             id=report.report_id,
@@ -229,7 +231,8 @@ async def upload_report(
             bureau=report.bureau.value,
             report_date=report.report_date,
             source_file=file.filename,
-            report_data=serialize_report(report)
+            report_data=serialized_report,
+            accounts_json=serialized_report.get('accounts', [])
         )
         db.add(db_report)
 
@@ -254,7 +257,7 @@ async def upload_report(
             message="Report uploaded and processed successfully",
             total_accounts=len(report.accounts),
             total_violations=audit_result.total_violations_found,
-            accounts=serialize_report(report).get('accounts', [])
+            accounts=serialized_report.get('accounts', [])
         )
 
     except Exception as e:
@@ -278,8 +281,8 @@ async def get_report(
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
 
-    report_data = report.report_data or {}
-    accounts = report_data.get('accounts', [])
+    # Use accounts_json for reliable retrieval
+    accounts = report.accounts_json or []
 
     return ReportSummaryResponse(
         report_id=report.id,
