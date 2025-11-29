@@ -153,8 +153,8 @@ async def list_reports(
         audit = db.query(AuditResultDB).filter(AuditResultDB.report_id == report.id).first()
         violations_count = audit.total_violations_found if audit else 0
 
-        # Get account count from accounts_json
-        accounts = report.accounts_json or []
+        # Get account count from accounts_json, fallback to report_data for old reports
+        accounts = report.accounts_json or (report.report_data.get('accounts', []) if report.report_data else [])
 
         # Get just the filename
         filename = report.source_file or "Unknown"
@@ -281,8 +281,8 @@ async def get_report(
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
 
-    # Use accounts_json for reliable retrieval
-    accounts = report.accounts_json or []
+    # Use accounts_json for reliable retrieval, fallback to report_data for old reports
+    accounts = report.accounts_json or (report.report_data.get('accounts', []) if report.report_data else [])
 
     return ReportSummaryResponse(
         report_id=report.id,
