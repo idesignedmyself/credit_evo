@@ -25,7 +25,7 @@ const steps = ['Upload Report', 'Review Violations', 'Generate Letter'];
 const AuditPage = () => {
   const { reportId } = useParams();
   const navigate = useNavigate();
-  const { currentReport } = useReportStore();
+  const { currentReport, fetchReport } = useReportStore();
   const {
     auditResult,
     violations,
@@ -37,9 +37,11 @@ const AuditPage = () => {
 
   useEffect(() => {
     if (reportId) {
+      // Fetch both report and audit results
+      fetchReport(reportId);
       fetchAuditResults(reportId);
     }
-  }, [reportId, fetchAuditResults]);
+  }, [reportId, fetchReport, fetchAuditResults]);
 
   const handleBack = () => {
     navigate('/upload');
