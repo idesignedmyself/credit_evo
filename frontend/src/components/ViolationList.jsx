@@ -17,7 +17,7 @@ import CheckBoxIcon from '@mui/icons-material/CheckBox';
 import CheckBoxOutlineBlankIcon from '@mui/icons-material/CheckBoxOutlineBlank';
 import ViolationToggle from './ViolationToggle';
 import { useViolationStore } from '../state';
-import { groupViolationsByType, groupViolationsByAccount } from '../utils';
+import { groupViolationsByType, groupViolationsByAccount, groupViolationsByBureau } from '../utils';
 
 const ViolationList = () => {
   const [groupBy, setGroupBy] = React.useState('type');
@@ -59,7 +59,8 @@ const ViolationList = () => {
 
   const groupedByType = groupViolationsByType(violations);
   const groupedByAccount = groupViolationsByAccount(violations);
-  const grouped = groupBy === 'type' ? groupedByType : groupedByAccount;
+  const groupedByBureau = groupViolationsByBureau(violations);
+  const grouped = groupBy === 'type' ? groupedByType : groupBy === 'account' ? groupedByAccount : groupedByBureau;
 
   return (
     <Box>
@@ -91,6 +92,7 @@ const ViolationList = () => {
       >
         <Tab value="type" label="Group by Type" />
         <Tab value="account" label="Group by Account" />
+        <Tab value="bureau" label="Group by Bureau" />
       </Tabs>
 
       {Object.entries(grouped).map(([groupName, groupViolations]) => (

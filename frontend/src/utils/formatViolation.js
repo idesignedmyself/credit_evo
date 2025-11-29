@@ -110,10 +110,36 @@ export const groupViolationsByAccount = (violations) => {
   return grouped;
 };
 
+// Bureau name formatting
+const BUREAU_LABELS = {
+  transunion: 'TransUnion',
+  experian: 'Experian',
+  equifax: 'Equifax',
+};
+
+/**
+ * Group violations by bureau for display
+ * @param {Array} violations - Array of violation objects
+ * @returns {Object} Grouped violations by bureau
+ */
+export const groupViolationsByBureau = (violations) => {
+  const grouped = {};
+  violations.forEach(v => {
+    const bureauKey = v.bureau?.toLowerCase() || 'unknown';
+    const label = BUREAU_LABELS[bureauKey] || bureauKey.charAt(0).toUpperCase() + bureauKey.slice(1);
+    if (!grouped[label]) {
+      grouped[label] = [];
+    }
+    grouped[label].push(formatViolation(v));
+  });
+  return grouped;
+};
+
 export default {
   getViolationLabel,
   getSeverityConfig,
   formatViolation,
   groupViolationsByType,
   groupViolationsByAccount,
+  groupViolationsByBureau,
 };

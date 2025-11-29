@@ -39,6 +39,7 @@ class ViolationResponse(BaseModel):
     violation_id: str
     violation_type: str
     severity: str
+    bureau: str
     creditor_name: str
     account_number_masked: str
     description: str
@@ -323,6 +324,7 @@ async def get_audit_result(
             violation_id=v.get('violation_id', ''),
             violation_type=v.get('violation_type', ''),
             severity=v.get('severity', ''),
+            bureau=v.get('bureau', 'transunion'),
             creditor_name=v.get('creditor_name', ''),
             account_number_masked=v.get('account_number_masked', ''),
             description=v.get('description', ''),
@@ -382,6 +384,7 @@ async def get_violations(
             violation_id=v.get('violation_id', ''),
             violation_type=v.get('violation_type', ''),
             severity=v.get('severity', ''),
+            bureau=v.get('bureau', 'transunion'),
             creditor_name=v.get('creditor_name', ''),
             account_number_masked=v.get('account_number_masked', ''),
             description=v.get('description', ''),

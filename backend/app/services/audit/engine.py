@@ -47,9 +47,18 @@ class AuditEngine:
         clean_accounts: List[str] = []
 
         for account in report.accounts:
-            # Use account's bureau (from multi-bureau reports) or fall back to report bureau
-            account_bureau = getattr(account, 'bureau', report.bureau)
-            account_violations = self._audit_account(account, account_bureau)
+            account_violations = []
+
+            # Check if account has multi-bureau data
+            if hasattr(account, 'bureaus') and account.bureaus:
+                # Audit each bureau's data separately
+                for bureau, bureau_data in account.bureaus.items():
+                    bureau_violations = self._audit_account_bureau(account, bureau, bureau_data)
+                    account_violations.extend(bureau_violations)
+            else:
+                # Fallback for single-bureau accounts
+                account_bureau = getattr(account, 'bureau', report.bureau)
+                account_violations = self._audit_account(account, account_bureau)
 
             if account_violations:
                 all_violations.extend(account_violations)
@@ -105,6 +114,41 @@ class AuditEngine:
         violations.extend(self.temporal_rules.check_impossible_timeline(account, bureau))
 
         return violations
+
+    def _audit_account_bureau(self, account, bureau: Bureau, bureau_data) -> List[Violation]:
+        """
+        Run all rules against bureau-specific data within a merged account.
+
+        Creates a temporary account-like object with bureau-specific fields
+        so existing rules can operate on per-bureau data.
+        """
+        from dataclasses import replace
+
+        # Create a modified copy of the account with bureau-specific fields
+        # This allows existing rules to work without modification
+        account_for_bureau = replace(
+            account,
+            bureau=bureau,
+            # Override date fields from bureau_data
+            date_opened=bureau_data.date_opened,
+            date_closed=bureau_data.date_closed,
+            date_of_first_delinquency=bureau_data.date_of_first_delinquency,
+            date_last_activity=bureau_data.date_last_activity,
+            date_last_payment=bureau_data.date_last_payment,
+            date_reported=bureau_data.date_reported,
+            # Override balance fields from bureau_data
+            balance=bureau_data.balance,
+            credit_limit=bureau_data.credit_limit,
+            high_credit=bureau_data.high_credit,
+            past_due_amount=bureau_data.past_due_amount,
+            scheduled_payment=bureau_data.scheduled_payment,
+            monthly_payment=bureau_data.monthly_payment,
+            # Override payment status
+            payment_status=bureau_data.payment_status,
+        )
+
+        # Run all the same rules against the bureau-specific data
+        return self._audit_account(account_for_bureau, bureau)
 
 
 # =============================================================================
