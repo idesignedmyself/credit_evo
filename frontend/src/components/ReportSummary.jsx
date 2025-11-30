@@ -15,6 +15,13 @@ import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import WarningIcon from '@mui/icons-material/Warning';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 
+// Bureau colors
+const BUREAU_COLORS = {
+  transunion: '#0066CC',
+  experian: '#CC0000',
+  equifax: '#006600',
+};
+
 const StatCard = ({ icon, label, value, color = 'primary' }) => (
   <Paper sx={{ p: 2, textAlign: 'center' }}>
     <Box sx={{ color: `${color}.main`, mb: 1 }}>
@@ -28,6 +35,30 @@ const StatCard = ({ icon, label, value, color = 'primary' }) => (
     </Typography>
   </Paper>
 );
+
+const ScoreCard = ({ bureau, score, rank }) => {
+  const color = BUREAU_COLORS[bureau] || '#4A4A4A';
+  const displayName = bureau.charAt(0).toUpperCase() + bureau.slice(1);
+
+  return (
+    <Paper sx={{ p: 2, textAlign: 'center', borderTop: `4px solid ${color}` }}>
+      <Typography
+        variant="h3"
+        sx={{ fontWeight: 'bold', color: color }}
+      >
+        {score || '--'}
+      </Typography>
+      <Typography variant="body1" sx={{ fontWeight: 'bold', mt: 0.5 }}>
+        {displayName}
+      </Typography>
+      {rank && (
+        <Typography variant="caption" color="text.secondary">
+          {rank}
+        </Typography>
+      )}
+    </Paper>
+  );
+};
 
 const BureauChip = ({ bureau }) => {
   const colors = {
@@ -63,6 +94,10 @@ const ReportSummary = ({ report, auditResult }) => {
   const cleanCount = auditResult?.clean_accounts?.length || 0;
   const bureau = report?.bureau || auditResult?.bureau;
 
+  // Credit scores
+  const creditScores = report?.credit_scores || {};
+  const hasScores = creditScores.transunion || creditScores.experian || creditScores.equifax;
+
   return (
     <Box>
       <Paper sx={{ p: 3, mb: 3 }}>
@@ -75,6 +110,34 @@ const ReportSummary = ({ report, auditResult }) => {
 
         <Divider sx={{ my: 2 }} />
 
+        {/* Credit Scores Row */}
+        {hasScores && (
+          <Grid container spacing={3} sx={{ mb: 3 }}>
+            <Grid item xs={12} sm={4}>
+              <ScoreCard
+                bureau="transunion"
+                score={creditScores.transunion}
+                rank={creditScores.transunion_rank}
+              />
+            </Grid>
+            <Grid item xs={12} sm={4}>
+              <ScoreCard
+                bureau="experian"
+                score={creditScores.experian}
+                rank={creditScores.experian_rank}
+              />
+            </Grid>
+            <Grid item xs={12} sm={4}>
+              <ScoreCard
+                bureau="equifax"
+                score={creditScores.equifax}
+                rank={creditScores.equifax_rank}
+              />
+            </Grid>
+          </Grid>
+        )}
+
+        {/* Stats Row */}
         <Grid container spacing={3}>
           <Grid item xs={12} sm={4}>
             <StatCard

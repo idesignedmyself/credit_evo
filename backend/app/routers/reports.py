@@ -58,6 +58,16 @@ class AuditResultResponse(BaseModel):
     clean_account_count: int
 
 
+class CreditScoreResponse(BaseModel):
+    transunion: Optional[int] = None
+    experian: Optional[int] = None
+    equifax: Optional[int] = None
+    transunion_rank: Optional[str] = None
+    experian_rank: Optional[str] = None
+    equifax_rank: Optional[str] = None
+    score_scale: str = "300-850"
+
+
 class ReportSummaryResponse(BaseModel):
     report_id: str
     source_file: str
@@ -67,16 +77,7 @@ class ReportSummaryResponse(BaseModel):
     total_accounts: int
     accounts: List[dict]
     parse_timestamp: str
-
-
-class CreditScoreResponse(BaseModel):
-    transunion: Optional[int] = None
-    experian: Optional[int] = None
-    equifax: Optional[int] = None
-    transunion_rank: Optional[str] = None
-    experian_rank: Optional[str] = None
-    equifax_rank: Optional[str] = None
-    score_scale: str = "300-850"
+    credit_scores: Optional[CreditScoreResponse] = None
 
 
 class UploadResponse(BaseModel):
@@ -299,6 +300,21 @@ async def get_report(
     # Use accounts_json for reliable retrieval, fallback to report_data for old reports
     accounts = report.accounts_json or (report.report_data.get('accounts', []) if report.report_data else [])
 
+    # Extract credit scores from report_data
+    credit_scores_response = None
+    if report.report_data:
+        credit_scores_data = report.report_data.get('credit_scores')
+        if credit_scores_data:
+            credit_scores_response = CreditScoreResponse(
+                transunion=credit_scores_data.get('transunion'),
+                experian=credit_scores_data.get('experian'),
+                equifax=credit_scores_data.get('equifax'),
+                transunion_rank=credit_scores_data.get('transunion_rank'),
+                experian_rank=credit_scores_data.get('experian_rank'),
+                equifax_rank=credit_scores_data.get('equifax_rank'),
+                score_scale=credit_scores_data.get('score_scale', '300-850')
+            )
+
     return ReportSummaryResponse(
         report_id=report.id,
         source_file=report.source_file or "",
@@ -307,7 +323,8 @@ async def get_report(
         bureau=report.bureau or "transunion",
         total_accounts=len(accounts),
         accounts=accounts,
-        parse_timestamp=str(report.created_at)
+        parse_timestamp=str(report.created_at),
+        credit_scores=credit_scores_response
     )
 
 
