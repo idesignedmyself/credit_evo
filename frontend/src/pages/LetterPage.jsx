@@ -17,8 +17,10 @@ import {
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import HomeIcon from '@mui/icons-material/Home';
+import Chip from '@mui/material/Chip';
 import { ToneSelector, LetterPreview } from '../components';
 import { useViolationStore, useUIStore } from '../state';
+import { getViolationLabel } from '../utils';
 
 const steps = ['Upload Report', 'Review Violations', 'Generate Letter'];
 
@@ -81,6 +83,19 @@ const LetterPage = () => {
     violations: selectedViolations.length,
     accounts: [...new Set(selectedViolations.map(v => v.account_id))].length,
   };
+
+  // Group selected violations by type with account details
+  const violationsByType = selectedViolations.reduce((acc, v) => {
+    const label = getViolationLabel(v.violation_type);
+    if (!acc[label]) {
+      acc[label] = [];
+    }
+    acc[label].push({
+      creditorName: v.creditor_name || 'Unknown Creditor',
+      accountNumber: v.account_number_masked || '',
+    });
+    return acc;
+  }, {});
 
   return (
     <Container maxWidth="lg">
@@ -158,15 +173,65 @@ const LetterPage = () => {
         />
 
         {currentLetter && (
-          <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
-            <Button
-              variant="outlined"
-              startIcon={<HomeIcon />}
-              onClick={handleStartOver}
-            >
-              Start Over with New Report
-            </Button>
-          </Box>
+          <>
+            {/* Violation Types Summary */}
+            {Object.keys(violationsByType).length > 0 && (
+              <Paper
+                elevation={1}
+                sx={{
+                  p: 3,
+                  mt: 4,
+                  borderRadius: 2,
+                  backgroundColor: 'grey.50',
+                }}
+              >
+                <Typography
+                  variant="subtitle1"
+                  sx={{
+                    fontWeight: 'bold',
+                    mb: 2,
+                    pb: 1,
+                    borderBottom: '2px solid',
+                    borderColor: 'primary.main',
+                  }}
+                >
+                  Violation Types Included ({selectedViolations.length})
+                </Typography>
+                {Object.entries(violationsByType)
+                  .sort((a, b) => b[1].length - a[1].length)
+                  .map(([type, accounts]) => (
+                    <Box key={type} sx={{ mb: 2 }}>
+                      <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 0.5 }}>
+                        {type}
+                      </Typography>
+                      <Box sx={{ pl: 2 }}>
+                        {accounts.map((account, idx) => (
+                          <Typography
+                            key={idx}
+                            variant="body2"
+                            color="text.secondary"
+                            sx={{ fontSize: '0.85rem' }}
+                          >
+                            {account.creditorName}
+                            {account.accountNumber && ` (${account.accountNumber})`}
+                          </Typography>
+                        ))}
+                      </Box>
+                    </Box>
+                  ))}
+              </Paper>
+            )}
+
+            <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
+              <Button
+                variant="outlined"
+                startIcon={<HomeIcon />}
+                onClick={handleStartOver}
+              >
+                Start Over with New Report
+              </Button>
+            </Box>
+          </>
         )}
       </Box>
     </Container>
