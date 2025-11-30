@@ -49,7 +49,7 @@ OPENINGS = {
 
 VIOLATION_PHRASES = {
     "missing_dofd": [
-        "This account is missing the required Date of First Delinquency (DOFD) in Metro 2 Field 11.",
+        "This account is missing the required Date of First Delinquency (DOFD) in Metro 2 Field 25.",
         "The Date of First Delinquency is not reported, making it impossible to determine the 7-year reporting period.",
         "No DOFD is shown for this derogatory account, which is a Metro 2 compliance failure.",
         "This account lacks the mandatory DOFD field required for derogatory tradelines.",

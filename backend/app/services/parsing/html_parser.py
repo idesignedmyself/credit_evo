@@ -123,6 +123,56 @@ def _parse_int(value_str: Optional[str]) -> Optional[int]:
         return None
 
 
+# Month name to number mapping for DOFD inference
+MONTH_TO_NUM = {
+    "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
+    "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12
+}
+
+
+def _infer_dofd_from_payment_history(payment_history: List[Dict[str, Any]]) -> Optional[date]:
+    """
+    Infer Date of First Delinquency from payment history.
+
+    Logic:
+    1. Payment history is a list like: [{"month": "Jan", "year": 2024, "status": "OK"}, ...]
+    2. Statuses are: "OK" (current), "30", "60", "90", "120", "CO" (charge-off), etc.
+    3. We find the OLDEST (earliest date) non-OK status
+    4. Return that as the inferred DOFD
+
+    This catches cases where the bureau doesn't explicitly report DOFD but
+    the payment history shows when delinquency started.
+    """
+    if not payment_history:
+        return None
+
+    # Delinquent statuses (anything that's not OK/current)
+    ok_statuses = {"OK", "ok", "Ok", "", "-", None}
+
+    # Find all delinquent months and sort by date (oldest first)
+    delinquent_months = []
+    for entry in payment_history:
+        status = entry.get("status", "")
+        if status not in ok_statuses:
+            month_str = entry.get("month", "")
+            year = entry.get("year")
+
+            if month_str and year:
+                month_num = MONTH_TO_NUM.get(month_str.lower()[:3])
+                if month_num:
+                    try:
+                        # Use 1st of the month for DOFD
+                        delinquent_months.append(date(int(year), month_num, 1))
+                    except (ValueError, TypeError):
+                        continue
+
+    if not delinquent_months:
+        return None
+
+    # Return the OLDEST delinquency date (earliest in time)
+    return min(delinquent_months)
+
+
 def _classify_furnisher_type(
     creditor_name: str,
     account_type_detail: Optional[str],
@@ -466,11 +516,19 @@ class IdentityIQHTMLParser:
                 }[bureau_name]
 
                 # Create BureauAccountData
+                # Get payment history first (needed for DOFD inference)
+                payment_history = bureau_data.get("payment_history", [])
+
+                # Try explicit DOFD first, then infer from payment history
+                explicit_dofd = _parse_date(bureau_data.get("dofd"))
+                inferred_dofd = _infer_dofd_from_payment_history(payment_history) if not explicit_dofd else None
+                final_dofd = explicit_dofd or inferred_dofd
+
                 bureau_account_data = BureauAccountData(
                     bureau=bureau_enum,
                     date_opened=_parse_date(bureau_data.get("date_opened")),
                     date_closed=_parse_date(bureau_data.get("date_closed")),
-                    date_of_first_delinquency=_parse_date(bureau_data.get("dofd")),
+                    date_of_first_delinquency=final_dofd,
                     date_last_activity=_parse_date(bureau_data.get("date_last_active")),
                     date_last_payment=_parse_date(bureau_data.get("date_of_last_payment")),
                     date_reported=_parse_date(bureau_data.get("last_reported")),
@@ -484,7 +542,7 @@ class IdentityIQHTMLParser:
                     remarks=bureau_data.get("comments"),
                     bureau_code=bureau_data.get("bureau_code"),
                     term_months=_parse_int(bureau_data.get("term_months")),
-                    payment_history=bureau_data.get("payment_history", []),
+                    payment_history=payment_history,
                 )
 
                 account.bureaus[bureau_enum] = bureau_account_data

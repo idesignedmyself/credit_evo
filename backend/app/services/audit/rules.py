@@ -65,13 +65,13 @@ class SingleBureauRules:
                 bureau=bureau,
                 description=(
                     f"This {account.account_status.value} account is missing the Date of First "
-                    f"Delinquency (DOFD) in Metro 2 Field 11. Without DOFD, the 7-year reporting "
+                    f"Delinquency (DOFD) in Metro 2 Field 25. Without DOFD, the 7-year reporting "
                     f"period cannot be determined."
                 ),
                 expected_value="Valid DOFD date",
                 actual_value="Missing/Not Reported",
                 fcra_section="605(c)(1)",
-                metro2_field="11",
+                metro2_field="25",
                 evidence={
                     "status": account.account_status.value,
                     "balance": account.balance
@@ -174,7 +174,7 @@ class SingleBureauRules:
         date_fields = [
             ("date_opened", "Date Opened", "10"),
             ("date_closed", "Date Closed", None),
-            ("date_of_first_delinquency", "DOFD", "11"),
+            ("date_of_first_delinquency", "DOFD", "25"),
             ("date_last_activity", "Date Last Activity", None),
             ("date_reported", "Date Reported", None),
         ]
@@ -226,7 +226,7 @@ class SingleBureauRules:
                     expected_value=f"DOFD ≥ {account.date_opened}",
                     actual_value=str(account.date_of_first_delinquency),
                     fcra_section="611(a)",
-                    metro2_field="11",
+                    metro2_field="25",
                     evidence={
                         "dofd": str(account.date_of_first_delinquency),
                         "date_opened": str(account.date_opened)
@@ -462,7 +462,7 @@ class FurnisherRules:
                     expected_value="Valid DOFD date",
                     actual_value="Not Reported",
                     fcra_section="605(c)(1)",
-                    metro2_field="11",
+                    metro2_field="25",
                     evidence={"furnisher_type": account.furnisher_type.value}
                 ))
 
@@ -560,7 +560,7 @@ class TemporalRules:
                 expected_value=f"Removal by {obsolete_date}",
                 actual_value=f"Still reporting as of {today}",
                 fcra_section="605(a)",
-                metro2_field="11",
+                metro2_field="25",
                 evidence={
                     "dofd": str(dofd),
                     "obsolete_date": str(obsolete_date),
