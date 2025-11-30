@@ -63,9 +63,20 @@ class ReportSummaryResponse(BaseModel):
     source_file: str
     report_date: str
     consumer_name: str
+    bureau: str
     total_accounts: int
     accounts: List[dict]
     parse_timestamp: str
+
+
+class CreditScoreResponse(BaseModel):
+    transunion: Optional[int] = None
+    experian: Optional[int] = None
+    equifax: Optional[int] = None
+    transunion_rank: Optional[str] = None
+    experian_rank: Optional[str] = None
+    equifax_rank: Optional[str] = None
+    score_scale: str = "300-850"
 
 
 class UploadResponse(BaseModel):
@@ -74,6 +85,7 @@ class UploadResponse(BaseModel):
     total_accounts: int
     total_violations: int
     accounts: List[dict]
+    credit_scores: Optional[CreditScoreResponse] = None
 
 
 class ReportListItem(BaseModel):
@@ -240,12 +252,27 @@ async def upload_report(
         db.add(db_audit)
         db.commit()
 
+        # Extract credit scores for response
+        credit_scores_data = serialized_report.get('credit_scores')
+        credit_scores_response = None
+        if credit_scores_data:
+            credit_scores_response = CreditScoreResponse(
+                transunion=credit_scores_data.get('transunion'),
+                experian=credit_scores_data.get('experian'),
+                equifax=credit_scores_data.get('equifax'),
+                transunion_rank=credit_scores_data.get('transunion_rank'),
+                experian_rank=credit_scores_data.get('experian_rank'),
+                equifax_rank=credit_scores_data.get('equifax_rank'),
+                score_scale=credit_scores_data.get('score_scale', '300-850')
+            )
+
         return UploadResponse(
             report_id=report.report_id,
             message="Report uploaded and processed successfully",
             total_accounts=len(report.accounts),
             total_violations=audit_result.total_violations_found,
-            accounts=serialized_report.get('accounts', [])
+            accounts=serialized_report.get('accounts', []),
+            credit_scores=credit_scores_response
         )
 
     except Exception as e:
@@ -277,6 +304,7 @@ async def get_report(
         source_file=report.source_file or "",
         report_date=str(report.report_date) if report.report_date else "",
         consumer_name=report.consumer_name,
+        bureau=report.bureau or "transunion",
         total_accounts=len(accounts),
         accounts=accounts,
         parse_timestamp=str(report.created_at)

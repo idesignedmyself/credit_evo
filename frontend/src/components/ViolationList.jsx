@@ -1,6 +1,6 @@
 /**
  * Credit Engine 2.0 - Violation List Component
- * Displays all violations with selection controls
+ * Displays all violations with selection controls and accounts tab
  */
 import React from 'react';
 import {
@@ -16,7 +16,8 @@ import {
 import CheckBoxIcon from '@mui/icons-material/CheckBox';
 import CheckBoxOutlineBlankIcon from '@mui/icons-material/CheckBoxOutlineBlank';
 import ViolationToggle from './ViolationToggle';
-import { useViolationStore } from '../state';
+import AccountAccordion from './AccountAccordion';
+import { useViolationStore, useReportStore } from '../state';
 import { groupViolationsByType, groupViolationsByAccount, groupViolationsByBureau } from '../utils';
 
 const ViolationList = () => {
@@ -30,6 +31,8 @@ const ViolationList = () => {
     selectAll,
     deselectAll,
   } = useViolationStore();
+  const { currentReport } = useReportStore();
+  const accounts = currentReport?.accounts || [];
 
   if (isLoading) {
     return (
@@ -93,33 +96,52 @@ const ViolationList = () => {
         <Tab value="type" label="Group by Type" />
         <Tab value="account" label="Group by Account" />
         <Tab value="bureau" label="Group by Bureau" />
+        <Tab value="accounts" label={`Accounts (${accounts.length})`} />
       </Tabs>
 
-      {Object.entries(grouped).map(([groupName, groupViolations]) => (
-        <Box key={groupName} sx={{ mb: 3 }}>
-          <Typography
-            variant="subtitle1"
-            sx={{
-              fontWeight: 'bold',
-              mb: 1,
-              pb: 1,
-              borderBottom: '2px solid',
-              borderColor: 'primary.main',
-            }}
-          >
-            {groupName} ({groupViolations.length})
-          </Typography>
-
-          {groupViolations.map((violation) => (
-            <ViolationToggle
-              key={violation.violation_id}
-              violation={violation}
-              isSelected={selectedViolationIds.includes(violation.violation_id)}
-              onToggle={toggleViolation}
-            />
-          ))}
+      {/* Show accounts when Accounts tab is selected */}
+      {groupBy === 'accounts' ? (
+        <Box>
+          {accounts.length === 0 ? (
+            <Paper sx={{ p: 3, textAlign: 'center' }}>
+              <Typography variant="body1" color="text.secondary">
+                No accounts found in this report.
+              </Typography>
+            </Paper>
+          ) : (
+            accounts.map((account, index) => (
+              <AccountAccordion key={account.account_id || index} account={account} />
+            ))
+          )}
         </Box>
-      ))}
+      ) : (
+        /* Show violations grouped by type/account/bureau */
+        Object.entries(grouped).map(([groupName, groupViolations]) => (
+          <Box key={groupName} sx={{ mb: 3 }}>
+            <Typography
+              variant="subtitle1"
+              sx={{
+                fontWeight: 'bold',
+                mb: 1,
+                pb: 1,
+                borderBottom: '2px solid',
+                borderColor: 'primary.main',
+              }}
+            >
+              {groupName} ({groupViolations.length})
+            </Typography>
+
+            {groupViolations.map((violation) => (
+              <ViolationToggle
+                key={violation.violation_id}
+                violation={violation}
+                isSelected={selectedViolationIds.includes(violation.violation_id)}
+                onToggle={toggleViolation}
+              />
+            ))}
+          </Box>
+        ))
+      )}
     </Box>
   );
 };

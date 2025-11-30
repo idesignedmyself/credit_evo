@@ -18,7 +18,7 @@ from bs4 import BeautifulSoup, Tag
 
 from ...models.ssot import (
     NormalizedReport, Account, BureauAccountData, Consumer, Inquiry, PublicRecord,
-    Bureau, FurnisherType, AccountStatus
+    Bureau, FurnisherType, AccountStatus, CreditScore
 )
 
 logger = logging.getLogger(__name__)
@@ -380,6 +380,7 @@ class IdentityIQHTMLParser:
         inquiries = self._extract_inquiries(soup)
         public_records = self._extract_public_records(soup)
         report_date = self._extract_report_date(soup)
+        credit_scores = self._extract_credit_scores(soup)
 
         report = NormalizedReport(
             consumer=consumer,
@@ -388,6 +389,7 @@ class IdentityIQHTMLParser:
             accounts=accounts,
             inquiries=inquiries,
             public_records=public_records,
+            credit_scores=credit_scores,
             source_file=str(html_path)
         )
 
@@ -542,6 +544,8 @@ class IdentityIQHTMLParser:
                     remarks=bureau_data.get("comments"),
                     bureau_code=bureau_data.get("bureau_code"),
                     term_months=_parse_int(bureau_data.get("term_months")),
+                    account_type=bureau_data.get("account_type"),
+                    account_type_detail=bureau_data.get("account_type_detail"),
                     payment_history=payment_history,
                 )
 
@@ -579,6 +583,10 @@ class IdentityIQHTMLParser:
         account.current_balance = primary_data.balance
         account.monthly_payment = primary_data.monthly_payment
         account.payment_status = primary_data.payment_status
+
+        # Set account_type from primary bureau (if not already set)
+        if not account.account_type and primary_data.account_type:
+            account.account_type = primary_data.account_type
 
         # Classify furnisher type
         account.furnisher_type = _classify_furnisher_type(
@@ -755,6 +763,114 @@ class IdentityIQHTMLParser:
                 if info_cell:
                     date_text = info_cell.get_text(strip=True)
                     return _parse_date(date_text)
+        return None
+
+    def _extract_credit_scores(self, soup: BeautifulSoup) -> Optional[CreditScore]:
+        """
+        Extract credit scores from the Credit Score section.
+
+        HTML structure:
+        <div id="CreditScore">
+            <table class="rpt_table4column">
+                <tr>
+                    <th></th>
+                    <th class="headerTUC">TransUnion</th>
+                    <th class="headerEXP">Experian</th>
+                    <th class="headerEQF">Equifax</th>
+                </tr>
+                <tr>
+                    <td class="label">Credit Score:</td>
+                    <td class="info">562</td>
+                    <td class="info">582</td>
+                    <td class="info">671</td>
+                </tr>
+                <tr>
+                    <td class="label">Lender Rank:</td>
+                    <td class="info">Unfavorable</td>
+                    <td class="info">Unfavorable</td>
+                    <td class="info">Good</td>
+                </tr>
+                ...
+            </table>
+        </div>
+        """
+        credit_score = CreditScore()
+        found_scores = False
+
+        # Try to find the CreditScore section by ID first
+        score_section = soup.find('div', id='CreditScore')
+        if score_section:
+            table = score_section.find('table', class_='rpt_table4column')
+        else:
+            # Fallback: Look for any table with credit score data
+            table = None
+            for t in soup.find_all('table', class_='rpt_table4column'):
+                for tr in t.find_all('tr'):
+                    label_cell = tr.find('td', class_='label')
+                    if label_cell and 'Credit Score:' in label_cell.get_text():
+                        table = t
+                        break
+                if table:
+                    break
+
+        if not table:
+            logger.debug("Credit score table not found")
+            return None
+
+        # Parse the table rows
+        for tr in table.find_all('tr'):
+            label_cell = tr.find('td', class_='label')
+            if not label_cell:
+                continue
+
+            label = label_cell.get_text(strip=True)
+            info_cells = tr.find_all('td', class_='info')
+
+            if len(info_cells) < 3:
+                continue
+
+            values = [cell.get_text(strip=True) for cell in info_cells[:3]]
+
+            if 'Credit Score:' in label:
+                # Parse scores as integers
+                try:
+                    if values[0] and values[0] not in ('-', '—', '–', 'N/A'):
+                        credit_score.transunion = int(values[0])
+                        found_scores = True
+                except ValueError:
+                    pass
+                try:
+                    if values[1] and values[1] not in ('-', '—', '–', 'N/A'):
+                        credit_score.experian = int(values[1])
+                        found_scores = True
+                except ValueError:
+                    pass
+                try:
+                    if values[2] and values[2] not in ('-', '—', '–', 'N/A'):
+                        credit_score.equifax = int(values[2])
+                        found_scores = True
+                except ValueError:
+                    pass
+
+            elif 'Lender Rank:' in label:
+                if values[0] and values[0] not in ('-', '—', '–', 'N/A'):
+                    credit_score.transunion_rank = values[0]
+                if values[1] and values[1] not in ('-', '—', '–', 'N/A'):
+                    credit_score.experian_rank = values[1]
+                if values[2] and values[2] not in ('-', '—', '–', 'N/A'):
+                    credit_score.equifax_rank = values[2]
+
+            elif 'Score Scale:' in label:
+                # Usually "300-850" for all bureaus, just take first non-empty
+                for v in values:
+                    if v and v not in ('-', '—', '–', 'N/A'):
+                        credit_score.score_scale = v
+                        break
+
+        if found_scores:
+            logger.info(f"Extracted credit scores - TU: {credit_score.transunion}, EX: {credit_score.experian}, EQ: {credit_score.equifax}")
+            return credit_score
+
         return None
 
 

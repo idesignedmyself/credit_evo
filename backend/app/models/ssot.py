@@ -139,6 +139,8 @@ class BureauAccountData:
     # Additional fields from report
     bureau_code: Optional[str] = None  # e.g., "Individual", "Joint", etc.
     term_months: Optional[int] = None  # No. of Months (terms)
+    account_type: Optional[str] = None  # e.g., "Installment", "Revolving"
+    account_type_detail: Optional[str] = None  # e.g., "Auto Loan", "Credit Card"
 
     # Two-Year Payment History (24 months)
     # List of dicts: [{"month": "Jan", "year": 2024, "status": "OK"}, ...]
@@ -235,6 +237,22 @@ class PublicRecord:
 
 
 @dataclass
+class CreditScore:
+    """Credit score data per bureau."""
+    transunion: Optional[int] = None
+    experian: Optional[int] = None
+    equifax: Optional[int] = None
+
+    # Lender rank (e.g., "Unfavorable", "Good", "Excellent")
+    transunion_rank: Optional[str] = None
+    experian_rank: Optional[str] = None
+    equifax_rank: Optional[str] = None
+
+    # Score scale (typically 300-850)
+    score_scale: str = "300-850"
+
+
+@dataclass
 class NormalizedReport:
     """
     SSOT #1: The single source of truth for all parsed data.
@@ -250,6 +268,9 @@ class NormalizedReport:
     accounts: List[Account] = field(default_factory=list)
     inquiries: List[Inquiry] = field(default_factory=list)
     public_records: List[PublicRecord] = field(default_factory=list)
+
+    # Credit scores per bureau
+    credit_scores: Optional[CreditScore] = None
 
     # Metadata
     parse_timestamp: datetime = field(default_factory=datetime.now)

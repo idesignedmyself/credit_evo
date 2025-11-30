@@ -34,13 +34,18 @@ const BureauChip = ({ bureau }) => {
     transunion: '#0066CC',
     experian: '#CC0000',
     equifax: '#006600',
+    identityiq: '#4A4A4A',
   };
+
+  // Default to IdentityIQ for 3-bureau reports
+  const displayBureau = bureau?.toLowerCase() || 'identityiq';
+  const label = displayBureau === 'identityiq' ? 'IdentityIQ' : displayBureau.toUpperCase();
 
   return (
     <Chip
-      label={bureau?.toUpperCase() || 'Unknown'}
+      label={label}
       sx={{
-        backgroundColor: colors[bureau?.toLowerCase()] || '#666',
+        backgroundColor: colors[displayBureau] || '#4A4A4A',
         color: 'white',
         fontWeight: 'bold',
       }}
@@ -97,15 +102,6 @@ const ReportSummary = ({ report, auditResult }) => {
           </Grid>
         </Grid>
       </Paper>
-
-      {violationsCount > 0 && (
-        <Paper sx={{ p: 2, backgroundColor: 'warning.light' }}>
-          <Typography variant="body1">
-            We found <strong>{violationsCount} potential issues</strong> in your report.
-            Select the ones you want to dispute below.
-          </Typography>
-        </Paper>
-      )}
 
       {violationsCount === 0 && (
         <Paper sx={{ p: 2, backgroundColor: 'success.light' }}>

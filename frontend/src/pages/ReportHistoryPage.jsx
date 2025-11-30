@@ -26,7 +26,7 @@ import VisibilityIcon from '@mui/icons-material/Visibility';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import { reportApi } from '../api';
-import { SavedLetters } from '../components';
+import { SavedLetters, FileUploader } from '../components';
 import { useViolationStore } from '../state';
 
 const ReportHistoryPage = () => {
@@ -221,6 +221,45 @@ const ReportHistoryPage = () => {
             Saved Letters
           </Typography>
           <SavedLetters />
+        </Box>
+
+        {/* Upload Section */}
+        <Box sx={{ mt: 4 }}>
+          <FileUploader onUploadSuccess={(result) => {
+            fetchReports();
+            navigate(`/audit/${result.report_id}`);
+          }} />
+
+          <Paper sx={{ p: 3, mt: 4, backgroundColor: 'grey.50' }}>
+            <Typography variant="h6" gutterBottom>
+              How It Works
+            </Typography>
+            <Box component="ol" sx={{ pl: 2 }}>
+              <li>
+                <Typography variant="body2" sx={{ mb: 1 }}>
+                  <strong>Upload your credit report</strong> - We accept HTML reports from IdentityIQ or similar services
+                </Typography>
+              </li>
+              <li>
+                <Typography variant="body2" sx={{ mb: 1 }}>
+                  <strong>Review detected violations</strong> - Our engine identifies Metro 2 and FCRA compliance issues
+                </Typography>
+              </li>
+              <li>
+                <Typography variant="body2" sx={{ mb: 1 }}>
+                  <strong>Generate dispute letter</strong> - Create a professional dispute letter citing specific violations
+                </Typography>
+              </li>
+            </Box>
+          </Paper>
+
+          <Box sx={{ mt: 4, textAlign: 'center' }}>
+            <Typography variant="caption" color="text.secondary">
+              Your data is processed locally and never stored permanently.
+              <br />
+              Credit Engine 2.0 uses FCRA-compliant violation detection.
+            </Typography>
+          </Box>
         </Box>
       </Box>
     </Container>
