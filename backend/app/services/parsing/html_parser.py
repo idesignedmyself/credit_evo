@@ -28,6 +28,11 @@ logger = logging.getLogger(__name__)
 # CONSTANTS
 # =============================================================================
 
+# Regex to validate masked account numbers (e.g., 11107793****, 8986049149KM0****)
+# Must contain asterisks (masked) and be alphanumeric, rejecting dates like 04/17/2015
+MASKED_ACCOUNT_RE = re.compile(r"^[A-Za-z0-9*]{4,}$")  # Alphanumeric + asterisks only (no slashes, dashes)
+STRICT_MASKED_RE = re.compile(r"[0-9]{4,}[*]{2,6}$")  # Strict: digits followed by asterisks
+
 COLLECTION_KEYWORDS = [
     "collection", "coll svcs", "credit collection", "recovery", "assigned",
     "purchased", "sold", "portfolio", "midland", "lvnv", "cavalry", "encore",
@@ -101,6 +106,19 @@ def _parse_money(amount_str: Optional[str]) -> Optional[float]:
     try:
         value = float(cleaned)
         return -value if is_negative else value
+    except ValueError:
+        return None
+
+
+def _parse_int(value_str: Optional[str]) -> Optional[int]:
+    """Parse integer string to int."""
+    if not value_str:
+        return None
+    cleaned = _clean_text(value_str)
+    if not cleaned:
+        return None
+    try:
+        return int(cleaned)
     except ValueError:
         return None
 
@@ -185,6 +203,95 @@ def _normalize_account_number(text: Optional[str]) -> str:
     if not text:
         return "unknown"
     return text.strip().lower().replace("x", "*")
+
+
+def _extract_payment_history_from_table(table: Tag) -> Dict[str, List[Dict[str, Any]]]:
+    """
+    Extract Two-Year Payment History from the payment history table.
+
+    Returns dict keyed by bureau name with list of payment entries:
+    {
+        "transunion": [{"month": "May", "year": 2018, "status": "OK"}, ...],
+        "experian": [...],
+        "equifax": [...]
+    }
+    """
+    result = {
+        "transunion": [],
+        "experian": [],
+        "equifax": []
+    }
+
+    rows = table.find_all('tr')
+    if len(rows) < 5:
+        return result
+
+    # Row 0: Month labels (from span.lg-view or direct text)
+    # Row 1: Year (2-digit)
+    # Row 2: TransUnion statuses
+    # Row 3: Experian statuses
+    # Row 4: Equifax statuses
+
+    months = []
+    years = []
+
+    # Extract months from row 0
+    month_cells = rows[0].find_all('td', class_='info')
+    for cell in month_cells:
+        # Try to get month from span.lg-view first
+        span = cell.find('span', class_='lg-view')
+        if span:
+            months.append(span.get_text(strip=True))
+        else:
+            months.append(cell.get_text(strip=True))
+
+    # Extract years from row 1
+    year_cells = rows[1].find_all('td', class_='info')
+    for cell in year_cells:
+        year_text = cell.get_text(strip=True)
+        if year_text:
+            try:
+                # Convert 2-digit year to 4-digit
+                year_int = int(year_text)
+                if year_int < 100:
+                    year_int = 2000 + year_int if year_int < 50 else 1900 + year_int
+                years.append(year_int)
+            except ValueError:
+                years.append(None)
+        else:
+            years.append(None)
+
+    # Map row index to bureau
+    bureau_rows = {
+        2: "transunion",
+        3: "experian",
+        4: "equifax"
+    }
+
+    # Extract status for each bureau
+    for row_idx, bureau_name in bureau_rows.items():
+        if row_idx >= len(rows):
+            continue
+
+        status_cells = rows[row_idx].find_all('td', class_='info')
+
+        for i, cell in enumerate(status_cells):
+            if i >= len(months) or i >= len(years):
+                continue
+
+            status = cell.get_text(strip=True)
+            month = months[i] if i < len(months) else ""
+            year = years[i] if i < len(years) else None
+
+            # Only add if we have valid data
+            if month and year:
+                result[bureau_name].append({
+                    "month": month,
+                    "year": year,
+                    "status": status if status else ""
+                })
+
+    return result
 
 
 def _create_canonical_key(creditor_name: str, account_number: str) -> str:
@@ -370,6 +477,9 @@ class IdentityIQHTMLParser:
                     payment_status=bureau_data.get("payment_status"),
                     account_status_raw=bureau_data.get("status"),
                     remarks=bureau_data.get("comments"),
+                    bureau_code=bureau_data.get("bureau_code"),
+                    term_months=_parse_int(bureau_data.get("term_months")),
+                    payment_history=bureau_data.get("payment_history", []),
                 )
 
                 account.bureaus[bureau_enum] = bureau_account_data
@@ -436,6 +546,14 @@ class IdentityIQHTMLParser:
             if elem == next_header:
                 break
 
+            # Check for payment history table (Two-Year Payment History)
+            if elem.name == 'table' and 'addr_hsrty' in (elem.get('class') or []):
+                payment_history = _extract_payment_history_from_table(elem)
+                # Add payment history to each bureau's data
+                for bureau_name in ["transunion", "experian", "equifax"]:
+                    if payment_history.get(bureau_name):
+                        data[bureau_name]["payment_history"] = payment_history[bureau_name]
+
             if elem.name == 'tr':
                 label_cell = elem.find('td', class_='label')
                 if not label_cell:
@@ -445,20 +563,28 @@ class IdentityIQHTMLParser:
                 info_cells = elem.find_all('td', class_='info')
 
                 field_map = {
+                    # Core account identifiers
                     "Account #:": "account_number",
                     "Account Type:": "account_type",
                     "Account Type - Detail:": "account_type_detail",
+                    "Bureau Code:": "bureau_code",  # e.g., "Individual", "Joint"
                     "Account Status:": "status",
-                    "Balance:": "balance",
-                    "Credit Limit:": "credit_limit",
-                    "High Credit:": "high_credit",
-                    "Past Due:": "past_due",
+                    # Financial data
                     "Monthly Payment:": "monthly_payment",
-                    "Date Opened:": "date_opened",
-                    "Date last active:": "date_last_active",
-                    "Date of last payment:": "date_of_last_payment",
-                    "Last Reported:": "last_reported",
+                    "Balance:": "balance",
+                    "No. of Months (terms):": "term_months",  # Loan term in months
+                    "High Credit:": "high_credit",
+                    "Credit Limit:": "credit_limit",
+                    "Past Due:": "past_due",
                     "Payment Status:": "payment_status",
+                    # Dates
+                    "Date Opened:": "date_opened",
+                    "Last Reported:": "last_reported",
+                    "Date Last Active:": "date_last_active",
+                    "Date last active:": "date_last_active",
+                    "Date of Last Payment:": "date_of_last_payment",
+                    "Date of last payment:": "date_of_last_payment",
+                    # Optional fields (may not be in all reports)
                     "Comments:": "comments",
                     "Date of First Delinquency:": "dofd",
                     "Date of 1st Delinquency:": "dofd",
@@ -476,29 +602,29 @@ class IdentityIQHTMLParser:
                 if not field_name:
                     continue
 
-                for cell in info_cells:
-                    ng_repeat = cell.find('ng-repeat')
-                    if ng_repeat:
-                        ng_attr = ng_repeat.get('ng-repeat', '')
-                        value = ng_repeat.get_text(strip=True)
+                # Process each bureau column (TU, EX, EQ)
+                for idx, cell in enumerate(info_cells[:3]):  # Only first 3 columns
+                    value = cell.get_text(strip=True)
 
-                        if value and value != '-':
-                            if "'TUC'" in ng_attr or '"TUC"' in ng_attr:
-                                data["transunion"][field_name] = value
-                            elif "'EXP'" in ng_attr or '"EXP"' in ng_attr:
-                                data["experian"][field_name] = value
-                            elif "'EQF'" in ng_attr or '"EQF"' in ng_attr:
-                                data["equifax"][field_name] = value
-                    else:
-                        value = cell.get_text(strip=True)
-                        if value and value != '-':
-                            idx = info_cells.index(cell)
-                            if idx == 0:
-                                data["transunion"][field_name] = value
-                            elif idx == 1:
-                                data["experian"][field_name] = value
-                            elif idx == 2:
-                                data["equifax"][field_name] = value
+                    # Skip empty or placeholder values
+                    if not value or value in ('-', '—', '–'):
+                        continue
+
+                    # CRITICAL: For account_number, only accept masked patterns
+                    # This prevents dates like "04/17/2015" from being stored as account numbers
+                    if field_name == "account_number":
+                        if not MASKED_ACCOUNT_RE.match(value):
+                            # Not a valid account number pattern - skip this value
+                            logger.debug(f"Rejected invalid account number: '{value}' (doesn't match masked pattern)")
+                            continue
+
+                    # Assign to correct bureau based on column index
+                    if idx == 0:
+                        data["transunion"][field_name] = value
+                    elif idx == 1:
+                        data["experian"][field_name] = value
+                    elif idx == 2:
+                        data["equifax"][field_name] = value
 
         return data
 

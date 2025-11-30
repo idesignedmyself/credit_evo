@@ -136,6 +136,14 @@ class BureauAccountData:
     account_status_raw: Optional[str] = None
     remarks: Optional[str] = None
 
+    # Additional fields from report
+    bureau_code: Optional[str] = None  # e.g., "Individual", "Joint", etc.
+    term_months: Optional[int] = None  # No. of Months (terms)
+
+    # Two-Year Payment History (24 months)
+    # List of dicts: [{"month": "Jan", "year": 2024, "status": "OK"}, ...]
+    payment_history: List[Dict[str, Any]] = field(default_factory=list)
+
     # Raw HTML for debugging
     raw_html: Optional[str] = None
 
