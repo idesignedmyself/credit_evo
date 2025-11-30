@@ -9,6 +9,7 @@ import {
   Typography,
   Collapse,
   IconButton,
+  Chip,
   Table,
   TableBody,
   TableCell,
@@ -129,37 +130,60 @@ const AccountAccordion = React.memo(({ account }) => {
     return '#9E9E9E';
   };
 
+  // Get account type from any bureau
+  const getAccountType = () => {
+    for (const bureau of BUREAUS) {
+      const type = account.bureaus?.[bureau]?.account_type;
+      if (type) return type;
+    }
+    return null;
+  };
+
+  const accountType = getAccountType();
+
   return (
     <Paper
       sx={{
+        p: 2,
         mb: 1,
         border: '1px solid',
-        borderColor: 'grey.300',
-        overflow: 'hidden',
+        borderColor: 'grey.200',
+        backgroundColor: 'background.paper',
+        transition: 'all 0.2s ease',
       }}
     >
-      {/* Header */}
-      <Box
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          p: 1.5,
-          backgroundColor: 'grey.100',
-          cursor: 'pointer',
-        }}
-        onClick={() => setExpanded(!expanded)}
-      >
-        <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
-          {account.creditor_name || 'Unknown Creditor'}
-        </Typography>
-        <IconButton size="small">
+      <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+        <Box sx={{ flex: 1 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
+              {account.creditor_name || 'Unknown Creditor'}
+            </Typography>
+            {accountType && (
+              <Chip
+                label={accountType}
+                size="small"
+                color="primary"
+                variant="outlined"
+              />
+            )}
+          </Box>
+
+          <Typography variant="body2" color="text.secondary">
+            {account.account_number_masked || 'Account'}
+          </Typography>
+        </Box>
+
+        <IconButton
+          size="small"
+          onClick={() => setExpanded(!expanded)}
+          sx={{ ml: 1 }}
+        >
           {expanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
         </IconButton>
       </Box>
 
       <Collapse in={expanded}>
-        <Box sx={{ p: 0 }}>
+        <Box sx={{ mt: 2, pl: 1, borderLeft: '3px solid', borderColor: 'grey.300' }}>
           {/* Bureau Headers */}
           <TableContainer>
             <Table size="small" sx={{ tableLayout: 'fixed' }}>

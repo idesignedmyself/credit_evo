@@ -11,7 +11,9 @@ import {
   Tabs,
   Tab,
   CircularProgress,
-  Alert
+  Alert,
+  Checkbox,
+  FormControlLabel
 } from '@mui/material';
 
 import {
@@ -35,6 +37,8 @@ const ViolationList = () => {
     violations,
     selectedViolationIds,
     toggleViolation,
+    selectAll,
+    deselectAll,
     isLoading,
     error
   } = useViolationStore();
@@ -72,6 +76,16 @@ const ViolationList = () => {
   }
 
   const totalViolations = violations.length;
+  const allSelected = violations.length > 0 && selectedViolationIds.length === violations.length;
+  const someSelected = selectedViolationIds.length > 0 && selectedViolationIds.length < violations.length;
+
+  const handleSelectAllToggle = () => {
+    if (allSelected) {
+      deselectAll();
+    } else {
+      selectAll();
+    }
+  };
 
   return (
     <Box>
@@ -89,17 +103,33 @@ const ViolationList = () => {
         {totalViolations} Violations Found
       </Typography>
 
-      {/* TABS */}
-      <Tabs
-        value={groupBy}
-        onChange={(e, v) => setGroupBy(v)}
-        sx={{ mb: 2 }}
-      >
-        <Tab value="type" label="Group by Type" />
-        <Tab value="account" label="Group by Account" />
-        <Tab value="bureau" label="Group by Bureau" />
-        <Tab value="accounts" label={`Accounts (${accounts.length})`} />
-      </Tabs>
+      {/* TABS with Select All on the right */}
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+        <Tabs
+          value={groupBy}
+          onChange={(e, v) => setGroupBy(v)}
+        >
+          <Tab value="type" label="Group by Type" />
+          <Tab value="account" label="Group by Account" />
+          <Tab value="bureau" label="Group by Bureau" />
+          <Tab value="accounts" label={`Accounts (${accounts.length})`} />
+        </Tabs>
+
+        {/* SELECT ALL TOGGLE */}
+        {violations.length > 0 && (
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={allSelected}
+                indeterminate={someSelected}
+                onChange={handleSelectAllToggle}
+                color="primary"
+              />
+            }
+            label={`${selectedViolationIds.length}/${violations.length} Selected`}
+          />
+        )}
+      </Box>
 
       {/* ------- SPA INSTANT TABS (no unmounting) ------- */}
 
@@ -199,12 +229,27 @@ const ViolationList = () => {
             </Typography>
           </Paper>
         ) : (
-          accounts.map((account, index) => (
-            <AccountAccordion
-              key={account.account_id || index}
-              account={account}
-            />
-          ))
+          <Box sx={{ mb: 3 }}>
+            <Typography
+              variant="subtitle1"
+              sx={{
+                fontWeight: 'bold',
+                mb: 1,
+                pb: 1,
+                borderBottom: '2px solid',
+                borderColor: 'primary.main',
+              }}
+            >
+              All Accounts ({accounts.length})
+            </Typography>
+
+            {accounts.map((account, index) => (
+              <AccountAccordion
+                key={account.account_id || index}
+                account={account}
+              />
+            ))}
+          </Box>
         )}
       </Box>
     </Box>
