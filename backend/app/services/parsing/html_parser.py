@@ -409,6 +409,7 @@ class IdentityIQHTMLParser:
         accounts = []
 
         # IdentityIQ-specific selector for actual creditor headers
+        # CRITICAL: This exact selector MUST match what we use for boundary detection
         sub_headers = soup.select("div.sub_header.ng-binding.ng-scope")
 
         for idx, header in enumerate(sub_headers):
@@ -425,8 +426,12 @@ class IdentityIQHTMLParser:
             # Extract original creditor if present
             clean_name, original_creditor = _extract_original_creditor(creditor_name)
 
+            # FIXED: Pass the exact next header from our list to prevent data bleeding
+            # The old code used find_next('div', class_='sub_header') which was too broad
+            next_header = sub_headers[idx + 1] if idx + 1 < len(sub_headers) else None
+
             # Find account data table after this header
-            account_data = self._extract_account_data_for_header(header)
+            account_data = self._extract_account_data_for_header(header, next_header)
 
             if not account_data:
                 continue
@@ -532,15 +537,19 @@ class IdentityIQHTMLParser:
             primary_data.remarks
         )
 
-    def _extract_account_data_for_header(self, header: Tag) -> Dict[str, Dict[str, Any]]:
-        """Extract account data for all bureaus from a sub_header block."""
+    def _extract_account_data_for_header(self, header: Tag, next_header: Optional[Tag] = None) -> Dict[str, Dict[str, Any]]:
+        """
+        Extract account data for all bureaus from a sub_header block.
+
+        FIXED: Now accepts next_header parameter to ensure proper boundary detection.
+        This prevents data bleeding between accounts when there are intermediate
+        div.sub_header elements without the ng-binding ng-scope classes.
+        """
         data = {
             "transunion": {},
             "experian": {},
             "equifax": {}
         }
-
-        next_header = header.find_next('div', class_='sub_header')
 
         for elem in header.find_all_next():
             if elem == next_header:
@@ -555,6 +564,18 @@ class IdentityIQHTMLParser:
                         data[bureau_name]["payment_history"] = payment_history[bureau_name]
 
             if elem.name == 'tr':
+                # CRITICAL FIX: Only process rows from the main account data table
+                # Skip rows from print tables (crPrint) which contain data from other accounts
+                parent_table = elem.find_parent('table')
+                if parent_table:
+                    table_classes = parent_table.get('class', [])
+                    # Only process rows from rpt_content_table (the main data table)
+                    # Skip crPrint tables which are print preview and show other account data
+                    if 'crPrint' in table_classes:
+                        continue
+                    if 'rpt_content_table' not in table_classes and 'rpt_table4column' not in table_classes:
+                        continue
+
                 label_cell = elem.find('td', class_='label')
                 if not label_cell:
                     continue
