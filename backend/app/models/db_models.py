@@ -50,7 +50,7 @@ class ReportDB(Base):
     # Relationships
     user = relationship("UserDB", back_populates="reports")
     audit_results = relationship("AuditResultDB", back_populates="report", cascade="all, delete-orphan")
-    letters = relationship("LetterDB", back_populates="report", cascade="all, delete-orphan")
+    letters = relationship("LetterDB", back_populates="report")  # No cascade - letters persist when reports deleted
 
 
 class AuditResultDB(Base):
@@ -79,7 +79,8 @@ class LetterDB(Base):
     __tablename__ = "letters"
 
     id = Column(String(36), primary_key=True)  # UUID
-    report_id = Column(String(36), ForeignKey("reports.id", ondelete="CASCADE"), nullable=False)
+    report_id = Column(String(36), ForeignKey("reports.id", ondelete="SET NULL"), nullable=True)  # Letters persist when reports deleted
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)  # Direct ownership for orphaned letters
 
     content = Column(Text, nullable=False)
     edited_content = Column(Text, nullable=True)  # User-edited version

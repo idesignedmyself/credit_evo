@@ -183,6 +183,7 @@ async def generate_letter(
         letter_db = LetterDB(
             id=str(uuid.uuid4()),
             report_id=report_id,
+            user_id=current_user.id,  # Store user_id for orphaned letter access
             content=letter.content,
             bureau=letter.bureau.value,
             tone=request.tone,
@@ -322,20 +323,15 @@ async def save_letter(
 ):
     """
     Save edited letter content.
-    Only works for letters belonging to reports owned by current user.
+    Only works for letters owned by current user.
     """
-    # Get letter from database
-    letter = db.query(LetterDB).filter(LetterDB.id == letter_id).first()
+    # Get letter from database with ownership check
+    letter = db.query(LetterDB).filter(
+        LetterDB.id == letter_id,
+        LetterDB.user_id == current_user.id
+    ).first()
     if not letter:
         raise HTTPException(status_code=404, detail="Letter not found")
-
-    # Verify ownership via report
-    report = db.query(ReportDB).filter(
-        ReportDB.id == letter.report_id,
-        ReportDB.user_id == current_user.id
-    ).first()
-    if not report:
-        raise HTTPException(status_code=403, detail="Not authorized to edit this letter")
 
     # Update edited content
     letter.edited_content = request.edited_content
@@ -356,13 +352,12 @@ async def list_all_letters(
 ):
     """
     Get all letters for the current user.
-    Letters are retrieved through their associated reports.
+    Letters are retrieved directly by user_id (includes orphaned letters).
     """
-    # Join through reports to get user's letters
+    # Query directly by user_id to include orphaned letters (report_id = NULL)
     letters = (
         db.query(LetterDB)
-        .join(ReportDB, LetterDB.report_id == ReportDB.id)
-        .filter(ReportDB.user_id == current_user.id)
+        .filter(LetterDB.user_id == current_user.id)
         .order_by(LetterDB.created_at.desc())
         .all()
     )
@@ -370,7 +365,7 @@ async def list_all_letters(
     return [
         {
             "id": letter.id,
-            "report_id": letter.report_id,
+            "report_id": letter.report_id,  # May be NULL if report was deleted
             "created_at": letter.created_at.isoformat() if letter.created_at else None,
             "bureau": letter.bureau,
             "tone": letter.tone,
@@ -393,18 +388,13 @@ async def get_letter(
     Get a letter by ID.
     Returns edited_content if it exists, otherwise original content.
     """
-    # Get letter from database
-    letter = db.query(LetterDB).filter(LetterDB.id == letter_id).first()
+    # Get letter from database with ownership check
+    letter = db.query(LetterDB).filter(
+        LetterDB.id == letter_id,
+        LetterDB.user_id == current_user.id
+    ).first()
     if not letter:
         raise HTTPException(status_code=404, detail="Letter not found")
-
-    # Verify ownership via report
-    report = db.query(ReportDB).filter(
-        ReportDB.id == letter.report_id,
-        ReportDB.user_id == current_user.id
-    ).first()
-    if not report:
-        raise HTTPException(status_code=403, detail="Not authorized to view this letter")
 
     return {
         "letter_id": letter.id,
@@ -418,6 +408,7 @@ async def get_letter(
         "violations_cited": letter.violations_cited,
         "created_at": letter.created_at.isoformat() if letter.created_at else None,
         "updated_at": letter.updated_at.isoformat() if letter.updated_at else None,
+        "report_id": letter.report_id,  # May be NULL if report was deleted
     }
 
 
@@ -429,20 +420,15 @@ async def delete_letter(
 ):
     """
     Delete a letter by ID.
-    Only works for letters belonging to reports owned by current user.
+    Only works for letters owned by current user.
     """
-    # Get letter from database
-    letter = db.query(LetterDB).filter(LetterDB.id == letter_id).first()
+    # Get letter from database with ownership check
+    letter = db.query(LetterDB).filter(
+        LetterDB.id == letter_id,
+        LetterDB.user_id == current_user.id
+    ).first()
     if not letter:
         raise HTTPException(status_code=404, detail="Letter not found")
-
-    # Verify ownership via report
-    report = db.query(ReportDB).filter(
-        ReportDB.id == letter.report_id,
-        ReportDB.user_id == current_user.id
-    ).first()
-    if not report:
-        raise HTTPException(status_code=403, detail="Not authorized to delete this letter")
 
     # Delete the letter
     db.delete(letter)
