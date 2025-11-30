@@ -16,7 +16,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import { formatViolation, getSeverityConfig } from '../utils';
 
-const ViolationToggle = ({ violation, isSelected, onToggle }) => {
+const ViolationToggle = React.memo(({ violation, isSelected, onToggle }) => {
   const [expanded, setExpanded] = React.useState(false);
   const formatted = formatViolation(violation);
   const severityConfig = getSeverityConfig(violation.severity);
@@ -105,6 +105,6 @@ const ViolationToggle = ({ violation, isSelected, onToggle }) => {
       </Box>
     </Paper>
   );
-};
+});
 
 export default ViolationToggle;

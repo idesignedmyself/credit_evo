@@ -48,7 +48,7 @@ const getBureauValue = (account, bureau, field) => {
   return bureauData[field];
 };
 
-const AccountAccordion = ({ account }) => {
+const AccountAccordion = React.memo(({ account }) => {
   const [expanded, setExpanded] = React.useState(false);
 
   const rows = [
@@ -258,6 +258,6 @@ const AccountAccordion = ({ account }) => {
       </Collapse>
     </Paper>
   );
-};
+});
 
 export default AccountAccordion;

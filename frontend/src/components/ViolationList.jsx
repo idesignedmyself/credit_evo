@@ -1,38 +1,59 @@
 /**
- * Credit Engine 2.0 - Violation List Component
- * Displays all violations with selection controls and accounts tab
+ * Credit Engine 2.0 - Violation List Component (Clean SPA Version)
+ * Instant tab switching (no animations, no URL delays)
  */
-import React from 'react';
+
+import React, { useState, useMemo } from 'react';
 import {
   Box,
   Typography,
-  Button,
   Paper,
   Tabs,
   Tab,
   CircularProgress,
-  Alert,
+  Alert
 } from '@mui/material';
-import CheckBoxIcon from '@mui/icons-material/CheckBox';
-import CheckBoxOutlineBlankIcon from '@mui/icons-material/CheckBoxOutlineBlank';
+
+import {
+  useViolationStore,
+  useReportStore
+} from '../state';
+
+import {
+  groupViolationsByType,
+  groupViolationsByAccount,
+  groupViolationsByBureau
+} from '../utils';
+
 import ViolationToggle from './ViolationToggle';
 import AccountAccordion from './AccountAccordion';
-import { useViolationStore, useReportStore } from '../state';
-import { groupViolationsByType, groupViolationsByAccount, groupViolationsByBureau } from '../utils';
 
 const ViolationList = () => {
-  const [groupBy, setGroupBy] = React.useState('type');
+  const [groupBy, setGroupBy] = useState("type");
+
   const {
     violations,
     selectedViolationIds,
-    isLoading,
-    error,
     toggleViolation,
-    selectAll,
-    deselectAll,
+    isLoading,
+    error
   } = useViolationStore();
+
   const { currentReport } = useReportStore();
   const accounts = currentReport?.accounts || [];
+
+  // PRE-COMPUTE GROUPINGS ONCE
+  const groupedByType = useMemo(() => {
+    return groupViolationsByType(violations);
+  }, [violations]);
+
+  const groupedByAccount = useMemo(() => {
+    return groupViolationsByAccount(violations);
+  }, [violations]);
+
+  const groupedByBureau = useMemo(() => {
+    return groupViolationsByBureau(violations);
+  }, [violations]);
 
   if (isLoading) {
     return (
@@ -50,44 +71,25 @@ const ViolationList = () => {
     );
   }
 
-  if (!violations || violations.length === 0) {
-    return (
-      <Paper sx={{ p: 3, textAlign: 'center' }}>
-        <Typography variant="body1" color="text.secondary">
-          No violations found in this report.
-        </Typography>
-      </Paper>
-    );
-  }
-
-  const groupedByType = groupViolationsByType(violations);
-  const groupedByAccount = groupViolationsByAccount(violations);
-  const groupedByBureau = groupViolationsByBureau(violations);
-  const grouped = groupBy === 'type' ? groupedByType : groupBy === 'account' ? groupedByAccount : groupedByBureau;
+  const totalViolations = violations.length;
 
   return (
     <Box>
-      <Paper sx={{ p: 2, mb: 2 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
-          <Typography variant="h6">
-            {violations.length} Violations Found
-          </Typography>
+      {/* HEADER */}
+      <Typography
+        variant="h6"
+        sx={{
+          fontWeight: 'bold',
+          mb: 2,
+          pb: 1,
+          borderBottom: '3px solid',
+          borderColor: 'primary.main',
+        }}
+      >
+        {totalViolations} Violations Found
+      </Typography>
 
-          <Button
-            size="small"
-            startIcon={selectedViolationIds.length === violations.length ? <CheckBoxIcon /> : <CheckBoxOutlineBlankIcon />}
-            onClick={selectedViolationIds.length === violations.length ? deselectAll : selectAll}
-            variant="outlined"
-          >
-            {selectedViolationIds.length === violations.length ? 'Deselect All' : 'Select All'}
-          </Button>
-        </Box>
-
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-          {selectedViolationIds.length} selected · {violations.length} total
-        </Typography>
-      </Paper>
-
+      {/* TABS */}
       <Tabs
         value={groupBy}
         onChange={(e, v) => setGroupBy(v)}
@@ -99,25 +101,12 @@ const ViolationList = () => {
         <Tab value="accounts" label={`Accounts (${accounts.length})`} />
       </Tabs>
 
-      {/* Show accounts when Accounts tab is selected */}
-      {groupBy === 'accounts' ? (
-        <Box>
-          {accounts.length === 0 ? (
-            <Paper sx={{ p: 3, textAlign: 'center' }}>
-              <Typography variant="body1" color="text.secondary">
-                No accounts found in this report.
-              </Typography>
-            </Paper>
-          ) : (
-            accounts.map((account, index) => (
-              <AccountAccordion key={account.account_id || index} account={account} />
-            ))
-          )}
-        </Box>
-      ) : (
-        /* Show violations grouped by type/account/bureau */
-        Object.entries(grouped).map(([groupName, groupViolations]) => (
-          <Box key={groupName} sx={{ mb: 3 }}>
+      {/* ------- SPA INSTANT TABS (no unmounting) ------- */}
+
+      {/* TYPE TAB */}
+      <Box hidden={groupBy !== "type"}>
+        {Object.entries(groupedByType).map(([group, items]) => (
+          <Box key={group} sx={{ mb: 3 }}>
             <Typography
               variant="subtitle1"
               sx={{
@@ -128,10 +117,10 @@ const ViolationList = () => {
                 borderColor: 'primary.main',
               }}
             >
-              {groupName} ({groupViolations.length})
+              {group} ({items.length})
             </Typography>
 
-            {groupViolations.map((violation) => (
+            {items.map((violation) => (
               <ViolationToggle
                 key={violation.violation_id}
                 violation={violation}
@@ -140,8 +129,84 @@ const ViolationList = () => {
               />
             ))}
           </Box>
-        ))
-      )}
+        ))}
+      </Box>
+
+      {/* ACCOUNT TAB */}
+      <Box hidden={groupBy !== "account"}>
+        {Object.entries(groupedByAccount).map(([group, items]) => (
+          <Box key={group} sx={{ mb: 3 }}>
+            <Typography
+              variant="subtitle1"
+              sx={{
+                fontWeight: 'bold',
+                mb: 1,
+                pb: 1,
+                borderBottom: '2px solid',
+                borderColor: 'primary.main',
+              }}
+            >
+              {group} ({items.length})
+            </Typography>
+
+            {items.map((violation) => (
+              <ViolationToggle
+                key={violation.violation_id}
+                violation={violation}
+                isSelected={selectedViolationIds.includes(violation.violation_id)}
+                onToggle={toggleViolation}
+              />
+            ))}
+          </Box>
+        ))}
+      </Box>
+
+      {/* BUREAU TAB */}
+      <Box hidden={groupBy !== "bureau"}>
+        {Object.entries(groupedByBureau).map(([group, items]) => (
+          <Box key={group} sx={{ mb: 3 }}>
+            <Typography
+              variant="subtitle1"
+              sx={{
+                fontWeight: 'bold',
+                mb: 1,
+                pb: 1,
+                borderBottom: '2px solid',
+                borderColor: 'primary.main',
+              }}
+            >
+              {group} ({items.length})
+            </Typography>
+
+            {items.map((violation) => (
+              <ViolationToggle
+                key={violation.violation_id}
+                violation={violation}
+                isSelected={selectedViolationIds.includes(violation.violation_id)}
+                onToggle={toggleViolation}
+              />
+            ))}
+          </Box>
+        ))}
+      </Box>
+
+      {/* ACCOUNTS TAB */}
+      <Box hidden={groupBy !== "accounts"}>
+        {accounts.length === 0 ? (
+          <Paper sx={{ p: 3, textAlign: 'center' }}>
+            <Typography variant="body1" color="text.secondary">
+              No accounts found in this report.
+            </Typography>
+          </Paper>
+        ) : (
+          accounts.map((account, index) => (
+            <AccountAccordion
+              key={account.account_id || index}
+              account={account}
+            />
+          ))
+        )}
+      </Box>
     </Box>
   );
 };
