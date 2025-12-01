@@ -1,18 +1,44 @@
 """
 Legal Letter Generator - Tone Modules
-Eight distinct tone engines: 4 legal and 4 civil.
+
+Contains 4 legal tones for formal dispute letters.
+
+NOTE: Civil tones are DEPRECATED in this module. Use the new
+civil_letter_generator package instead, which provides:
+- CivilAssembler v2 with domain isolation
+- CivilMask to prevent legal term contamination
+- Structured output with SWEEP-D compliance metadata
+
+Migration path:
+  OLD: from ..legal_letter_generator.tones import CivilConversationalTone
+  NEW: from ..civil_letter_generator import generate_civil_letter
+
+Civil tones are still exported for backward compatibility but will
+be removed in a future version.
 """
-# Legal tones
+import warnings
+
+# Legal tones (ACTIVE)
 from .strict_legal import StrictLegalTone
 from .professional import ProfessionalTone
 from .soft_legal import SoftLegalTone
 from .aggressive import AggressiveTone
 
-# Civil tones
+# Civil tones (DEPRECATED - use civil_letter_generator instead)
 from .civil_conversational import CivilConversationalTone
 from .civil_professional import CivilProfessionalTone
 from .civil_assertive import CivilAssertiveTone
 from .civil_narrative import CivilNarrativeTone
+
+# Issue deprecation warning when civil tones are used
+def _deprecated_civil_tone_warning(tone_name: str):
+    warnings.warn(
+        f"{tone_name} is deprecated in legal_letter_generator. "
+        "Use civil_letter_generator.generate_civil_letter() instead. "
+        "This tone will be removed in a future version.",
+        DeprecationWarning,
+        stacklevel=3
+    )
 
 __all__ = [
     # Legal tones
@@ -111,7 +137,17 @@ def list_legal_tones():
 
 
 def list_civil_tones():
-    """List civil tones with metadata."""
+    """
+    List civil tones with metadata.
+
+    DEPRECATED: Use civil_letter_generator.get_civil_tones() instead.
+    This function is maintained for backward compatibility only.
+    """
+    warnings.warn(
+        "list_civil_tones() is deprecated. Use civil_letter_generator.get_civil_tones() instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     tones = []
     for name, tone_class in CIVIL_TONES.items():
         # Skip aliases
@@ -124,5 +160,7 @@ def list_civil_tones():
             "letter_type": "civil",
             "includes_case_law": False,
             "citation_density": "none",
+            "deprecated": True,
+            "migration_path": "Use civil_letter_generator.generate_civil_letter()",
         })
     return tones

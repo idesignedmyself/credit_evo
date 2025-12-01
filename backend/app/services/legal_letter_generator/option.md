@@ -242,3 +242,81 @@ fixed_content, metadata = fixer.fix_structure(
 # Validate structure
 is_valid, issues = StructuralValidator.validate_structure(content, "legal")
 ```
+
+---
+
+### B8: Civil Letter System v2 - Domain Isolation (v5.0) ✅ ACCOMPLISHED
+**Status:** COMPLETE
+**Date:** 2024-12-01
+**Package Created:**
+- `app/services/civil_letter_generator/` - New standalone package
+
+**Files Added:**
+- `civil_letter_generator/__init__.py` - Package exports
+- `civil_letter_generator/civil_mask.py` - CivilMask with 40+ forbidden terms and patterns
+- `civil_letter_generator/structure.py` - CivilStructureBuilder with 11 civil sections
+- `civil_letter_generator/tone_engine.py` - CivilToneEngine with 4 tones
+- `civil_letter_generator/civil_assembler.py` - CivilAssembler v2 wrapping Credit Copilot
+
+**Files Modified:**
+- `app/routers/letters.py` - Added civil tone routing and `/civil/tones`, `/civil/strategies` endpoints
+- `legal_letter_generator/tones/__init__.py` - Added deprecation notices for civil tones
+- `tests/test_sweep_d_content_quality.py` - Fixed test routing to use `generate_civil_letter`
+
+**Problem Fixed:**
+Civil tones were being processed through the legal letter generator, causing:
+- Legal terms contaminating civil letters
+- Missing civil tone functionality
+- Tests failing due to empty civil letters
+- No domain isolation between legal and civil generators
+
+**Solution:**
+Domain-isolated civil letter generation system:
+
+**CivilMask (40+ forbidden terms):**
+- FCRA, USC, Section 611, reinvestigation, MOV, Metro-2
+- Case law patterns (e.g., "v. Trans Union")
+- Legal phrases ("pursuant to", "statutory damages")
+
+**Civil Tones (4 types):**
+| Tone | Formality | Warmth | Directness | Use Case |
+|------|-----------|--------|------------|----------|
+| conversational | 3 | 9 | 5 | First-time disputes |
+| formal | 7 | 5 | 6 | Business correspondence |
+| assertive | 6 | 4 | 9 | Demanding attention |
+| narrative | 4 | 7 | 4 | Complex situations |
+
+**Civil Sections (11 ordered):**
+1. Header → 2. Date → 3. Recipient → 4. Subject → 5. Greeting → 6. Intro → 7. Dispute Items → 8. Request → 9. Closing → 10. Signature → 11. Enclosures
+
+**Routing Logic (letters.py):**
+```python
+CIVIL_TONES = {"conversational", "formal", "assertive", "narrative"}
+if request.tone.lower() in CIVIL_TONES or is_civil_tone(request.tone):
+    result = generate_civil_letter(...)  # CivilAssembler v2
+else:
+    result = generate_legal_letter(...)  # LegalLetterAssembler
+```
+
+**Test Results (30 passed):**
+| Test File | Tests | Status |
+|-----------|-------|--------|
+| test_structural_integrity.py | 24 | ✅ All passed |
+| test_sweep_d_content_quality.py (civil) | 6 | ✅ All passed |
+
+**Usage:**
+```python
+from app.services.civil_letter_generator import generate_civil_letter
+
+result = generate_civil_letter(
+    violations=violations,
+    bureau="transunion",
+    tone="conversational",
+    consumer_name="John Doe",
+    grouping_strategy="by_creditor",
+    seed=42,
+)
+# result.content - masked civil letter
+# result.is_valid - validation status
+# result.metadata - includes domain="civil", tone_metadata, mask info
+```

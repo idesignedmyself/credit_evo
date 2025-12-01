@@ -32,7 +32,17 @@ from ..services.legal_letter_generator import (
     list_tones as get_legal_tones,
     GroupingStrategy,
 )
+from ..services.civil_letter_generator import (
+    generate_civil_letter,
+    is_civil_tone,
+    get_civil_tones,
+    get_civil_grouping_strategies,
+)
 import uuid
+
+# Define tone sets for routing
+LEGAL_TONES = {"strict_legal", "professional", "soft_legal", "aggressive"}
+CIVIL_TONES = {"conversational", "formal", "assertive", "narrative"}
 
 logger = logging.getLogger(__name__)
 
@@ -178,8 +188,83 @@ async def generate_letter(
     consumer = reconstruct_consumer(report)
 
     try:
+        # Route civil tones to CivilAssembler v2
+        # Civil tones: conversational, formal, assertive, narrative
+        if request.tone.lower() in CIVIL_TONES or is_civil_tone(request.tone):
+            # Convert violations to dictionary format for civil generator
+            civil_violations = [
+                {
+                    "violation_id": v.violation_id,
+                    "creditor_name": v.creditor_name,
+                    "account_number_masked": v.account_number_masked,
+                    "violation_type": v.violation_type.value,
+                    "description": v.description,
+                    "severity": v.severity.value,
+                    "bureau": v.bureau.value if v.bureau else None,
+                }
+                for v in filtered_violations
+            ]
+
+            # Map grouping strategy
+            civil_grouping_map = {
+                "by_violation_type": "by_violation_type",
+                "by_creditor": "by_creditor",
+                "by_severity": "by_severity",
+            }
+            grouping_strategy = civil_grouping_map.get(
+                request.grouping_strategy, "by_creditor"
+            )
+
+            # Generate civil letter using CivilAssembler v2
+            civil_result = generate_civil_letter(
+                violations=civil_violations,
+                bureau=request.bureau,
+                tone=request.tone,
+                consumer_name=consumer.full_name,
+                consumer_address=f"{consumer.address}, {consumer.city}, {consumer.state} {consumer.zip_code}",
+                report_id=report_id,
+                consumer_id=str(current_user.id),
+                grouping_strategy=grouping_strategy,
+                seed=request.variation_seed,
+            )
+
+            if not civil_result.is_valid:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Validation errors: {'; '.join(civil_result.validation_issues)}"
+                )
+
+            # Save letter to database
+            letter_db = LetterDB(
+                id=str(uuid.uuid4()),
+                report_id=report_id,
+                user_id=current_user.id,
+                content=civil_result.content,
+                bureau=civil_result.bureau,
+                tone=request.tone,
+                accounts_disputed=list(set(v.creditor_name for v in filtered_violations)),
+                violations_cited=civil_result.violations_included,
+                word_count=civil_result.word_count,
+            )
+            db.add(letter_db)
+            db.commit()
+
+            return LetterResponse(
+                letter_id=letter_db.id,
+                content=civil_result.content,
+                bureau=civil_result.bureau,
+                word_count=civil_result.word_count,
+                accounts_disputed_count=len(set(v.creditor_name for v in filtered_violations)),
+                violations_cited_count=len(civil_result.violations_included),
+                variation_seed_used=civil_result.metadata.get("seed", 0),
+                quality_score=civil_result.quality_score,
+                structure_type="civil_v2",
+                is_legal_format=False,
+                grouping_strategy=grouping_strategy,
+            )
+
         # Use Legal/Metro-2 Structured Letter Generator
-        if request.use_legal:
+        elif request.use_legal:
             # Map grouping strategy for legal generator
             legal_grouping_map = {
                 "by_violation_type": "by_fcra_section",
@@ -494,6 +579,32 @@ async def get_available_strategies():
             {"id": "by_creditor", "name": "By Creditor", "description": "Group violations by creditor name"},
             {"id": "by_severity", "name": "By Severity", "description": "Group violations by severity (HIGH, MEDIUM, LOW)"},
         ]
+    }
+
+
+@router.get("/civil/tones")
+async def get_civil_letter_tones():
+    """Get list of available tones for Civil Letter Generator v2."""
+    tones = get_civil_tones()
+    return {
+        "tones": [
+            {
+                "id": tone["id"],
+                "name": tone["name"],
+                "description": tone["description"],
+                "formality_level": tone.get("formality_level", 5),
+                "letter_type": "civil",
+            }
+            for tone in tones
+        ]
+    }
+
+
+@router.get("/civil/strategies")
+async def get_civil_grouping_strategies_endpoint():
+    """Get list of available grouping strategies for Civil Letter Generator v2."""
+    return {
+        "strategies": get_civil_grouping_strategies()
     }
 
 
