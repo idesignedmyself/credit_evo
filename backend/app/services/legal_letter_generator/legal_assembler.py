@@ -13,9 +13,10 @@ from .metro2_explanations import Metro2ExplanationBuilder, get_metro2_explanatio
 from .case_law import CaseLawLibrary, STANDARD_REINVESTIGATION_CITE
 from .mov_requirements import MOVBuilder
 from .validators_legal import LegalLetterValidator, LetterContentValidator, ValidationIssue
-from .tones import TONE_REGISTRY, get_tone_class
+from .tones import TONE_REGISTRY, get_tone_class, is_legal_tone, is_civil_tone
 from .diversity import DiversityEngine, shuffle_section_order
 from .fcra_statutes import resolve_statute
+from .tone_mask import ToneMask, LetterDomain, get_domain_for_tone, create_mask_for_tone
 
 
 # Load seed data
@@ -92,6 +93,11 @@ class LegalLetterAssembler:
         self.include_metro2 = include_metro2
         self.include_mov = include_mov
 
+        # Determine letter domain (legal vs civil) from tone
+        self.letter_domain = get_domain_for_tone(tone)
+        self.is_legal_letter = self.letter_domain == LetterDomain.LEGAL
+        self.is_civil_letter = self.letter_domain == LetterDomain.CIVIL
+
         # Get tone engine
         self.tone_engine = get_tone_class(tone)
         if not self.tone_engine:
@@ -103,6 +109,9 @@ class LegalLetterAssembler:
 
         # Initialize diversity engine for anti-template measures
         self.diversity_engine = DiversityEngine(seed=self.seed, tone=tone)
+
+        # Initialize tone mask for domain isolation
+        self.tone_mask = create_mask_for_tone(tone, include_case_law=include_case_law)
 
     def generate(
         self,
@@ -167,18 +176,21 @@ class LegalLetterAssembler:
         # 5. Violations section (grouped)
         sections.append(self._build_violations_section(grouped, violations))
 
-        # 6. Metro-2 section (if applicable)
-        if self.include_metro2:
+        # 6. Metro-2 section (if applicable and legal letter)
+        # Civil letters exclude Metro-2 technical details
+        if self.include_metro2 and self.is_legal_letter:
             metro2_section = self._build_metro2_section(violations)
             if metro2_section:
                 sections.append(metro2_section)
 
-        # 7. MOV section
-        if self.include_mov:
+        # 7. MOV section (legal letters only)
+        # Civil letters are forbidden from including MOV requirements
+        if self.include_mov and self.is_legal_letter:
             sections.append(self._build_mov_section(violations))
 
-        # 8. Case law section
-        if self.include_case_law:
+        # 8. Case law section (legal letters only)
+        # Civil letters are forbidden from including case law citations
+        if self.include_case_law and self.is_legal_letter:
             sections.append(self._build_case_law_section(violations))
 
         # 9. Demands section
@@ -192,6 +204,10 @@ class LegalLetterAssembler:
 
         # Combine sections
         letter_content = "\n\n".join(filter(None, sections))
+
+        # Apply tone mask for domain isolation
+        # This filters forbidden phrases and applies domain-specific rules
+        letter_content = self.tone_mask.apply(letter_content)
 
         # Validate generated content
         content_issues = LetterContentValidator.validate_letter_content(
@@ -817,6 +833,9 @@ def generate_legal_letter(
 
     is_valid = not any(i.level.value == "error" for i in issues)
 
+    # Get mask metadata for tone isolation compliance
+    mask_metadata = assembler.tone_mask.to_dict()
+
     return {
         "letter": letter,
         "validation_issues": [
@@ -837,5 +856,11 @@ def generate_legal_letter(
             "violation_count": len(violations),
             "bureau": bureau,
             "generated_at": datetime.now().isoformat(),
+            # Letter domain information (LEGAL vs CIVIL)
+            "letter_domain": assembler.letter_domain.value,
+            "is_legal_letter": assembler.is_legal_letter,
+            "is_civil_letter": assembler.is_civil_letter,
         },
+        # Mask application metadata (SWEEP C compliance)
+        "mask_metadata": mask_metadata,
     }
