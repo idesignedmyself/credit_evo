@@ -9,9 +9,6 @@ import {
   Box,
   Typography,
   Button,
-  Stepper,
-  Step,
-  StepLabel,
   Paper,
   Alert,
 } from '@mui/material';
@@ -22,14 +19,12 @@ import { ToneSelector, LetterPreview } from '../components';
 import { useViolationStore, useUIStore } from '../state';
 import { getViolationLabel } from '../utils';
 
-const steps = ['Upload Report', 'Review Violations', 'Generate Letter'];
-
 const LetterPage = () => {
   const { reportId } = useParams();
   const [searchParams] = useSearchParams();
   const letterId = searchParams.get('letterId');
   const navigate = useNavigate();
-  const { selectedViolationIds, violations, fetchAuditResults } = useViolationStore();
+  const { selectedViolationIds, violations, auditResult, fetchAuditResults } = useViolationStore();
   const {
     currentLetter,
     isGeneratingLetter,
@@ -38,6 +33,7 @@ const LetterPage = () => {
     clearLetter,
     fetchTones,
     loadSavedLetter,
+    setBureau,
   } = useUIStore();
 
   useEffect(() => {
@@ -54,6 +50,13 @@ const LetterPage = () => {
       fetchAuditResults(reportId);
     }
   }, [reportId, letterId, selectedViolationIds.length, fetchAuditResults, fetchTones, loadSavedLetter]);
+
+  // Auto-set bureau from audit result when loaded
+  useEffect(() => {
+    if (auditResult?.bureau) {
+      setBureau(auditResult.bureau.toLowerCase());
+    }
+  }, [auditResult, setBureau]);
 
   const handleBack = () => {
     navigate(`/audit/${reportId}`);
@@ -100,18 +103,6 @@ const LetterPage = () => {
   return (
     <Container maxWidth="lg">
       <Box sx={{ py: 4 }}>
-        <Typography variant="h4" component="h1" gutterBottom align="center">
-          Credit Engine 2.0
-        </Typography>
-
-        <Stepper activeStep={2} sx={{ mb: 4 }}>
-          {steps.map((label) => (
-            <Step key={label}>
-              <StepLabel>{label}</StepLabel>
-            </Step>
-          ))}
-        </Stepper>
-
         {error && (
           <Alert severity="error" sx={{ mb: 3, borderRadius: 2 }}>
             {error}

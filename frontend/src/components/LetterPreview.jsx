@@ -256,6 +256,21 @@ const LetterPreview = ({ letter, isLoading, error, onRegenerate, isRegenerating,
             <Chip label={`${accountsCount} accounts`} size="small" />
           )}
           <Chip label={formatToneLabel(selectedTone)} size="small" variant="outlined" />
+          {letter?.quality_score !== undefined && (
+            <Chip
+              label={`Quality: ${Math.round(letter.quality_score)}/100`}
+              size="small"
+              color={letter.quality_score >= 80 ? 'success' : letter.quality_score >= 60 ? 'warning' : 'error'}
+              variant="outlined"
+            />
+          )}
+          {letter?.structure_type && (
+            <Chip
+              label={`${letter.structure_type.charAt(0).toUpperCase() + letter.structure_type.slice(1)} style`}
+              size="small"
+              variant="outlined"
+            />
+          )}
           {lastSaved && (
             <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto' }}>
               Last saved: {lastSaved.toLocaleTimeString()}

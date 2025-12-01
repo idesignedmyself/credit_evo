@@ -1,0 +1,42 @@
+{
+  "strict_legal": {
+    "introduction": "Pursuant to the Fair Credit Reporting Act, 15 U.S.C. § 1681 et seq., I hereby formally dispute the accuracy of certain information contained in my consumer credit file maintained by your agency.",
+    "legal_basis": "This dispute implicates multiple provisions of the Fair Credit Reporting Act, including but not limited to the sections enumerated below.",
+    "violations": "Upon review of my credit report, I have identified the following inaccuracies, each of which constitutes a violation of FCRA accuracy requirements.",
+    "metro2": "The disputed information fails to comply with CDIA Metro-2 Format requirements, representing procedural violations under FCRA Section 607(b).",
+    "mov": "A reasonable reinvestigation requires more than mere furnisher confirmation. I demand production of original source documentation.",
+    "case_law": "The legal standards governing your reinvestigation obligations are well-established in federal case law.",
+    "demands": "Based upon the foregoing violations and applicable law, I make the following formal demands.",
+    "conclusion": "I reserve all rights and remedies available under the Fair Credit Reporting Act."
+  },
+  "professional": {
+    "introduction": "I am writing to dispute inaccurate information appearing on my credit report. Under the Fair Credit Reporting Act, I have the right to dispute information I believe is incorrect.",
+    "legal_basis": "The Fair Credit Reporting Act provides the following consumer protections relevant to this dispute.",
+    "violations": "After reviewing my credit report, I have identified the following items that appear to be inaccurate or unverifiable.",
+    "metro2": "The following data quality issues have been identified in the disputed information.",
+    "mov": "To properly investigate this dispute, I request that you obtain and review the following documentation.",
+    "case_law": "Courts have established clear standards for credit report accuracy and reinvestigation procedures.",
+    "demands": "I respectfully request the following actions be taken to resolve this dispute.",
+    "conclusion": "I appreciate your attention to this matter and look forward to a prompt resolution."
+  },
+  "soft_legal": {
+    "introduction": "I'm writing because I found some problems on my credit report that I'd like your help fixing. The law says I can ask you to check these items.",
+    "legal_basis": "The Fair Credit Reporting Act is a law that protects people like me. Here's how it applies to my situation.",
+    "violations": "When I looked at my credit report, I found these items that don't look right.",
+    "metro2": "I noticed some issues with how this information is being reported.",
+    "mov": "To make sure this information is correct, it would help if you could get these documents.",
+    "case_law": "Courts have explained how these disputes should be handled.",
+    "demands": "I'm hoping you can help me by doing the following.",
+    "conclusion": "Thank you so much for looking into this for me."
+  },
+  "aggressive": {
+    "introduction": "I am putting you on FORMAL NOTICE of multiple FCRA VIOLATIONS appearing on my credit report. Your continued reporting of this inaccurate information exposes you to significant legal liability.",
+    "legal_basis": "Your actions VIOLATE multiple provisions of federal law, for which you face substantial civil liability.",
+    "violations": "The following items represent CLEAR VIOLATIONS of FCRA accuracy requirements and MUST be corrected immediately.",
+    "metro2": "Your reporting FAILS TO COMPLY with CDIA Metro-2 Format requirements, constituting procedural violations.",
+    "mov": "I DEMAND production of original source documentation. Mere furnisher confirmation is LEGALLY INSUFFICIENT.",
+    "case_law": "Courts have REPEATEDLY ruled against credit bureaus engaging in the conduct at issue here.",
+    "demands": "I DEMAND the following actions be taken within 30 days or face legal consequences.",
+    "conclusion": "I FULLY RESERVE my right to pursue MAXIMUM DAMAGES for your WILLFUL VIOLATIONS."
+  }
+}

@@ -7,9 +7,17 @@ import { letterApi } from '../api';
 
 const useUIStore = create((set, get) => ({
   // State
+  letterType: 'civilian', // 'civilian' or 'legal'
   selectedTone: 'formal',
   groupingStrategy: 'by_violation_type',
+  selectedBureau: 'transunion',
   availableTones: ['formal', 'assertive', 'conversational', 'narrative'],
+  legalTones: ['professional', 'strict_legal', 'soft_legal', 'aggressive'],
+  availableBureaus: [
+    { id: 'transunion', name: 'TransUnion' },
+    { id: 'experian', name: 'Experian' },
+    { id: 'equifax', name: 'Equifax' },
+  ],
   currentLetter: null,
   currentLetterId: null,
   editableLetter: null,
@@ -21,6 +29,29 @@ const useUIStore = create((set, get) => ({
   error: null,
 
   // Actions
+  setLetterType: (type) => {
+    const state = get();
+    // Clear existing letter when letter type changes
+    if (state.currentLetter) {
+      set({
+        letterType: type,
+        // Reset tone to appropriate default when switching types
+        selectedTone: type === 'legal' ? 'professional' : 'formal',
+        currentLetter: null,
+        currentLetterId: null,
+        editableLetter: null,
+        hasUnsavedChanges: false,
+        lastSaved: null,
+      });
+    } else {
+      set({
+        letterType: type,
+        // Reset tone to appropriate default when switching types
+        selectedTone: type === 'legal' ? 'professional' : 'formal',
+      });
+    }
+  },
+
   setTone: (tone) => {
     const state = get();
     // Clear existing letter when tone changes so user must regenerate
@@ -52,6 +83,34 @@ const useUIStore = create((set, get) => ({
       });
     } else {
       set({ groupingStrategy: strategy });
+    }
+  },
+
+  setBureau: (bureau) => {
+    const state = get();
+    // Clear existing letter when bureau changes so user must regenerate
+    if (state.currentLetter) {
+      set({
+        selectedBureau: bureau,
+        currentLetter: null,
+        currentLetterId: null,
+        editableLetter: null,
+        hasUnsavedChanges: false,
+        lastSaved: null,
+      });
+    } else {
+      set({ selectedBureau: bureau });
+    }
+  },
+
+  fetchBureaus: async () => {
+    try {
+      const result = await letterApi.getBureaus();
+      set({ availableBureaus: result.bureaus });
+      return result.bureaus;
+    } catch (error) {
+      console.error('Failed to fetch bureaus:', error);
+      // Keep defaults on error
     }
   },
 
@@ -93,11 +152,15 @@ const useUIStore = create((set, get) => ({
     set({ isGeneratingLetter: true, error: null });
     try {
       const state = get();
+      const isLegal = state.letterType === 'legal';
       const letter = await letterApi.generate({
         report_id: reportId,
         selected_violations: selectedViolationIds,
         tone: state.selectedTone,
         grouping_strategy: state.groupingStrategy,
+        bureau: state.selectedBureau,
+        use_legal: isLegal,
+        use_copilot: !isLegal,
       });
       set({
         currentLetter: letter,
@@ -170,9 +233,17 @@ const useUIStore = create((set, get) => ({
 
   resetState: () => {
     set({
+      letterType: 'civilian',
       selectedTone: 'formal',
       groupingStrategy: 'by_violation_type',
+      selectedBureau: 'transunion',
       availableTones: ['formal', 'assertive', 'conversational', 'narrative'],
+      legalTones: ['professional', 'strict_legal', 'soft_legal', 'aggressive'],
+      availableBureaus: [
+        { id: 'transunion', name: 'TransUnion' },
+        { id: 'experian', name: 'Experian' },
+        { id: 'equifax', name: 'Equifax' },
+      ],
       currentLetter: null,
       currentLetterId: null,
       editableLetter: null,

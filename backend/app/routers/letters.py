@@ -2,6 +2,7 @@
 Credit Engine 2.0 - Letters API Router
 
 Handles dispute letter generation with PostgreSQL persistence.
+Uses the Credit Copilot human-language letter generator.
 All endpoints require authentication.
 """
 from __future__ import annotations
@@ -19,6 +20,18 @@ from ..services.renderer import render_letter
 from ..models import Tone, Consumer
 from ..models.ssot import AuditResult, Violation, Bureau, ViolationType, Severity, FurnisherType
 from ..auth import get_current_user
+from ..services.letter_generator import (
+    LetterAssembler,
+    LetterConfig,
+    ViolationItem,
+    get_available_tones as get_copilot_tones,
+    get_available_structures,
+)
+from ..services.legal_letter_generator import (
+    generate_legal_letter,
+    list_tones as get_legal_tones,
+    GroupingStrategy,
+)
 import uuid
 
 logger = logging.getLogger(__name__)
@@ -33,9 +46,16 @@ router = APIRouter(prefix="/letters", tags=["letters"])
 class LetterRequest(BaseModel):
     report_id: str
     grouping_strategy: str = "by_violation_type"
-    tone: str = "formal"
+    tone: str = "conversational"  # Default to conversational for Credit Copilot
     variation_seed: Optional[int] = None
     selected_violations: Optional[List[str]] = None  # List of violation IDs to include
+    bureau: str = "transunion"  # Target bureau for the letter
+    use_copilot: bool = True  # Use Credit Copilot human-language generator
+    use_legal: bool = False  # Use Legal/Metro-2 structured letter generator
+    # Legal generator options (only used when use_legal=True)
+    include_case_law: bool = True
+    include_metro2: bool = True
+    include_mov: bool = True
 
 
 class LetterResponse(BaseModel):
@@ -46,6 +66,10 @@ class LetterResponse(BaseModel):
     accounts_disputed_count: int
     violations_cited_count: int
     variation_seed_used: int
+    quality_score: Optional[float] = None  # Credit Copilot quality score (0-100)
+    structure_type: Optional[str] = None  # narrative, observation, or question
+    is_legal_format: bool = False  # Whether this is a Legal/Metro-2 structured letter
+    grouping_strategy: Optional[str] = None  # Grouping strategy used (legal letters only)
 
 
 class LetterPreviewResponse(BaseModel):
@@ -112,7 +136,12 @@ async def generate_letter(
     Generate a dispute letter for a report.
     Only works for reports owned by current user.
 
-    Pipeline:
+    Pipeline (Credit Copilot - default):
+    1. Get violations from database
+    2. Use Credit Copilot human-language assembler
+    3. Return natural, template-free letter
+
+    Pipeline (Legacy):
     1. Get AuditResult from database
     2. Create LetterPlan (SSOT #3)
     3. Render DisputeLetter (SSOT #4)
@@ -145,64 +174,213 @@ async def generate_letter(
     else:
         filtered_violations = all_violations
 
-    # Create AuditResult object
-    audit_result = AuditResult(
-        audit_id=audit_db.id,
-        report_id=audit_db.report_id,
-        bureau=Bureau(audit_db.bureau or 'transunion'),
-        violations=filtered_violations,
-        discrepancies=[],
-        clean_accounts=audit_db.clean_accounts or [],
-        total_accounts_audited=audit_db.total_accounts_audited,
-        total_violations_found=len(filtered_violations)
-    )
-
     # Reconstruct consumer
     consumer = reconstruct_consumer(report)
 
-    # Map tone string to enum
     try:
-        tone = Tone(request.tone)
-    except ValueError:
-        tone = Tone.FORMAL
+        # Use Legal/Metro-2 Structured Letter Generator
+        if request.use_legal:
+            # Map grouping strategy for legal generator
+            legal_grouping_map = {
+                "by_violation_type": "by_fcra_section",
+                "by_creditor": "by_creditor",
+                "by_severity": "by_severity",
+                "by_fcra_section": "by_fcra_section",
+                "by_metro2_field": "by_metro2_field",
+            }
+            grouping_strategy = legal_grouping_map.get(
+                request.grouping_strategy, "by_fcra_section"
+            )
 
-    try:
-        # Create LetterPlan (SSOT #3)
-        plan = create_letter_plan(
-            audit_result=audit_result,
-            consumer=consumer,
-            grouping_strategy=request.grouping_strategy,
-            tone=tone,
-            variation_seed=request.variation_seed
-        )
+            # Convert violations to legal generator format
+            legal_violations = [
+                {
+                    "creditor_name": v.creditor_name,
+                    "account_number_masked": v.account_number_masked,
+                    "violation_type": v.violation_type.value,
+                    "fcra_section": v.fcra_section or "611",
+                    "metro2_field": v.metro2_field,
+                    "evidence": v.evidence.get("reason", "") if v.evidence else v.description,
+                    "severity": v.severity.value,
+                }
+                for v in filtered_violations
+            ]
 
-        # Render DisputeLetter (SSOT #4)
-        letter = render_letter(plan)
+            # Build consumer info
+            legal_consumer = {
+                "name": consumer.full_name,
+                "address": consumer.address,
+                "city_state_zip": f"{consumer.city}, {consumer.state} {consumer.zip_code}",
+            }
 
-        # Save letter to database
-        letter_db = LetterDB(
-            id=str(uuid.uuid4()),
-            report_id=report_id,
-            user_id=current_user.id,  # Store user_id for orphaned letter access
-            content=letter.content,
-            bureau=letter.bureau.value,
-            tone=request.tone,
-            accounts_disputed=[acc for acc in letter.accounts_disputed],
-            violations_cited=[v for v in letter.violations_cited],
-            word_count=letter.metadata.word_count,
-        )
-        db.add(letter_db)
-        db.commit()
+            # Generate legal letter
+            legal_result = generate_legal_letter(
+                violations=legal_violations,
+                consumer=legal_consumer,
+                bureau=request.bureau,
+                tone=request.tone if request.tone in ["strict_legal", "professional", "soft_legal", "aggressive"] else "professional",
+                grouping_strategy=grouping_strategy,
+                seed=request.variation_seed,
+                include_case_law=request.include_case_law,
+                include_metro2=request.include_metro2,
+                include_mov=request.include_mov,
+            )
 
-        return LetterResponse(
-            letter_id=letter_db.id,
-            content=letter.content,
-            bureau=letter.bureau.value,
-            word_count=letter.metadata.word_count,
-            accounts_disputed_count=len(letter.accounts_disputed),
-            violations_cited_count=len(letter.violations_cited),
-            variation_seed_used=letter.metadata.variation_seed_used
-        )
+            if not legal_result["is_valid"]:
+                validation_errors = [
+                    issue["message"] for issue in legal_result["validation_issues"]
+                    if issue["level"] == "error"
+                ]
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Validation errors: {'; '.join(validation_errors)}"
+                )
+
+            letter_content = legal_result["letter"]
+            word_count = len(letter_content.split())
+
+            # Save letter to database
+            letter_db = LetterDB(
+                id=str(uuid.uuid4()),
+                report_id=report_id,
+                user_id=current_user.id,
+                content=letter_content,
+                bureau=request.bureau,
+                tone=request.tone,
+                accounts_disputed=list(set(v.creditor_name for v in filtered_violations)),
+                violations_cited=[v.violation_id for v in filtered_violations],
+                word_count=word_count,
+            )
+            db.add(letter_db)
+            db.commit()
+
+            return LetterResponse(
+                letter_id=letter_db.id,
+                content=letter_content,
+                bureau=request.bureau,
+                word_count=word_count,
+                accounts_disputed_count=len(set(v.creditor_name for v in filtered_violations)),
+                violations_cited_count=len(filtered_violations),
+                variation_seed_used=legal_result["metadata"]["seed"],
+                is_legal_format=True,
+                grouping_strategy=grouping_strategy,
+            )
+
+        # Use Credit Copilot human-language generator (default)
+        elif request.use_copilot:
+            # Convert violations to ViolationItem format
+            violation_items = [
+                ViolationItem(
+                    violation_id=v.violation_id,
+                    violation_type=v.violation_type.value,
+                    creditor_name=v.creditor_name,
+                    account_number=v.account_number_masked,
+                    bureau=v.bureau.value if v.bureau else None,
+                    details={
+                        "severity": v.severity.value,
+                        "description": v.description,
+                    }
+                )
+                for v in filtered_violations
+            ]
+
+            # Configure letter
+            config = LetterConfig(
+                bureau=request.bureau,
+                tone=request.tone,
+                consumer_name=consumer.full_name,
+                consumer_address=f"{consumer.address}, {consumer.city}, {consumer.state} {consumer.zip_code}",
+                report_id=report_id,
+                consumer_id=str(current_user.id),
+            )
+
+            # Generate using Credit Copilot
+            assembler = LetterAssembler(seed=request.variation_seed)
+            copilot_letter = assembler.generate(violation_items, config)
+
+            # Save letter to database
+            letter_db = LetterDB(
+                id=str(uuid.uuid4()),
+                report_id=report_id,
+                user_id=current_user.id,
+                content=copilot_letter.content,
+                bureau=copilot_letter.bureau,
+                tone=request.tone,
+                accounts_disputed=list(set(v.creditor_name for v in filtered_violations)),
+                violations_cited=copilot_letter.violations_included,
+                word_count=copilot_letter.word_count,
+            )
+            db.add(letter_db)
+            db.commit()
+
+            return LetterResponse(
+                letter_id=letter_db.id,
+                content=copilot_letter.content,
+                bureau=copilot_letter.bureau,
+                word_count=copilot_letter.word_count,
+                accounts_disputed_count=len(set(v.creditor_name for v in filtered_violations)),
+                violations_cited_count=len(copilot_letter.violations_included),
+                variation_seed_used=copilot_letter.metadata.get("seed", 0),
+                quality_score=copilot_letter.quality_score,
+                structure_type=copilot_letter.structure_type,
+            )
+
+        # Legacy pipeline (use_copilot=False)
+        else:
+            # Create AuditResult object
+            audit_result = AuditResult(
+                audit_id=audit_db.id,
+                report_id=audit_db.report_id,
+                bureau=Bureau(audit_db.bureau or 'transunion'),
+                violations=filtered_violations,
+                discrepancies=[],
+                clean_accounts=audit_db.clean_accounts or [],
+                total_accounts_audited=audit_db.total_accounts_audited,
+                total_violations_found=len(filtered_violations)
+            )
+
+            # Map tone string to enum
+            try:
+                tone = Tone(request.tone)
+            except ValueError:
+                tone = Tone.FORMAL
+
+            # Create LetterPlan (SSOT #3)
+            plan = create_letter_plan(
+                audit_result=audit_result,
+                consumer=consumer,
+                grouping_strategy=request.grouping_strategy,
+                tone=tone,
+                variation_seed=request.variation_seed
+            )
+
+            # Render DisputeLetter (SSOT #4)
+            letter = render_letter(plan)
+
+            # Save letter to database
+            letter_db = LetterDB(
+                id=str(uuid.uuid4()),
+                report_id=report_id,
+                user_id=current_user.id,
+                content=letter.content,
+                bureau=letter.bureau.value,
+                tone=request.tone,
+                accounts_disputed=[acc for acc in letter.accounts_disputed],
+                violations_cited=[v for v in letter.violations_cited],
+                word_count=letter.metadata.word_count,
+            )
+            db.add(letter_db)
+            db.commit()
+
+            return LetterResponse(
+                letter_id=letter_db.id,
+                content=letter.content,
+                bureau=letter.bureau.value,
+                word_count=letter.metadata.word_count,
+                accounts_disputed_count=len(letter.accounts_disputed),
+                violations_cited_count=len(letter.violations_cited),
+                variation_seed_used=letter.metadata.variation_seed_used
+            )
 
     except Exception as e:
         logger.error(f"Error generating letter: {e}")
@@ -281,13 +459,28 @@ async def preview_letter(
 
 @router.get("/tones")
 async def get_available_tones():
-    """Get list of available letter tones."""
+    """Get list of available letter tones from Credit Copilot."""
     return {
-        "tones": [
-            {"id": "formal", "name": "Formal", "description": "Professional, businesslike tone"},
-            {"id": "assertive", "name": "Assertive", "description": "Direct, demanding tone"},
-            {"id": "conversational", "name": "Conversational", "description": "Friendly, approachable tone"},
-            {"id": "narrative", "name": "Narrative", "description": "Story-like, explanatory tone"},
+        "tones": get_copilot_tones()
+    }
+
+
+@router.get("/structures")
+async def get_letter_structures():
+    """Get list of available narrative structures from Credit Copilot."""
+    return {
+        "structures": get_available_structures()
+    }
+
+
+@router.get("/bureaus")
+async def get_supported_bureaus():
+    """Get list of supported credit bureaus."""
+    return {
+        "bureaus": [
+            {"id": "transunion", "name": "TransUnion", "description": "TransUnion Consumer Solutions"},
+            {"id": "experian", "name": "Experian", "description": "Experian"},
+            {"id": "equifax", "name": "Equifax", "description": "Equifax Information Services LLC"},
         ]
     }
 
@@ -300,6 +493,52 @@ async def get_available_strategies():
             {"id": "by_violation_type", "name": "By Violation Type", "description": "Group violations by type (e.g., Missing DOFD, Obsolete)"},
             {"id": "by_creditor", "name": "By Creditor", "description": "Group violations by creditor name"},
             {"id": "by_severity", "name": "By Severity", "description": "Group violations by severity (HIGH, MEDIUM, LOW)"},
+        ]
+    }
+
+
+@router.get("/legal/tones")
+async def get_legal_letter_tones():
+    """Get list of available tones for Legal/Metro-2 letter generator."""
+    tones = get_legal_tones()
+    return {
+        "tones": [
+            {
+                "id": tone["id"],
+                "name": tone["name"],
+                "description": tone["description"],
+                "formality_level": tone.get("formality_level", 5),
+            }
+            for tone in tones
+        ]
+    }
+
+
+@router.get("/legal/strategies")
+async def get_legal_grouping_strategies():
+    """Get list of available grouping strategies for Legal/Metro-2 letter generator."""
+    return {
+        "strategies": [
+            {
+                "id": "by_fcra_section",
+                "name": "By FCRA Section",
+                "description": "Group violations by FCRA section (611, 623, 607(b), etc.)"
+            },
+            {
+                "id": "by_metro2_field",
+                "name": "By Metro-2 Field",
+                "description": "Group violations by affected Metro-2 data field"
+            },
+            {
+                "id": "by_creditor",
+                "name": "By Creditor",
+                "description": "Group violations by creditor/furnisher name"
+            },
+            {
+                "id": "by_severity",
+                "name": "By Severity",
+                "description": "Group violations by legal severity (high, medium, low)"
+            },
         ]
     }
 

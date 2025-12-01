@@ -19,15 +19,29 @@ export const letterApi = {
    * @param {Object} params - Letter generation parameters
    * @param {string} params.report_id - The report UUID
    * @param {Array<string>} params.selected_violations - Optional violation IDs to include
-   * @param {string} params.tone - Letter tone (formal|assertive|conversational|narrative)
+   * @param {string} params.tone - Letter tone (formal|assertive|conversational|narrative for civilian, professional|strict_legal|soft_legal|aggressive for legal)
    * @param {string} params.grouping_strategy - Grouping strategy
+   * @param {string} params.bureau - Target bureau (transunion|experian|equifax)
+   * @param {boolean} params.use_legal - Use Legal/Metro-2 structured letter generator
+   * @param {boolean} params.use_copilot - Use Credit Copilot human-language generator
    * @returns {Promise<DisputeLetter>}
    */
-  generate: async ({ report_id, selected_violations, tone = 'formal', grouping_strategy = 'by_violation_type' }) => {
+  generate: async ({
+    report_id,
+    selected_violations,
+    tone = 'formal',
+    grouping_strategy = 'by_violation_type',
+    bureau = 'transunion',
+    use_legal = false,
+    use_copilot = true,
+  }) => {
     const payload = {
       report_id,
       tone,
       grouping_strategy,
+      bureau,
+      use_legal,
+      use_copilot,
     };
 
     if (selected_violations && selected_violations.length > 0) {
@@ -44,6 +58,15 @@ export const letterApi = {
    */
   getTones: async () => {
     const response = await apiClient.get('/letters/tones');
+    return response.data;
+  },
+
+  /**
+   * Get available bureaus
+   * @returns {Promise<{bureaus: Array<{id: string, name: string, address: string}>}>}
+   */
+  getBureaus: async () => {
+    const response = await apiClient.get('/letters/bureaus');
     return response.data;
   },
 

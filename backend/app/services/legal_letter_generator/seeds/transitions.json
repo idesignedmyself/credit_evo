@@ -1,0 +1,38 @@
+{
+  "strict_legal": {
+    "to_violations": "The following information is disputed as inaccurate, incomplete, or unverifiable pursuant to 15 U.S.C. § 1681i:",
+    "to_legal_basis": "This dispute is brought pursuant to the following provisions of the Fair Credit Reporting Act:",
+    "to_mov": "Pursuant to FCRA Sections 611 and 623, I demand verification through the following documentation:",
+    "to_case_law": "The following case law establishes the applicable legal standards:",
+    "to_demands": "Based on the foregoing, I hereby make the following formal demands:",
+    "between_violations": "Additionally, I dispute the following:",
+    "section_transition": "Furthermore,"
+  },
+  "professional": {
+    "to_violations": "I am disputing the following items on my credit report:",
+    "to_legal_basis": "This dispute is submitted under the Fair Credit Reporting Act:",
+    "to_mov": "To properly verify this information, I request the following documentation:",
+    "to_case_law": "The legal standards governing this dispute include:",
+    "to_demands": "Based on the above, I request the following actions:",
+    "between_violations": "In addition, I dispute:",
+    "section_transition": "Also,"
+  },
+  "soft_legal": {
+    "to_violations": "Here are the items I'm disputing:",
+    "to_legal_basis": "The law gives me the right to dispute this information because:",
+    "to_mov": "To check if this information is correct, I'd like to see:",
+    "to_case_law": "Courts have said that:",
+    "to_demands": "I'm asking you to:",
+    "between_violations": "I also have a problem with:",
+    "section_transition": "Another thing is,"
+  },
+  "aggressive": {
+    "to_violations": "The following items VIOLATE the Fair Credit Reporting Act and MUST be corrected immediately:",
+    "to_legal_basis": "Your reporting VIOLATES the following federal law provisions:",
+    "to_mov": "I DEMAND production of the following documentation - computer verification is NOT acceptable:",
+    "to_case_law": "Courts have CONSISTENTLY held that:",
+    "to_demands": "I DEMAND the following actions be taken IMMEDIATELY:",
+    "between_violations": "ADDITIONALLY, the following VIOLATION must be addressed:",
+    "section_transition": "FURTHERMORE,"
+  }
+}
