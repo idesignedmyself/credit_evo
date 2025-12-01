@@ -538,6 +538,8 @@ class DiversityEngine:
 
     def get_fcra_citation(self, section: str) -> str:
         """Get a varied FCRA citation for a section."""
+        from .fcra_statutes import resolve_statute
+
         # Normalize section format
         section_key = section.replace("(", "").replace(")", "").replace(" ", "")
 
@@ -550,9 +552,8 @@ class DiversityEngine:
             if section_key in key.replace("(", "").replace(")", ""):
                 return self.rng.choice(variants)
 
-        # Fallback: return section with random prefix
-        prefixes = ["FCRA Section", "Section", "15 U.S.C. § 1681"]
-        return f"{self.rng.choice(prefixes)} {section}"
+        # Fallback: use the authoritative SSOT resolver for correct USC citation
+        return resolve_statute(section)
 
     def diversify(self, text: str, intensity: float = 0.3) -> str:
         """Apply synonym diversification to text."""

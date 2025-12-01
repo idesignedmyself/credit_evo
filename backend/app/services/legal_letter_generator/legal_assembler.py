@@ -15,6 +15,7 @@ from .mov_requirements import MOVBuilder
 from .validators_legal import LegalLetterValidator, LetterContentValidator, ValidationIssue
 from .tones import TONE_REGISTRY, get_tone_class
 from .diversity import DiversityEngine, shuffle_section_order
+from .fcra_statutes import resolve_statute
 
 
 # Load seed data
@@ -324,7 +325,7 @@ class LegalLetterAssembler:
                 section_info = FCRA_SECTIONS.get(group_key, {})
                 group_title = section_info.get("title", f"Section {group_key} Violations")
                 lines.append(f"### STATUTORY CATEGORY: {group_title}")
-                lines.append(f"Legal Reference: 15 U.S.C. § 1681 (Section {group_key})")
+                lines.append(f"Legal Reference: {resolve_statute(group_key)}")
             elif self.grouping_strategy == GroupingStrategy.BY_CREDITOR:
                 lines.append(f"### FURNISHER: {group_key}")
                 lines.append(f"Reporting entity requiring investigation")

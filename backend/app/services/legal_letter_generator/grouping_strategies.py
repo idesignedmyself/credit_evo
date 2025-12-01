@@ -178,10 +178,11 @@ VIOLATION_FCRA_MAP = {
 
 def get_fcra_section_details(section: str) -> Dict[str, str]:
     """Get full FCRA section details including title and requirement."""
+    from .fcra_statutes import resolve_statute
     return FCRA_SECTIONS.get(section, {
         "title": "FCRA Compliance",
         "requirement": "Information must be accurate and verifiable per FCRA standards.",
-        "citation": f"15 U.S.C. § 1681 (Section {section})"
+        "citation": resolve_statute(section)
     })
 
 
