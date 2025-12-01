@@ -21,7 +21,7 @@ const useViolationStore = create((set, get) => ({
       set({
         auditResult: result,
         violations: result.violations || [],
-        selectedViolationIds: (result.violations || []).map(v => v.violation_id),
+        selectedViolationIds: [],
         isLoading: false,
       });
       return result;

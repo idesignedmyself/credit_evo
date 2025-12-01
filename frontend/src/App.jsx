@@ -161,8 +161,8 @@ const AppLayout = () => {
         } />
 
         {/* Default redirect */}
-        <Route path="/" element={<Navigate to="/upload" replace />} />
-        <Route path="*" element={<Navigate to="/upload" replace />} />
+        <Route path="/" element={<Navigate to="/reports" replace />} />
+        <Route path="*" element={<Navigate to="/reports" replace />} />
       </Routes>
     </>
   );
