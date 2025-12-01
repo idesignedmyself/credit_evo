@@ -77,6 +77,7 @@ from .validators_legal import (
     ValidationIssue,
     LegalLetterValidator,
     LetterContentValidator,
+    StructuralValidator,
 )
 
 # Tone engines
@@ -84,6 +85,60 @@ from .tones import (
     TONE_REGISTRY,
     get_tone_class,
     list_tones,
+)
+
+# Diversity Engine (B6 - OPTION D)
+from .diversity_engine import (
+    DiversityEngine as NewDiversityEngine,
+    DiversityConfig,
+    MutationStrength,
+    ParagraphShuffler,
+    TemplateResolver,
+    create_diversity_engine,
+    diversify_text,
+    get_varied_phrase,
+    get_varied_transition,
+)
+
+# Entropy Controller
+from .entropy import (
+    EntropyLevel,
+    EntropyConfig,
+    EntropyController,
+    create_entropy_controller,
+)
+
+# Mutation Engine
+from .mutation import (
+    MutationEngine,
+    SynonymEngine,
+    ClauseFlipper,
+    PrepositionalReshuffler,
+    FillerModifier,
+    RhetoricalVariator,
+    create_mutation_engine,
+)
+
+# Phrase Pools
+from .phrase_pools import (
+    PhrasePoolManager,
+    get_pool,
+    get_transition,
+    get_template,
+    LEGAL_PHRASE_POOLS,
+    CIVIL_PHRASE_POOLS,
+    TRANSITION_POOLS,
+    TEMPLATE_POOLS,
+)
+
+# Structural Fixer
+from .structural_fixer import (
+    StructuralFixer,
+    StructuralMetadata,
+    LetterDomainType,
+    LEGAL_SECTION_SPECS,
+    CIVIL_SECTION_SPECS,
+    create_structural_fixer,
 )
 
 __all__ = [
@@ -116,8 +171,48 @@ __all__ = [
     "ValidationIssue",
     "LegalLetterValidator",
     "LetterContentValidator",
+    "StructuralValidator",
     # Tones
     "TONE_REGISTRY",
     "get_tone_class",
     "list_tones",
+    # Diversity Engine (B6 - OPTION D)
+    "NewDiversityEngine",
+    "DiversityConfig",
+    "MutationStrength",
+    "ParagraphShuffler",
+    "TemplateResolver",
+    "create_diversity_engine",
+    "diversify_text",
+    "get_varied_phrase",
+    "get_varied_transition",
+    # Entropy Controller
+    "EntropyLevel",
+    "EntropyConfig",
+    "EntropyController",
+    "create_entropy_controller",
+    # Mutation Engine
+    "MutationEngine",
+    "SynonymEngine",
+    "ClauseFlipper",
+    "PrepositionalReshuffler",
+    "FillerModifier",
+    "RhetoricalVariator",
+    "create_mutation_engine",
+    # Phrase Pools
+    "PhrasePoolManager",
+    "get_pool",
+    "get_transition",
+    "get_template",
+    "LEGAL_PHRASE_POOLS",
+    "CIVIL_PHRASE_POOLS",
+    "TRANSITION_POOLS",
+    "TEMPLATE_POOLS",
+    # Structural Fixer
+    "StructuralFixer",
+    "StructuralMetadata",
+    "LetterDomainType",
+    "LEGAL_SECTION_SPECS",
+    "CIVIL_SECTION_SPECS",
+    "create_structural_fixer",
 ]

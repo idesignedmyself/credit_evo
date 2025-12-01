@@ -18,6 +18,18 @@ from .diversity import DiversityEngine, shuffle_section_order
 from .fcra_statutes import resolve_statute
 from .tone_mask import ToneMask, LetterDomain, get_domain_for_tone, create_mask_for_tone
 
+# Import the new diversity engine components
+from .diversity_engine import (
+    DiversityEngine as NewDiversityEngine,
+    DiversityConfig,
+    MutationStrength,
+    create_diversity_engine,
+)
+from .entropy import EntropyLevel, create_entropy_controller
+
+# Import structural fixer for post-diversity structure enforcement
+from .structural_fixer import StructuralFixer, StructuralMetadata, create_structural_fixer
+
 
 # Load seed data
 SEEDS_DIR = Path(__file__).parent / "seeds"
@@ -74,6 +86,8 @@ class LegalLetterAssembler:
         include_case_law: bool = True,
         include_metro2: bool = True,
         include_mov: bool = True,
+        entropy_level: str = "medium",
+        mutation_strength: str = "medium",
     ):
         """
         Initialize the assembler.
@@ -85,6 +99,8 @@ class LegalLetterAssembler:
             include_case_law: Whether to include case law citations
             include_metro2: Whether to include Metro-2 explanations
             include_mov: Whether to include MOV requirements
+            entropy_level: Variation intensity (low, medium, high, maximum)
+            mutation_strength: Sentence mutation intensity (none, low, medium, high, maximum)
         """
         self.tone = tone
         self.grouping_strategy = GroupingStrategy(grouping_strategy)
@@ -92,6 +108,8 @@ class LegalLetterAssembler:
         self.include_case_law = include_case_law
         self.include_metro2 = include_metro2
         self.include_mov = include_mov
+        self.entropy_level = entropy_level
+        self.mutation_strength = mutation_strength
 
         # Determine letter domain (legal vs civil) from tone
         self.letter_domain = get_domain_for_tone(tone)
@@ -107,11 +125,23 @@ class LegalLetterAssembler:
         self.metro2_builder = Metro2ExplanationBuilder()
         self.mov_builder = MOVBuilder()
 
-        # Initialize diversity engine for anti-template measures
+        # Initialize legacy diversity engine for backward compatibility
         self.diversity_engine = DiversityEngine(seed=self.seed, tone=tone)
+
+        # Initialize new diversity engine with entropy and mutation controls
+        domain = "legal" if self.is_legal_letter else "civil"
+        self.new_diversity_engine = create_diversity_engine(
+            entropy_level=entropy_level,
+            mutation_strength=mutation_strength,
+            domain=domain,
+            seed=self.seed,
+        )
 
         # Initialize tone mask for domain isolation
         self.tone_mask = create_mask_for_tone(tone, include_case_law=include_case_law)
+
+        # Initialize structural fixer for post-diversity integrity enforcement
+        self.structural_fixer = create_structural_fixer()
 
     def generate(
         self,
@@ -208,6 +238,25 @@ class LegalLetterAssembler:
         # Apply tone mask for domain isolation
         # This filters forbidden phrases and applies domain-specific rules
         letter_content = self.tone_mask.apply(letter_content)
+
+        # Apply structural fixer to enforce section ordering and integrity
+        # This runs AFTER diversity/mutation and BEFORE final validation
+        domain = "legal" if self.is_legal_letter else "civil"
+        letter_content, structural_metadata = self.structural_fixer.fix_structure(
+            letter_content,
+            domain=domain,
+            tone=self.tone,
+            metadata={
+                "bureau": bureau,
+                "violation_count": len(violations),
+                "include_case_law": self.include_case_law,
+                "include_metro2": self.include_metro2,
+                "include_mov": self.include_mov,
+            }
+        )
+
+        # Store structural metadata for return
+        self._structural_metadata = structural_metadata
 
         # Validate generated content
         content_issues = LetterContentValidator.validate_letter_content(
@@ -809,9 +858,24 @@ def generate_legal_letter(
     include_case_law: bool = True,
     include_metro2: bool = True,
     include_mov: bool = True,
+    entropy_level: str = "medium",
+    mutation_strength: str = "medium",
 ) -> Dict[str, Any]:
     """
     Convenience function to generate a legal letter.
+
+    Args:
+        violations: List of violation dictionaries
+        consumer: Consumer information dict
+        bureau: Target bureau (transunion, experian, equifax)
+        tone: Letter tone
+        grouping_strategy: How to group violations
+        seed: Random seed for deterministic output
+        include_case_law: Whether to include case law citations
+        include_metro2: Whether to include Metro-2 explanations
+        include_mov: Whether to include MOV requirements
+        entropy_level: Variation intensity (low, medium, high, maximum)
+        mutation_strength: Sentence mutation intensity (none, low, medium, high, maximum)
 
     Returns:
         Dict with 'letter', 'validation_issues', 'is_valid', 'metadata'
@@ -823,6 +887,8 @@ def generate_legal_letter(
         include_case_law=include_case_law,
         include_metro2=include_metro2,
         include_mov=include_mov,
+        entropy_level=entropy_level,
+        mutation_strength=mutation_strength,
     )
 
     letter, issues = assembler.generate(
@@ -835,6 +901,24 @@ def generate_legal_letter(
 
     # Get mask metadata for tone isolation compliance
     mask_metadata = assembler.tone_mask.to_dict()
+
+    # Get diversity engine statistics
+    diversity_stats = assembler.new_diversity_engine.get_variation_stats()
+
+    # Get structural metadata
+    structural_metadata = getattr(assembler, '_structural_metadata', None)
+    structural_meta_dict = None
+    if structural_metadata:
+        structural_meta_dict = {
+            "sections_found": structural_metadata.sections_found,
+            "sections_reordered": structural_metadata.sections_reordered,
+            "sections_inserted": structural_metadata.sections_inserted,
+            "duplicates_removed": structural_metadata.duplicates_removed,
+            "cross_domain_removed": structural_metadata.cross_domain_removed,
+            "order_violations_fixed": structural_metadata.order_violations_fixed,
+            "structure_valid": structural_metadata.structure_valid,
+            "domain": structural_metadata.domain,
+        }
 
     return {
         "letter": letter,
@@ -860,7 +944,14 @@ def generate_legal_letter(
             "letter_domain": assembler.letter_domain.value,
             "is_legal_letter": assembler.is_legal_letter,
             "is_civil_letter": assembler.is_civil_letter,
+            # Diversity engine settings
+            "entropy_level": entropy_level,
+            "mutation_strength": mutation_strength,
         },
         # Mask application metadata (SWEEP C compliance)
         "mask_metadata": mask_metadata,
+        # Diversity engine statistics
+        "diversity_stats": diversity_stats,
+        # Structural integrity metadata
+        "structural_metadata": structural_meta_dict,
     }

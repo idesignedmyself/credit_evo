@@ -142,3 +142,103 @@ metadata = mask.get_metadata()
 mask = ToneMask(LetterDomain.CIVIL, tone="conversational")
 filtered_content = mask.apply(raw_content)
 ```
+
+---
+
+### B6 - OPTION D: Diversity Engine Expansion Pack (v3.0) ✅ ACCOMPLISHED
+**Status:** COMPLETE
+**Date:** 2024-12-01
+**Files Added:**
+- `entropy.py` - EntropyController with EntropyLevel enum (low/medium/high/maximum)
+- `mutation.py` - MutationEngine with 5 mutators (Synonym, ClauseFlipper, PrepositionalReshuffler, FillerModifier, RhetoricalVariator)
+- `phrase_pools/__init__.py` - PhrasePoolManager with domain-specific pools
+- `phrase_pools/legal_pools.py` - 50+ legal phrase variations
+- `phrase_pools/civil_pools.py` - 50+ civil phrase variations
+- `phrase_pools/transitions.py` - Transition phrase pools
+- `phrase_pools/templates.py` - Template pools with placeholders
+- `diversity_engine.py` - Main DiversityEngine orchestrator
+
+**Problem Fixed:**
+Letters were too repetitive and detectable as templates.
+
+**Solution:**
+Multi-layer diversity system:
+1. **Entropy Levels**: Control mutation intensity (low=10%, medium=30%, high=60%, maximum=90%)
+2. **Mutation Types**: Synonym swaps, clause flips, prepositional reshuffles, filler modifications, rhetorical variations
+3. **Phrase Pools**: Domain-specific pools with weighted random selection
+4. **Seeded Randomness**: Deterministic output for reproducibility
+
+**Usage:**
+```python
+from .diversity_engine import create_diversity_engine
+
+engine = create_diversity_engine(
+    entropy_level="high",
+    mutation_strength="medium",
+    domain="legal",
+    seed=42
+)
+mutated_text = engine.mutate_text(original_text)
+```
+
+---
+
+### B7: Structural Coherence & Integrity Pack (v4.0) ✅ ACCOMPLISHED
+**Status:** COMPLETE
+**Date:** 2024-12-01
+**Files Added:**
+- `structural_fixer.py` - StructuralFixer class with section ordering and cross-domain filtering
+- `tests/test_structural_integrity.py` - 24 tests across 8 test classes
+
+**Files Modified:**
+- `validators_legal.py` - Added StructuralValidator class with 10 validation methods
+- `__init__.py` - Added StructuralValidator and structural_fixer exports
+- `legal_assembler.py` - Integrated structural fixer after diversity engine
+
+**Problem Fixed:**
+Section ordering could become scrambled after diversity mutations, and cross-domain content could bleed between legal and civil letters.
+
+**Solution:**
+Structural enforcement system with:
+
+**Legal Letter Sequence (14 sections):**
+1. Header → 2. Date → 3. Subject → 4. Preliminary Statement → 5. Legal Basis → 6. Specific Violations → 7. Metro-2 Compliance → 8. Method of Verification → 9. Case Law → 10. Formal Demands → 11. Reservation of Rights → 12. Signature → 13. Enclosures → 14. CC
+
+**Civil Letter Sequence (9 sections):**
+1. Header → 2. Date → 3. Subject → 4. Narrative Intro → 5. Disputed Items → 6. Evidence → 7. Requested Actions → 8. Closing → 9. Signature
+
+**Position-Locked Sections:**
+- Metro-2: Must appear after Violations, before MOV
+- MOV: Must appear after Metro-2, before Case Law
+- Case Law: Must appear after MOV, before Demands
+
+**Cross-Domain Filters:**
+- LEGAL_ONLY_TERMS: "pursuant to", "Metro-2", "MOV", "reinvestigation", etc.
+- CIVIL_ONLY_TERMS: "I would appreciate", "thank you for your time", etc.
+
+**Test Coverage (24 tests):**
+| Test Class | Tests | Coverage |
+|------------|-------|----------|
+| TestLegalOrderExact | 3 | Section ordering validation |
+| TestLegalNoMissingHeaders | 3 | Required section validation |
+| TestLegalMOVPosition | 3 | MOV position locking |
+| TestLegalCaseLawPosition | 3 | Case Law position locking |
+| TestCivilOrderExact | 3 | Civil section ordering |
+| TestNoCrossDomainBleed | 4 | Cross-domain contamination |
+| TestMutationDoesNotBreakOrder | 2 | Mutation structure preservation |
+| TestHighEntropyStillValidStructure | 3 | Maximum entropy handling |
+
+**Usage:**
+```python
+from .structural_fixer import create_structural_fixer
+from .validators_legal import StructuralValidator
+
+# Fix structure
+fixer = create_structural_fixer()
+fixed_content, metadata = fixer.fix_structure(
+    content, domain="legal", tone="professional"
+)
+
+# Validate structure
+is_valid, issues = StructuralValidator.validate_structure(content, "legal")
+```

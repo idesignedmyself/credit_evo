@@ -1,10 +1,21 @@
 """
 Legal Letter Generator - Validators
 Ensures legal letter structure is complete and valid.
+Includes structural validation for section ordering and domain isolation.
 """
 from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass
 from enum import Enum
+import re
+
+from .structural_fixer import (
+    StructuralFixer,
+    LetterDomainType,
+    LEGAL_SECTION_SPECS,
+    CIVIL_SECTION_SPECS,
+    LEGAL_ONLY_TERMS,
+    CIVIL_ONLY_TERMS,
+)
 
 
 class ValidationLevel(str, Enum):
@@ -451,3 +462,354 @@ class LetterContentValidator:
             ))
 
         return issues
+
+
+class StructuralValidator:
+    """Validates structural integrity of generated letters."""
+
+    def __init__(self):
+        self.fixer = StructuralFixer()
+
+    @classmethod
+    def validate_legal_order(cls, content: str) -> List[ValidationIssue]:
+        """Validate that legal letter sections are in correct order."""
+        issues = []
+        last_position = -1
+        last_section = None
+
+        for spec in LEGAL_SECTION_SPECS:
+            for pattern in spec.header_patterns:
+                match = re.search(pattern, content, re.IGNORECASE | re.MULTILINE)
+                if match:
+                    position = match.start()
+                    if position < last_position and spec.position > 0:
+                        issues.append(ValidationIssue(
+                            level=ValidationLevel.ERROR,
+                            code="SECTION_ORDER_VIOLATION",
+                            message=f"Section '{spec.name}' appears before '{last_section}' but should come after",
+                            field=spec.name,
+                            suggestion=f"Move '{spec.name}' section to correct position"
+                        ))
+                    last_position = position
+                    last_section = spec.name
+                    break
+
+        return issues
+
+    @classmethod
+    def validate_civil_order(cls, content: str) -> List[ValidationIssue]:
+        """Validate that civil letter sections are in correct order."""
+        issues = []
+        last_position = -1
+        last_section = None
+
+        for spec in CIVIL_SECTION_SPECS:
+            for pattern in spec.header_patterns:
+                match = re.search(pattern, content, re.IGNORECASE | re.MULTILINE)
+                if match:
+                    position = match.start()
+                    if position < last_position and spec.position > 0:
+                        issues.append(ValidationIssue(
+                            level=ValidationLevel.ERROR,
+                            code="SECTION_ORDER_VIOLATION",
+                            message=f"Section '{spec.name}' appears before '{last_section}' but should come after",
+                            field=spec.name,
+                            suggestion=f"Move '{spec.name}' section to correct position"
+                        ))
+                    last_position = position
+                    last_section = spec.name
+                    break
+
+        return issues
+
+    @classmethod
+    def validate_required_sections(
+        cls,
+        content: str,
+        domain: str
+    ) -> List[ValidationIssue]:
+        """Validate that all required sections are present."""
+        issues = []
+        specs = LEGAL_SECTION_SPECS if domain == "legal" else CIVIL_SECTION_SPECS
+        domain_type = LetterDomainType(domain)
+
+        for spec in specs:
+            if not spec.required:
+                continue
+            if domain_type in spec.forbidden_in_domains:
+                continue
+
+            found = False
+            for pattern in spec.header_patterns:
+                if re.search(pattern, content, re.IGNORECASE | re.MULTILINE):
+                    found = True
+                    break
+
+            if not found:
+                issues.append(ValidationIssue(
+                    level=ValidationLevel.ERROR,
+                    code="MISSING_REQUIRED_SECTION",
+                    message=f"Required section '{spec.name}' is missing",
+                    field=spec.name,
+                    suggestion=f"Add '{spec.name}' section to the letter"
+                ))
+
+        return issues
+
+    @classmethod
+    def validate_no_cross_domain_bleed(
+        cls,
+        content: str,
+        domain: str
+    ) -> List[ValidationIssue]:
+        """Validate that no cross-domain content exists."""
+        issues = []
+        domain_type = LetterDomainType(domain)
+
+        if domain_type == LetterDomainType.CIVIL:
+            # Check for legal-only terms
+            for pattern in LEGAL_ONLY_TERMS:
+                match = re.search(pattern, content, re.IGNORECASE)
+                if match:
+                    issues.append(ValidationIssue(
+                        level=ValidationLevel.ERROR,
+                        code="CROSS_DOMAIN_TERM",
+                        message=f"Legal term '{match.group()}' found in civil letter",
+                        suggestion="Remove legal terminology from civil letter"
+                    ))
+
+            # Check for forbidden sections
+            for spec in LEGAL_SECTION_SPECS:
+                if LetterDomainType.CIVIL in spec.forbidden_in_domains:
+                    for pattern in spec.header_patterns:
+                        if re.search(pattern, content, re.IGNORECASE | re.MULTILINE):
+                            issues.append(ValidationIssue(
+                                level=ValidationLevel.ERROR,
+                                code="FORBIDDEN_SECTION",
+                                message=f"Legal-only section '{spec.name}' found in civil letter",
+                                field=spec.name,
+                                suggestion=f"Remove '{spec.name}' section from civil letter"
+                            ))
+
+        elif domain_type == LetterDomainType.LEGAL:
+            # Check for civil-only terms
+            for pattern in CIVIL_ONLY_TERMS:
+                match = re.search(pattern, content, re.IGNORECASE)
+                if match:
+                    issues.append(ValidationIssue(
+                        level=ValidationLevel.WARNING,
+                        code="CROSS_DOMAIN_TERM",
+                        message=f"Civil term '{match.group()}' found in legal letter",
+                        suggestion="Consider using more formal legal language"
+                    ))
+
+        return issues
+
+    @classmethod
+    def validate_mov_position(cls, content: str) -> List[ValidationIssue]:
+        """Validate that MOV section is in correct position (after Metro2, before Case Law)."""
+        issues = []
+        mov_match = re.search(r"METHOD OF VERIFICATION|MOV\b", content, re.IGNORECASE)
+
+        if not mov_match:
+            return issues
+
+        mov_pos = mov_match.start()
+
+        # Check Metro2 is before MOV
+        metro2_match = re.search(r"METRO-?2", content, re.IGNORECASE)
+        if metro2_match and metro2_match.start() > mov_pos:
+            issues.append(ValidationIssue(
+                level=ValidationLevel.ERROR,
+                code="MOV_POSITION_VIOLATION",
+                message="Metro-2 section should appear before MOV section",
+                field="mov_section",
+                suggestion="Reorder sections: Metro-2 -> MOV -> Case Law"
+            ))
+
+        # Check Case Law is after MOV
+        case_law_match = re.search(r"CASE LAW|LEGAL PRECEDENT", content, re.IGNORECASE)
+        if case_law_match and case_law_match.start() < mov_pos:
+            issues.append(ValidationIssue(
+                level=ValidationLevel.ERROR,
+                code="MOV_POSITION_VIOLATION",
+                message="Case Law section should appear after MOV section",
+                field="mov_section",
+                suggestion="Reorder sections: Metro-2 -> MOV -> Case Law"
+            ))
+
+        return issues
+
+    @classmethod
+    def validate_case_law_position(cls, content: str) -> List[ValidationIssue]:
+        """Validate that Case Law section is in correct position (after MOV, before Demands)."""
+        issues = []
+        case_law_match = re.search(r"CASE LAW|LEGAL PRECEDENT", content, re.IGNORECASE)
+
+        if not case_law_match:
+            return issues
+
+        case_pos = case_law_match.start()
+
+        # Check MOV is before Case Law
+        mov_match = re.search(r"METHOD OF VERIFICATION|MOV\b", content, re.IGNORECASE)
+        if mov_match and mov_match.start() > case_pos:
+            issues.append(ValidationIssue(
+                level=ValidationLevel.ERROR,
+                code="CASE_LAW_POSITION_VIOLATION",
+                message="MOV section should appear before Case Law section",
+                field="case_law",
+                suggestion="Reorder sections: MOV -> Case Law -> Demands"
+            ))
+
+        # Check Demands is after Case Law
+        demands_match = re.search(r"FORMAL DEMANDS|DEMANDS\b", content, re.IGNORECASE)
+        if demands_match and demands_match.start() < case_pos:
+            issues.append(ValidationIssue(
+                level=ValidationLevel.ERROR,
+                code="CASE_LAW_POSITION_VIOLATION",
+                message="Demands section should appear after Case Law section",
+                field="case_law",
+                suggestion="Reorder sections: MOV -> Case Law -> Demands"
+            ))
+
+        return issues
+
+    @classmethod
+    def validate_metro2_position(cls, content: str) -> List[ValidationIssue]:
+        """Validate that Metro-2 section is in correct position (after Violations, before MOV)."""
+        issues = []
+        metro2_match = re.search(r"METRO-?2", content, re.IGNORECASE)
+
+        if not metro2_match:
+            return issues
+
+        metro2_pos = metro2_match.start()
+
+        # Check Violations is before Metro-2
+        violations_match = re.search(r"SPECIFIC VIOLATIONS|VIOLATIONS\b|DISPUTED ITEMS", content, re.IGNORECASE)
+        if violations_match and violations_match.start() > metro2_pos:
+            issues.append(ValidationIssue(
+                level=ValidationLevel.ERROR,
+                code="METRO2_POSITION_VIOLATION",
+                message="Violations section should appear before Metro-2 section",
+                field="metro2_compliance",
+                suggestion="Reorder sections: Violations -> Metro-2 -> MOV"
+            ))
+
+        # Check MOV is after Metro-2
+        mov_match = re.search(r"METHOD OF VERIFICATION|MOV\b", content, re.IGNORECASE)
+        if mov_match and mov_match.start() < metro2_pos:
+            issues.append(ValidationIssue(
+                level=ValidationLevel.ERROR,
+                code="METRO2_POSITION_VIOLATION",
+                message="MOV section should appear after Metro-2 section",
+                field="metro2_compliance",
+                suggestion="Reorder sections: Violations -> Metro-2 -> MOV"
+            ))
+
+        return issues
+
+    @classmethod
+    def validate_section_count(
+        cls,
+        content: str,
+        domain: str
+    ) -> List[ValidationIssue]:
+        """Validate the number of sections matches expectations."""
+        issues = []
+        specs = LEGAL_SECTION_SPECS if domain == "legal" else CIVIL_SECTION_SPECS
+        domain_type = LetterDomainType(domain)
+
+        found_count = 0
+        expected_required = 0
+
+        for spec in specs:
+            if domain_type in spec.forbidden_in_domains:
+                continue
+
+            if spec.required:
+                expected_required += 1
+
+            for pattern in spec.header_patterns:
+                if re.search(pattern, content, re.IGNORECASE | re.MULTILINE):
+                    found_count += 1
+                    break
+
+        if found_count < expected_required:
+            issues.append(ValidationIssue(
+                level=ValidationLevel.WARNING,
+                code="INSUFFICIENT_SECTIONS",
+                message=f"Only {found_count} sections found, expected at least {expected_required}",
+                suggestion="Ensure all required sections are present"
+            ))
+
+        return issues
+
+    @classmethod
+    def validate_structure(
+        cls,
+        content: str,
+        domain: str
+    ) -> Tuple[bool, List[ValidationIssue]]:
+        """
+        Run all structural validations.
+
+        Args:
+            content: Letter content to validate
+            domain: "legal" or "civil"
+
+        Returns:
+            Tuple of (is_valid, issues)
+        """
+        all_issues = []
+
+        # Run order validation
+        if domain == "legal":
+            all_issues.extend(cls.validate_legal_order(content))
+            all_issues.extend(cls.validate_mov_position(content))
+            all_issues.extend(cls.validate_case_law_position(content))
+            all_issues.extend(cls.validate_metro2_position(content))
+        else:
+            all_issues.extend(cls.validate_civil_order(content))
+
+        # Run required sections validation
+        all_issues.extend(cls.validate_required_sections(content, domain))
+
+        # Run cross-domain validation
+        all_issues.extend(cls.validate_no_cross_domain_bleed(content, domain))
+
+        # Run section count validation
+        all_issues.extend(cls.validate_section_count(content, domain))
+
+        # Check if any errors exist
+        has_errors = any(issue.level == ValidationLevel.ERROR for issue in all_issues)
+
+        return (not has_errors, all_issues)
+
+    @classmethod
+    def format_issues(cls, issues: List[ValidationIssue]) -> str:
+        """Format structural validation issues as a readable string."""
+        if not issues:
+            return "No structural issues found."
+
+        lines = []
+
+        errors = [i for i in issues if i.level == ValidationLevel.ERROR]
+        warnings = [i for i in issues if i.level == ValidationLevel.WARNING]
+
+        if errors:
+            lines.append("STRUCTURAL ERRORS:")
+            for issue in errors:
+                lines.append(f"  - [{issue.code}] {issue.message}")
+                if issue.suggestion:
+                    lines.append(f"    Fix: {issue.suggestion}")
+
+        if warnings:
+            lines.append("\nSTRUCTURAL WARNINGS:")
+            for issue in warnings:
+                lines.append(f"  - [{issue.code}] {issue.message}")
+                if issue.suggestion:
+                    lines.append(f"    Suggestion: {issue.suggestion}")
+
+        return "\n".join(lines)
