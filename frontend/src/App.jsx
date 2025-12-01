@@ -131,8 +131,8 @@ const AppLayout = () => {
     <>
       <Routes>
         {/* Public routes */}
-        <Route path="/login" element={isAuthenticated ? <Navigate to="/upload" replace /> : <LoginPage />} />
-        <Route path="/register" element={isAuthenticated ? <Navigate to="/upload" replace /> : <RegisterPage />} />
+        <Route path="/login" element={isAuthenticated ? <Navigate to="/reports" replace /> : <LoginPage />} />
+        <Route path="/register" element={isAuthenticated ? <Navigate to="/reports" replace /> : <RegisterPage />} />
 
         {/* Protected routes with NavBar */}
         <Route path="/upload" element={

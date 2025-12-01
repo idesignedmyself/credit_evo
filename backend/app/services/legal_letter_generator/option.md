@@ -320,3 +320,49 @@ result = generate_civil_letter(
 # result.is_valid - validation status
 # result.metadata - includes domain="civil", tone_metadata, mask info
 ```
+
+---
+
+### B9: Frontend UX Improvements (v6.0) ✅ ACCOMPLISHED
+**Status:** COMPLETE
+**Date:** 2024-12-01
+**Files Modified:**
+- `frontend/src/pages/LoginPage.jsx` - Added password visibility toggle and redirect fix
+- `frontend/src/components/ViolationList.jsx` - Bureau-scoped Select All
+- `frontend/src/state/violationStore.js` - Added selectByBureau/deselectByBureau actions
+- `frontend/src/App.jsx` - Fixed route guard redirects for authenticated users
+
+**Changes Implemented:**
+
+**1. Password Visibility Toggle (LoginPage.jsx)**
+- Added eye icon button to toggle password visibility
+- Uses MUI's Visibility/VisibilityOff icons with InputAdornment
+- State-managed with `showPassword` boolean
+- Accessible with dynamic aria-label
+
+**2. Login Redirect Fix (LoginPage.jsx + App.jsx)**
+- Changed post-login navigation from `/upload` to `/reports`
+- Fixed route guard redirects: authenticated users on /login or /register are now redirected to `/reports` instead of `/upload`
+- Users now land on the reports list page after successful login
+
+**3. Bureau-Scoped Violation Selection (ViolationList.jsx + violationStore.js)**
+- Removed global "Select All" checkbox from header
+- Added per-bureau "Select All [Bureau]" checkboxes in Bureau tab view
+- Each bureau group has its own select/deselect toggle
+- Selection counter shows per-bureau selection state (e.g., "Select All TransUnion (5/12)")
+- Added `selectByBureau(bureau)` and `deselectByBureau(bureau)` to violationStore
+
+**Problem Fixed:**
+- Global Select All was impractical - users would never generate letters for all violations across all bureaus at once
+- Password field lacked visibility toggle, a standard UX feature
+- Login redirect went to wrong page
+
+**Files Changed:**
+| File | Change |
+|------|--------|
+| `LoginPage.jsx` | Password toggle + redirect fix |
+| `App.jsx` | Route guard redirect to /reports |
+| `ViolationList.jsx` | Per-bureau Select All checkboxes |
+| `violationStore.js` | selectByBureau/deselectByBureau actions |
+
+---

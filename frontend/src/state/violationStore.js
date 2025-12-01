@@ -52,6 +52,30 @@ const useViolationStore = create((set, get) => ({
     set({ selectedViolationIds: [] });
   },
 
+  selectByBureau: (bureau) => {
+    set((state) => {
+      const bureauViolationIds = state.violations
+        .filter(v => v.bureau?.toLowerCase() === bureau.toLowerCase())
+        .map(v => v.violation_id);
+      // Add bureau violations to existing selection (merge, don't replace)
+      const newSelection = [...new Set([...state.selectedViolationIds, ...bureauViolationIds])];
+      return { selectedViolationIds: newSelection };
+    });
+  },
+
+  deselectByBureau: (bureau) => {
+    set((state) => {
+      const bureauViolationIds = state.violations
+        .filter(v => v.bureau?.toLowerCase() === bureau.toLowerCase())
+        .map(v => v.violation_id);
+      return {
+        selectedViolationIds: state.selectedViolationIds.filter(
+          id => !bureauViolationIds.includes(id)
+        ),
+      };
+    });
+  },
+
   isViolationSelected: (violationId) => {
     return get().selectedViolationIds.includes(violationId);
   },

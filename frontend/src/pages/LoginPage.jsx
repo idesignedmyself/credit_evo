@@ -12,7 +12,10 @@ import {
   Button,
   Alert,
   Link,
+  InputAdornment,
+  IconButton,
 } from '@mui/material';
+import { Visibility, VisibilityOff } from '@mui/icons-material';
 import useAuthStore from '../state/authStore';
 import { login, getMe } from '../api/authApi';
 
@@ -22,6 +25,7 @@ function LoginPage() {
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e) => {
@@ -42,8 +46,8 @@ function LoginPage() {
       // Store in auth state (this also sets localStorage, but we needed it earlier)
       storeLogin(tokenData.access_token, userData);
 
-      // Redirect to upload page
-      navigate('/upload');
+      // Redirect to reports page
+      navigate('/reports');
     } catch (err) {
       setError(err.message);
     } finally {
@@ -100,7 +104,7 @@ function LoginPage() {
             <TextField
               id="password"
               name="password"
-              type="password"
+              type={showPassword ? 'text' : 'password'}
               label="Password"
               autoComplete="current-password"
               required
@@ -108,6 +112,20 @@ function LoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               sx={{ mb: 3 }}
+              InputProps={{
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      onClick={() => setShowPassword(!showPassword)}
+                      onMouseDown={(e) => e.preventDefault()}
+                      edge="end"
+                    >
+                      {showPassword ? <VisibilityOff /> : <Visibility />}
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              }}
             />
             <Button
               type="submit"

@@ -37,8 +37,8 @@ const ViolationList = () => {
     violations,
     selectedViolationIds,
     toggleViolation,
-    selectAll,
-    deselectAll,
+    selectByBureau,
+    deselectByBureau,
     isLoading,
     error
   } = useViolationStore();
@@ -76,14 +76,23 @@ const ViolationList = () => {
   }
 
   const totalViolations = violations.length;
-  const allSelected = violations.length > 0 && selectedViolationIds.length === violations.length;
-  const someSelected = selectedViolationIds.length > 0 && selectedViolationIds.length < violations.length;
 
-  const handleSelectAllToggle = () => {
+  // Helper function to check bureau selection state
+  const getBureauSelectionState = (bureau, items) => {
+    const bureauViolationIds = items.map(v => v.violation_id);
+    const selectedInBureau = bureauViolationIds.filter(id => selectedViolationIds.includes(id));
+    const allSelected = selectedInBureau.length === bureauViolationIds.length;
+    const someSelected = selectedInBureau.length > 0 && selectedInBureau.length < bureauViolationIds.length;
+    return { allSelected, someSelected, selectedCount: selectedInBureau.length, totalCount: bureauViolationIds.length };
+  };
+
+  // Handle per-bureau select all toggle
+  const handleBureauSelectToggle = (bureau, items) => {
+    const { allSelected } = getBureauSelectionState(bureau, items);
     if (allSelected) {
-      deselectAll();
+      deselectByBureau(bureau);
     } else {
-      selectAll();
+      selectByBureau(bureau);
     }
   };
 
@@ -103,8 +112,8 @@ const ViolationList = () => {
         {totalViolations} Violations Found
       </Typography>
 
-      {/* TABS with Select All on the right */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+      {/* TABS */}
+      <Box sx={{ mb: 2 }}>
         <Tabs
           value={groupBy}
           onChange={(e, v) => setGroupBy(v)}
@@ -114,21 +123,6 @@ const ViolationList = () => {
           <Tab value="bureau" label="Group by Bureau" />
           <Tab value="accounts" label={`Accounts (${accounts.length})`} />
         </Tabs>
-
-        {/* SELECT ALL TOGGLE */}
-        {violations.length > 0 && (
-          <FormControlLabel
-            control={
-              <Checkbox
-                checked={allSelected}
-                indeterminate={someSelected}
-                onChange={handleSelectAllToggle}
-                color="primary"
-              />
-            }
-            label={`${selectedViolationIds.length}/${violations.length} Selected`}
-          />
-        )}
       </Box>
 
       {/* ------- SPA INSTANT TABS (no unmounting) ------- */}
@@ -193,31 +187,40 @@ const ViolationList = () => {
 
       {/* BUREAU TAB */}
       <Box hidden={groupBy !== "bureau"}>
-        {Object.entries(groupedByBureau).map(([group, items]) => (
-          <Box key={group} sx={{ mb: 3 }}>
-            <Typography
-              variant="subtitle1"
-              sx={{
-                fontWeight: 'bold',
-                mb: 1,
-                pb: 1,
-                borderBottom: '2px solid',
-                borderColor: 'primary.main',
-              }}
-            >
-              {group} ({items.length})
-            </Typography>
+        {Object.entries(groupedByBureau).map(([group, items]) => {
+          const { allSelected, someSelected, selectedCount, totalCount } = getBureauSelectionState(group, items);
+          return (
+            <Box key={group} sx={{ mb: 3 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1, pb: 1, borderBottom: '2px solid', borderColor: 'primary.main' }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
+                  {group} ({items.length})
+                </Typography>
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={allSelected}
+                      indeterminate={someSelected}
+                      onChange={() => handleBureauSelectToggle(group, items)}
+                      color="primary"
+                      size="small"
+                    />
+                  }
+                  label={`Select All ${group} (${selectedCount}/${totalCount})`}
+                  sx={{ mr: 0 }}
+                />
+              </Box>
 
-            {items.map((violation) => (
-              <ViolationToggle
-                key={violation.violation_id}
-                violation={violation}
-                isSelected={selectedViolationIds.includes(violation.violation_id)}
-                onToggle={toggleViolation}
-              />
-            ))}
-          </Box>
-        ))}
+              {items.map((violation) => (
+                <ViolationToggle
+                  key={violation.violation_id}
+                  violation={violation}
+                  isSelected={selectedViolationIds.includes(violation.violation_id)}
+                  onToggle={toggleViolation}
+                />
+              ))}
+            </Box>
+          );
+        })}
       </Box>
 
       {/* ACCOUNTS TAB */}
