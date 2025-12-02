@@ -525,49 +525,102 @@ class TemporalRules:
         Check if account has exceeded 7-year reporting limit.
 
         FCRA §605(a) limits reporting to 7 years from DOFD.
+        For closed/derogatory accounts without DOFD, uses date_opened as fallback.
         """
         violations = []
-
-        # Must have DOFD to check
-        if not account.date_of_first_delinquency:
-            return violations
-
-        # Only applies to derogatory accounts
-        if account.account_status not in [AccountStatus.CHARGEOFF, AccountStatus.COLLECTION, AccountStatus.DEROGATORY]:
-            return violations
-
-        dofd = account.date_of_first_delinquency
-        obsolete_date = _add_years(dofd, 7)
         today = date.today()
 
-        if obsolete_date < today:
-            days_past = (today - obsolete_date).days
-            months_past = days_past // 30
+        # Derogatory statuses that should have 7-year limit
+        derogatory_statuses = [
+            AccountStatus.CHARGEOFF, AccountStatus.COLLECTION,
+            AccountStatus.DEROGATORY, AccountStatus.CLOSED
+        ]
 
-            violations.append(Violation(
-                violation_type=ViolationType.OBSOLETE_ACCOUNT,
-                severity=Severity.HIGH,
-                account_id=account.account_id,
-                creditor_name=account.creditor_name,
-                account_number_masked=account.account_number_masked,
-                furnisher_type=account.furnisher_type,
-                bureau=bureau,
-                description=(
-                    f"This account has a DOFD of {dofd.strftime('%B %d, %Y')}, meaning the "
-                    f"7-year reporting period expired on {obsolete_date.strftime('%B %d, %Y')}. "
-                    f"This account is approximately {months_past} months past the legal limit."
-                ),
-                expected_value=f"Removal by {obsolete_date}",
-                actual_value=f"Still reporting as of {today}",
-                fcra_section="605(a)",
-                metro2_field="25",
-                evidence={
-                    "dofd": str(dofd),
-                    "obsolete_date": str(obsolete_date),
-                    "days_past": days_past,
-                    "months_past": months_past
-                }
-            ))
+        # First try: Use DOFD if available
+        if account.date_of_first_delinquency:
+            if account.account_status in [AccountStatus.CHARGEOFF, AccountStatus.COLLECTION, AccountStatus.DEROGATORY]:
+                dofd = account.date_of_first_delinquency
+                obsolete_date = _add_years(dofd, 7)
+
+                if obsolete_date < today:
+                    days_past = (today - obsolete_date).days
+                    months_past = days_past // 30
+
+                    violations.append(Violation(
+                        violation_type=ViolationType.OBSOLETE_ACCOUNT,
+                        severity=Severity.HIGH,
+                        account_id=account.account_id,
+                        creditor_name=account.creditor_name,
+                        account_number_masked=account.account_number_masked,
+                        furnisher_type=account.furnisher_type,
+                        bureau=bureau,
+                        description=(
+                            f"This account has a DOFD of {dofd.strftime('%B %d, %Y')}, meaning the "
+                            f"7-year reporting period expired on {obsolete_date.strftime('%B %d, %Y')}. "
+                            f"This account is approximately {months_past} months past the legal limit and "
+                            f"must be deleted from the credit report."
+                        ),
+                        expected_value=f"Removal by {obsolete_date}",
+                        actual_value=f"Still reporting as of {today}",
+                        fcra_section="605(a)",
+                        metro2_field="25",
+                        evidence={
+                            "dofd": str(dofd),
+                            "obsolete_date": str(obsolete_date),
+                            "days_past": days_past,
+                            "months_past": months_past
+                        }
+                    ))
+                    return violations  # Don't double-count
+
+        # Fallback: Use date_opened for closed accounts without DOFD
+        # This catches accounts >7 years old that may have negative info
+        if account.date_opened and not account.date_of_first_delinquency:
+            # Check if account is closed or has derogatory indicators
+            is_potentially_obsolete = (
+                account.account_status in derogatory_statuses or
+                account.balance == 0 or  # Closed accounts often have $0 balance
+                (account.date_closed and account.date_closed < _add_years(today, -7))  # Closed >7 years ago
+            )
+
+            if is_potentially_obsolete:
+                date_opened = account.date_opened
+                obsolete_date = _add_years(date_opened, 7)
+
+                if obsolete_date < today:
+                    days_past = (today - obsolete_date).days
+                    months_past = days_past // 30
+                    years_past = days_past // 365
+
+                    # Only flag if significantly past (at least 6 months past 7 years)
+                    if days_past >= 180:  # 6+ months past the 7-year mark
+                        violations.append(Violation(
+                            violation_type=ViolationType.OBSOLETE_ACCOUNT,
+                            severity=Severity.HIGH,
+                            account_id=account.account_id,
+                            creditor_name=account.creditor_name,
+                            account_number_masked=account.account_number_masked,
+                            furnisher_type=account.furnisher_type,
+                            bureau=bureau,
+                            description=(
+                                f"This account was opened on {date_opened.strftime('%B %d, %Y')}, making it "
+                                f"over {years_past} years old. Under FCRA 605(a), negative information older "
+                                f"than 7 years must be deleted. This account has exceeded the legal reporting "
+                                f"limit by approximately {months_past} months and must be removed."
+                            ),
+                            expected_value=f"Removal after 7 years (by {obsolete_date.strftime('%B %d, %Y')})",
+                            actual_value=f"Still reporting {years_past}+ years after account opened",
+                            fcra_section="605(a)",
+                            metro2_field=None,
+                            evidence={
+                                "date_opened": str(date_opened),
+                                "obsolete_date": str(obsolete_date),
+                                "days_past_7_years": days_past,
+                                "months_past_7_years": months_past,
+                                "years_old": years_past + 7,
+                                "missing_dofd": True
+                            }
+                        ))
 
         return violations
 
@@ -577,6 +630,8 @@ class TemporalRules:
         Check if account hasn't been updated in over 90 days.
 
         Furnishers should update accounts regularly.
+        Note: Skips accounts that are likely obsolete (>7 years old) - those
+        should be flagged for deletion instead, not just stale reporting.
         """
         violations = []
 
@@ -585,6 +640,20 @@ class TemporalRules:
 
         today = date.today()
         days_since_update = (today - account.date_reported).days
+
+        # Skip if account is likely obsolete (>7 years old)
+        # Obsolete accounts need DELETION, not just stale reporting
+        if account.date_opened:
+            account_age_days = (today - account.date_opened).days
+            if account_age_days > 2555 + 180:  # 7 years + 6 months buffer
+                # This account should be caught by check_obsolete_account instead
+                return violations
+
+        if account.date_of_first_delinquency:
+            dofd_age_days = (today - account.date_of_first_delinquency).days
+            if dofd_age_days > 2555:  # 7 years from DOFD
+                # This account should be caught by check_obsolete_account instead
+                return violations
 
         if days_since_update > 90:
             violations.append(Violation(
@@ -597,7 +666,7 @@ class TemporalRules:
                 bureau=bureau,
                 description=(
                     f"This account was last reported on {account.date_reported.strftime('%B %d, %Y')}, "
-                    f"which is {days_since_update} days ago. Data may be stale and inaccurate."
+                    f"which is {days_since_update} days ago. Data is stale and requires verification."
                 ),
                 expected_value="Recent update within 90 days",
                 actual_value=f"{days_since_update} days since last update",

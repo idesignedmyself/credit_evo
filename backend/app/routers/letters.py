@@ -41,9 +41,32 @@ from ..services.civil_letter_generator import (
 )
 import uuid
 
-# Define tone sets for routing
+# Define tone sets for routing (normalized form: lowercase with underscores)
 LEGAL_TONES = {"strict_legal", "professional", "soft_legal", "aggressive"}
 CIVIL_TONES = {"conversational", "formal", "assertive", "narrative"}
+
+
+def normalize_tone(tone: str) -> str:
+    """
+    Normalize tone name to canonical form (lowercase, underscores).
+    Handles variants like: soft-legal, soft legal, SoftLegal, Soft_Legal, softlegal
+    """
+    return tone.lower().replace("-", "_").replace(" ", "_")
+
+
+def is_legal_tone(tone: str) -> bool:
+    """
+    Check if a tone is a legal tone.
+    Catches all variants and any tone containing 'legal' in the name.
+    """
+    normalized = normalize_tone(tone)
+    # Check if it's in LEGAL_TONES set
+    if normalized in LEGAL_TONES:
+        return True
+    # Check if it contains 'legal' anywhere in the name
+    if "legal" in normalized:
+        return True
+    return False
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +116,39 @@ class LetterPreviewResponse(BaseModel):
 # =============================================================================
 # HELPER FUNCTIONS
 # =============================================================================
+
+def reclassify_obsolete_violations(violations: List[Violation]) -> List[Violation]:
+    """
+    Re-classify stale_reporting violations as obsolete_account if >7 years old.
+
+    FCRA 605(a) mandates DELETION for accounts >7 years (2555 days).
+    This ensures civil letters correctly demand deletion instead of verification.
+    """
+    SEVEN_YEARS_DAYS = 2555
+
+    for v in violations:
+        # Check if this is a stale_reporting that should be obsolete_account
+        if v.violation_type == ViolationType.STALE_REPORTING:
+            evidence = v.evidence or {}
+            days_since = evidence.get('days_since_update', 0)
+
+            # If >7 years, reclassify as obsolete_account
+            if days_since > SEVEN_YEARS_DAYS:
+                years_old = days_since / 365.25
+                v.violation_type = ViolationType.OBSOLETE_ACCOUNT
+                v.severity = Severity.HIGH
+                v.fcra_section = "605(a)"
+                v.description = (
+                    f"This account has exceeded the 7-year reporting limit under FCRA 605(a). "
+                    f"The account is {years_old:.1f} years old ({days_since} days since last update). "
+                    f"This information is LEGALLY OBSOLETE and must be DELETED immediately."
+                )
+                v.expected_value = "Account deleted (>7 years)"
+                v.actual_value = f"{days_since} days since last update"
+                logger.info(f"Reclassified {v.creditor_name} from stale_reporting to obsolete_account ({days_since} days)")
+
+    return violations
+
 
 def reconstruct_violations(violations_data: list) -> List[Violation]:
     """Reconstruct Violation objects from stored JSON data."""
@@ -185,21 +241,30 @@ async def generate_letter(
     else:
         filtered_violations = all_violations
 
+    # Re-classify stale_reporting violations that are actually obsolete (>7 years)
+    # This fixes cached violations that were classified before the audit rules were updated
+    filtered_violations = reclassify_obsolete_violations(filtered_violations)
+
     # Reconstruct consumer
     consumer = reconstruct_consumer(report)
 
     try:
+        # Normalize tone for routing
+        tone_normalized = normalize_tone(request.tone)
+
         # AUTO-DETECT LEGAL TONES: If tone is legal, force use_legal=True
         # This ensures legal tones ALWAYS route to LegalLetterAssembler
         # regardless of what the frontend sends
-        tone_lower = request.tone.lower()
-        if tone_lower in LEGAL_TONES:
+        # Catches: soft_legal, soft-legal, soft legal, SoftLegal, Soft_Legal, softlegal
+        # Also catches ANY tone containing "legal" in the name
+        if is_legal_tone(request.tone):
             request.use_legal = True
-            logger.info(f"Auto-detected legal tone '{request.tone}', forcing use_legal=True")
+            logger.info(f"Auto-detected legal tone '{request.tone}' (normalized: '{tone_normalized}'), forcing use_legal=True")
 
         # Route civil tones to CivilAssembler v2
         # Civil tones: conversational, formal, assertive, narrative
-        if tone_lower in CIVIL_TONES or is_civil_tone(request.tone):
+        # Only route to civil if it's NOT a legal tone
+        if not is_legal_tone(request.tone) and (tone_normalized in CIVIL_TONES or is_civil_tone(request.tone)):
             # Convert violations to dictionary format for civil generator
             civil_violations = [
                 {
