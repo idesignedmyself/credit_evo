@@ -87,7 +87,7 @@ VIOLATION_PHRASES = {
     ],
     "missing_dla": [
         "This account is missing the Date Last Activity, making the data appear stale.",
-        "The Date Last Activity is not reported, suggesting this account data may be outdated.",
+        "The Date Last Activity is not reported, indicating this account data is outdated.",
         "Without recent activity dates, this account information cannot be verified as current.",
     ],
     "impossible_timeline": [
@@ -97,8 +97,8 @@ VIOLATION_PHRASES = {
     ],
     "stale_reporting": [
         "This account has not been updated in over 90 days and may contain outdated information.",
-        "The last reported date is significantly old, suggesting the data may be stale.",
-        "This account appears to have stale data that has not been recently verified.",
+        "The last reported date is significantly old, indicating the data is stale.",
+        "This account has stale data that has not been recently verified.",
     ],
     "missing_original_creditor": [
         "This collection account does not identify the original creditor.",

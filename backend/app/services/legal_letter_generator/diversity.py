@@ -197,11 +197,11 @@ VIOLATION_INTROS = {
     ],
     "professional": [
         "I dispute this information as inaccurate and request verification.",
-        "This item appears to be incorrect and needs to be verified.",
+        "This item is incorrect and requires verification.",
         "I am disputing the accuracy of this entry.",
         "This information does not match my records and should be verified.",
         "I request that you verify this item through proper documentation.",
-        "This reported information appears to contain errors.",
+        "This reported information contains errors.",
         "I am challenging the accuracy of this data.",
         "Please verify this entry against original source documents.",
     ],
@@ -211,8 +211,8 @@ VIOLATION_INTROS = {
         "This doesn't match what I have in my records.",
         "I'm not sure this information is correct.",
         "Could you please check this entry for accuracy?",
-        "I think there may be a mistake here.",
-        "This item seems to have some problems.",
+        "There is a mistake with this entry.",
+        "This item has problems that need correction.",
         "I'd like you to take another look at this.",
     ],
     "aggressive": [
@@ -395,7 +395,7 @@ def get_diverse_paragraph_start(tone: str, section_type: str, rng: random.Random
             ],
             "soft_legal": [
                 "I noticed a problem with:",
-                "There seems to be an issue with:",
+                "There is an issue with:",
                 "I found something that doesn't look right:",
                 "I'm concerned about:",
                 "I'd like to point out:",

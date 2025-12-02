@@ -146,7 +146,7 @@ class CivilNarrativeTone:
         # Missing fields as part of the story
         if missing_fields:
             lines.append("")
-            lines.append("I also noticed some information seems to be missing:")
+            lines.append("I also noticed some information is missing:")
             for field in missing_fields:
                 lines.append(f"- {field}")
 

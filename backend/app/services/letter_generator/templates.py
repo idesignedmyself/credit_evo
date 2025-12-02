@@ -67,7 +67,7 @@ OPENINGS: Dict[str, List[str]] = {
         "There are some things on my credit report that don't match my records.",
         "I'm reaching out about some credit report errors I'd like investigated.",
         "I've discovered some inaccuracies on my credit report that concern me.",
-        "My credit report seems to have some mistakes I'd like your help correcting.",
+        "My credit report has mistakes I'd like your help correcting.",
         "I went through my credit report and found items that don't seem right.",
         "I'm hoping you can help me with some errors I found on my credit report.",
         "After reviewing my credit, I have some concerns about certain entries.",

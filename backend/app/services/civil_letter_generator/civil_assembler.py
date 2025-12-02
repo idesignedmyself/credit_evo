@@ -169,8 +169,8 @@ class CivilAssembler:
         templates = [
             f"The account with {creditor} (ending in {account}) shows {v_type}.",
             f"I noticed that {creditor}'s account ({account}) has {v_type}.",
-            f"For the {creditor} account ending in {account}, there appears to be {v_type}.",
-            f"My {creditor} account ({account}) seems to have {v_type}.",
+            f"For the {creditor} account ending in {account}, I found {v_type}.",
+            f"My {creditor} account ({account}) has {v_type}.",
         ]
 
         return tone_engine.rng.choice(templates)

@@ -335,9 +335,9 @@ class RhetoricalVariator:
             ("This shows", ["This demonstrates", "This evidences", "This establishes"]),
         ],
         "civil": [
-            ("This is", ["This seems to be", "I think this is", "This appears to be"]),
+            ("This is", ["I found this is", "I have identified this as", "This is"]),
             ("You must", ["You need to", "You should", "I need you to", "Please"]),
-            ("I believe", ["I think", "I feel", "It seems to me", "In my view"]),
+            ("I believe", ["I have determined", "I have found", "I know", "In my view"]),
             ("This shows", ["This tells me", "This indicates", "This suggests"]),
         ]
     }

@@ -33,6 +33,7 @@ from ..services.legal_letter_generator import (
     GroupingStrategy,
 )
 from ..services.legal_letter_generator.grouping_strategies import get_violation_fcra_section
+from ..services.legal_letter_generator.pdf_format_assembler import generate_pdf_format_letter
 from ..services.civil_letter_generator import (
     generate_civil_letter,
     is_civil_tone,
@@ -337,27 +338,11 @@ async def generate_letter(
                 grouping_strategy=grouping_strategy,
             )
 
-        # Use Legal/Metro-2 Structured Letter Generator
+        # Use Legal/Metro-2 Structured Letter Generator (PDF Format)
         elif request.use_legal:
-            # Map grouping strategy for legal generator
-            legal_grouping_map = {
-                "by_violation_type": "by_fcra_section",
-                "by_creditor": "by_creditor",
-                "by_severity": "by_severity",
-                "by_fcra_section": "by_fcra_section",
-                "by_metro2_field": "by_metro2_field",
-            }
-            grouping_strategy = legal_grouping_map.get(
-                request.grouping_strategy, "by_fcra_section"
-            )
-
-            # Convert violations to legal generator format
-            # Use get_violation_fcra_section() to map violation type to FCRA section
-            # instead of hardcoded "611" fallback - this ensures proper routing:
-            # - obsolete_account (>7 years) → 605(a) / § 1681c(a)
-            # - stale_reporting (>308 days) → 611(a) / § 1681i(a)
-            # - accuracy issues → appropriate section
-            legal_violations = [
+            # Convert violations to PDF format assembler format
+            # Include days_since_update for proper obsolete/stale classification
+            pdf_violations = [
                 {
                     "creditor_name": v.creditor_name,
                     "account_number_masked": v.account_number_masked,
@@ -365,42 +350,36 @@ async def generate_letter(
                     "fcra_section": v.fcra_section or get_violation_fcra_section(v.violation_type.value),
                     "metro2_field": v.metro2_field,
                     "evidence": v.evidence.get("reason", "") if v.evidence else v.description,
+                    "days_since_update": v.evidence.get("days_since_update") if v.evidence else None,
                     "severity": v.severity.value,
                 }
                 for v in filtered_violations
             ]
 
-            # Build consumer info
-            legal_consumer = {
+            # Build consumer info for PDF format
+            pdf_consumer = {
                 "name": consumer.full_name,
                 "address": consumer.address,
                 "city_state_zip": f"{consumer.city}, {consumer.state} {consumer.zip_code}",
             }
 
-            # Generate legal letter
-            legal_result = generate_legal_letter(
-                violations=legal_violations,
-                consumer=legal_consumer,
+            # Generate legal letter using PDF format assembler
+            # Groups violations by TYPE with Roman numerals, matching PDF template
+            pdf_result = generate_pdf_format_letter(
+                violations=pdf_violations,
+                consumer=pdf_consumer,
                 bureau=request.bureau,
-                tone=request.tone if request.tone in ["strict_legal", "professional", "soft_legal", "aggressive"] else "professional",
-                grouping_strategy=grouping_strategy,
                 seed=request.variation_seed,
-                include_case_law=request.include_case_law,
-                include_metro2=request.include_metro2,
-                include_mov=request.include_mov,
             )
 
-            if not legal_result["is_valid"]:
-                validation_errors = [
-                    issue["message"] for issue in legal_result["validation_issues"]
-                    if issue["level"] == "error"
-                ]
+            if not pdf_result["is_valid"]:
+                validation_errors = [str(issue) for issue in pdf_result.get("validation_issues", [])]
                 raise HTTPException(
                     status_code=400,
                     detail=f"Validation errors: {'; '.join(validation_errors)}"
                 )
 
-            letter_content = legal_result["letter"]
+            letter_content = pdf_result["letter"]
             word_count = len(letter_content.split())
 
             # Save letter to database
@@ -425,9 +404,9 @@ async def generate_letter(
                 word_count=word_count,
                 accounts_disputed_count=len(set(v.creditor_name for v in filtered_violations)),
                 violations_cited_count=len(filtered_violations),
-                variation_seed_used=legal_result["metadata"]["seed"],
+                variation_seed_used=pdf_result["metadata"].get("seed", request.variation_seed or 0),
                 is_legal_format=True,
-                grouping_strategy=grouping_strategy,
+                grouping_strategy="by_violation_type",  # PDF format always groups by violation type
             )
 
         # Use Credit Copilot human-language generator (default)
