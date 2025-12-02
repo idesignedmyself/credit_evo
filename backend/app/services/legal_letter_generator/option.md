@@ -366,3 +366,62 @@ result = generate_civil_letter(
 | `violationStore.js` | selectByBureau/deselectByBureau actions |
 
 ---
+
+### B10: Legal Tone Auto-Routing Fix (v7.0) ✅ ACCOMPLISHED
+**Status:** COMPLETE
+**Date:** 2024-12-01
+**Files Modified:**
+- `app/routers/letters.py` - Added legal tone auto-detection at lines 192-198
+
+**Problem Fixed:**
+Legal tones (strict_legal, professional, soft_legal, aggressive) were falling through to the legacy Credit Copilot generator instead of LegalLetterAssembler because:
+1. The API routing required `use_legal=True` flag to route to generate_legal_letter()
+2. The frontend wasn't sending `use_legal=True`
+3. Legal tones would fall through to the old Credit Copilot which produced weak letters with:
+   - Hedge words ("seems to have", "appears to be", "may be stale")
+   - No FCRA citations
+   - No case law
+   - No legal structure
+
+**Root Cause:**
+```python
+# OLD ROUTING (BROKEN):
+if request.tone.lower() in CIVIL_TONES:
+    → generate_civil_letter()  # Works
+elif request.use_legal:  # ← FALSE by default, frontend didn't send it!
+    → generate_legal_letter()  # Skipped
+elif request.use_copilot:
+    → LetterAssembler()  # Fallback - produces weak letters
+```
+
+**Solution:**
+Auto-detect legal tones and force `use_legal=True` before routing:
+```python
+# NEW ROUTING (FIXED):
+tone_lower = request.tone.lower()
+if tone_lower in LEGAL_TONES:
+    request.use_legal = True  # Auto-force!
+    logger.info(f"Auto-detected legal tone '{request.tone}', forcing use_legal=True")
+
+if tone_lower in CIVIL_TONES:
+    → generate_civil_letter()
+elif request.use_legal:  # Now TRUE for legal tones
+    → generate_legal_letter()  # Correct routing!
+```
+
+**Verification Results (all 8 tones):**
+| Tone | Type | FCRA | Case Law | Routing | Status |
+|------|------|------|----------|---------|--------|
+| strict_legal | LEGAL | ✓ | ✓ | generate_legal_letter | ✅ |
+| professional | LEGAL | ✓ | ✓ | generate_legal_letter | ✅ |
+| soft_legal | LEGAL | ✓ | ✓ | generate_legal_letter | ✅ |
+| aggressive | LEGAL | ✓ | ✓ | generate_legal_letter | ✅ |
+| conversational | CIVIL | ✗ | ✗ | generate_civil_letter | ✅ |
+| formal | CIVIL | ✗ | ✗ | generate_civil_letter | ✅ |
+| assertive | CIVIL | ✗ | ✗ | generate_civil_letter | ✅ |
+| narrative | CIVIL | ✗ | ✗ | generate_civil_letter | ✅ |
+
+**Lesson Learned:**
+Tests that call generators directly (bypassing API routing) can pass while production fails. Always validate through the actual API path with default flag values.
+
+---

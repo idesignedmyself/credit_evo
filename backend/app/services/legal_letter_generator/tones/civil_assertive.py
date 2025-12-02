@@ -94,25 +94,58 @@ class CivilAssertiveTone:
 
     @classmethod
     def format_violation(cls, violation: Dict[str, Any], index: int) -> str:
-        """Format a violation in assertive style."""
+        """Format a violation in assertive style with factual evidence."""
         creditor = violation.get("creditor_name", "UNKNOWN")
         account = violation.get("account_number_masked", "")
         evidence = violation.get("evidence", "")
         v_type = violation.get("violation_type", "error").replace("_", " ")
 
+        # Factual evidence fields
+        date_reported = violation.get("date_reported", "")
+        last_reported = violation.get("last_reported", "")
+        date_of_status = violation.get("date_of_status", "")
+        days_since_update = violation.get("days_since_update")
+        missing_fields = violation.get("missing_fields", [])
+        balance_reported = violation.get("balance", "")
+        high_credit = violation.get("high_credit", "")
+
         lines = [
             f"**ERROR {index}: {creditor.upper()}**",
+            "",
         ]
 
         if account:
             lines.append(f"Account: {account}")
 
-        lines.extend([
-            f"Problem: {v_type.upper()}",
-        ])
+        lines.append(f"Problem: {v_type.upper()}")
+
+        # Add factual evidence in assertive style
+        lines.append("")
+        lines.append("**THE FACTS:**")
+
+        if date_reported:
+            lines.append(f"- Date Reported: {date_reported}")
+        if last_reported:
+            lines.append(f"- Last Activity: {last_reported}")
+        if date_of_status:
+            lines.append(f"- Status Date: {date_of_status}")
+        if days_since_update is not None:
+            lines.append(f"- NOT UPDATED FOR: {days_since_update} DAYS")
+        if balance_reported:
+            lines.append(f"- Balance Shown: ${balance_reported}")
+        if high_credit:
+            lines.append(f"- High Credit: ${high_credit}")
+
+        # Missing fields - emphasized
+        if missing_fields:
+            lines.append("")
+            lines.append("**MISSING DATA - YOUR RECORDS ARE INCOMPLETE:**")
+            for field in missing_fields:
+                lines.append(f"- {field}")
 
         if evidence:
-            lines.append(f"Details: {evidence}")
+            lines.append("")
+            lines.append(f"**SPECIFIC ERROR:** {evidence}")
 
         lines.extend([
             "",

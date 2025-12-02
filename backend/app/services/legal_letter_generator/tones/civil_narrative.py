@@ -94,11 +94,19 @@ class CivilNarrativeTone:
 
     @classmethod
     def format_violation(cls, violation: Dict[str, Any], index: int) -> str:
-        """Format a violation in narrative style, telling the story."""
+        """Format a violation in narrative style, telling the story with factual evidence."""
         creditor = violation.get("creditor_name", "a creditor")
         account = violation.get("account_number_masked", "")
         evidence = violation.get("evidence", "")
         v_type = violation.get("violation_type", "error").replace("_", " ")
+
+        # Factual evidence fields
+        date_reported = violation.get("date_reported", "")
+        last_reported = violation.get("last_reported", "")
+        date_of_status = violation.get("date_of_status", "")
+        days_since_update = violation.get("days_since_update")
+        missing_fields = violation.get("missing_fields", [])
+        balance_reported = violation.get("balance", "")
 
         lines = [
             f"**Problem {index}: About {creditor}**",
@@ -115,10 +123,36 @@ class CivilNarrativeTone:
         lines.append("")
 
         lines.append(f"The issue is: {v_type.title()}")
+        lines.append("")
+
+        # Add the factual evidence as part of the narrative
+        lines.append("Let me give you some specifics about what I'm seeing:")
+        lines.append("")
+
+        if date_reported:
+            lines.append(f"- The report shows this was reported on {date_reported}")
+        if last_reported:
+            lines.append(f"- The last activity date shows as {last_reported}")
+        if date_of_status:
+            lines.append(f"- The current status is dated {date_of_status}")
+        if days_since_update is not None:
+            if days_since_update > 60:
+                lines.append(f"- This hasn't been updated in {days_since_update} days - that seems like a long time")
+            else:
+                lines.append(f"- The last update was {days_since_update} days ago")
+        if balance_reported:
+            lines.append(f"- The balance is showing as ${balance_reported}")
+
+        # Missing fields as part of the story
+        if missing_fields:
+            lines.append("")
+            lines.append("I also noticed some information seems to be missing:")
+            for field in missing_fields:
+                lines.append(f"- {field}")
 
         if evidence:
             lines.append("")
-            lines.append(f"Here's what I found: {evidence}")
+            lines.append(f"The main problem I see: {evidence}")
 
         lines.extend([
             "",

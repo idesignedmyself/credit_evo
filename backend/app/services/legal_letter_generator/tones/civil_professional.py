@@ -94,30 +94,63 @@ class CivilProfessionalTone:
 
     @classmethod
     def format_violation(cls, violation: Dict[str, Any], index: int) -> str:
-        """Format a violation in professional style."""
+        """Format a violation in professional style with factual evidence."""
         creditor = violation.get("creditor_name", "Unknown Creditor")
         account = violation.get("account_number_masked", "")
         evidence = violation.get("evidence", "")
         v_type = violation.get("violation_type", "error").replace("_", " ")
 
+        # Factual evidence fields
+        date_reported = violation.get("date_reported", "")
+        last_reported = violation.get("last_reported", "")
+        date_of_status = violation.get("date_of_status", "")
+        days_since_update = violation.get("days_since_update")
+        missing_fields = violation.get("missing_fields", [])
+        balance_reported = violation.get("balance", "")
+        high_credit = violation.get("high_credit", "")
+
         lines = [
             f"**Item {index}: {creditor}**",
+            "",
         ]
 
         if account:
             lines.append(f"Account Number: {account}")
 
-        lines.extend([
-            f"Issue Type: {v_type.title()}",
-        ])
+        lines.append(f"Issue Type: {v_type.title()}")
+
+        # Add factual evidence section
+        lines.append("")
+        lines.append("**Factual Details:**")
+
+        if date_reported:
+            lines.append(f"- Date Reported: {date_reported}")
+        if last_reported:
+            lines.append(f"- Last Activity: {last_reported}")
+        if date_of_status:
+            lines.append(f"- Status Date: {date_of_status}")
+        if days_since_update is not None:
+            lines.append(f"- Days Since Last Update: {days_since_update} days")
+        if balance_reported:
+            lines.append(f"- Balance Reported: ${balance_reported}")
+        if high_credit:
+            lines.append(f"- High Credit/Original Amount: ${high_credit}")
+
+        # Missing fields
+        if missing_fields:
+            lines.append("")
+            lines.append("**Missing Information:**")
+            for field in missing_fields:
+                lines.append(f"- {field}")
 
         if evidence:
-            lines.append(f"Description: {evidence}")
+            lines.append("")
+            lines.append(f"**Specific Issue:** {evidence}")
 
         lines.extend([
             "",
             "This information is disputed and requires verification. Please confirm",
-            "its accuracy using original records.",
+            "its accuracy using original records and documentation.",
             ""
         ])
 

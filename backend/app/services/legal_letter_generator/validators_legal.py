@@ -54,8 +54,10 @@ class LegalLetterValidator:
         "metro2",
     ]
 
-    # Valid tones
-    VALID_TONES = ["strict_legal", "professional", "soft_legal", "aggressive"]
+    # Valid tones (legal + civil)
+    VALID_LEGAL_TONES = ["strict_legal", "professional", "soft_legal", "aggressive"]
+    VALID_CIVIL_TONES = ["conversational", "civil_professional", "assertive", "narrative", "formal"]
+    VALID_TONES = VALID_LEGAL_TONES + VALID_CIVIL_TONES
 
     # Valid grouping strategies
     VALID_STRATEGIES = ["by_fcra_section", "by_metro2_field", "by_creditor", "by_severity"]

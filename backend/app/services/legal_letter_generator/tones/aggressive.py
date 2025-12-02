@@ -31,21 +31,21 @@ class AggressiveTone:
         "RE: NOTICE OF DISPUTE AND DEMAND FOR COMPLIANCE UNDER 15 U.S.C. § 1681",
     ]
 
-    # Assertive section headers
+    # Assertive section headers - STRICT ORDER enforced
+    # Order: Header → Intro → Disputed Items → Legal Basis → MOV → Case Law → Demands → Signature
     SECTION_HEADERS = {
         "introduction": "I. NOTICE AND DEMAND",
-        "legal_basis": "II. FCRA VIOLATIONS IDENTIFIED",
-        "violations": "III. SPECIFIC DEFICIENCIES REQUIRING IMMEDIATE CORRECTION",
-        "metro2": "IV. METRO-2 FORMAT NON-COMPLIANCE",
-        "mov": "V. MANDATORY VERIFICATION DOCUMENTATION",
-        "case_law": "VI. APPLICABLE CASE LAW AND PRECEDENT",
-        "demands": "VII. NON-NEGOTIABLE DEMANDS",
-        "conclusion": "VIII. CONSEQUENCES OF NON-COMPLIANCE",
+        "violations": "II. SPECIFIC DEFICIENCIES REQUIRING IMMEDIATE CORRECTION",
+        "legal_basis": "III. FCRA VIOLATIONS IDENTIFIED",
+        "mov": "IV. MANDATORY VERIFICATION DOCUMENTATION",
+        "case_law": "V. APPLICABLE CASE LAW AND PRECEDENT",
+        "demands": "VI. NON-NEGOTIABLE DEMANDS",
     }
 
     # Strong expressions
     EXPRESSIONS = {
         "dispute_intro": [
+            "Your records require immediate attention due to multiple FCRA violations",
             "I DEMAND immediate correction of the following FCRA violations appearing on my credit report",
             "This constitutes FORMAL NOTICE that you are reporting information in violation of federal law",
             "You are hereby put on NOTICE that the following items violate the Fair Credit Reporting Act",

@@ -94,28 +94,60 @@ class CivilConversationalTone:
 
     @classmethod
     def format_violation(cls, violation: Dict[str, Any], index: int) -> str:
-        """Format a violation in friendly, conversational style."""
+        """Format a violation in friendly, conversational style with factual evidence."""
         creditor = violation.get("creditor_name", "A creditor")
         account = violation.get("account_number_masked", "")
         evidence = violation.get("evidence", "")
         v_type = violation.get("violation_type", "error").replace("_", " ")
 
+        # Factual evidence fields
+        date_reported = violation.get("date_reported", "")
+        last_reported = violation.get("last_reported", "")
+        date_of_status = violation.get("date_of_status", "")
+        days_since_update = violation.get("days_since_update")
+        missing_fields = violation.get("missing_fields", [])
+        balance_reported = violation.get("balance", "")
+
         lines = [
             f"**{index}. {creditor}**",
+            "",
         ]
 
         if account:
-            lines.append(f"   Account ending in: {account}")
+            lines.append(f"Account ending in: {account}")
 
-        lines.append(f"   What's wrong: {v_type.title()}")
+        lines.append(f"What's wrong: {v_type.title()}")
+
+        # Add factual details in a friendly way
+        lines.append("")
+        lines.append("Here's what I found:")
+
+        if date_reported:
+            lines.append(f"- This was reported on: {date_reported}")
+        if last_reported:
+            lines.append(f"- Last activity shown: {last_reported}")
+        if date_of_status:
+            lines.append(f"- The status is dated: {date_of_status}")
+        if days_since_update is not None:
+            lines.append(f"- It hasn't been updated in {days_since_update} days")
+        if balance_reported:
+            lines.append(f"- Balance showing: ${balance_reported}")
+
+        # Missing fields in friendly language
+        if missing_fields:
+            lines.append("")
+            lines.append("Some things seem to be missing from this record:")
+            for field in missing_fields:
+                lines.append(f"- {field}")
 
         if evidence:
-            lines.append(f"   More details: {evidence}")
+            lines.append("")
+            lines.append(f"The main problem: {evidence}")
 
         lines.extend([
             "",
-            "   This doesn't match my records. Could you please check on this",
-            "   and let me know what you find?",
+            "This doesn't match what I know to be true. Could you please check on",
+            "this and let me know what you find?",
             ""
         ])
 

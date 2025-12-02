@@ -147,14 +147,28 @@ METRO2_FIELD_CATEGORIES = {
 }
 
 # Violation type to FCRA section mapping
+# ROUTING RULES:
+# - obsolete_account (>2555 days / 7 years): § 1681c(a) - Obsolete Information deletion
+# - stale_reporting (>308 days): § 1681i(a) - Reinvestigation/update required
+# - accuracy issues: Various sections based on violation type
 VIOLATION_FCRA_MAP = {
+    # === TEMPORAL VIOLATIONS ===
+    # Obsolete accounts (>7 years / 2555 days) → § 1681c(a) - DELETION required
+    "obsolete_account": "605(a)",
+    "outdated_information": "605(a)",
+    # Stale reporting (>308 days without update) → § 1681i(a) - UPDATE required
+    "stale_reporting": "611(a)",
+    # Timeline manipulation → § 1681s-2(a)(1) - Accuracy requirement
+    "re_aging": "623(a)(1)",
+    "dofd_replaced_with_date_opened": "623(a)(1)",
+    "impossible_timeline": "623(a)(1)",
+
+    # === ACCURACY VIOLATIONS ===
     "inaccurate_balance": "623(a)(1)",
     "incorrect_payment_status": "623(a)(1)",
     "wrong_account_status": "623(a)(1)",
-    "outdated_information": "605(a)",
-    "obsolete_account": "605(a)",
     "incorrect_dates": "623(a)(2)",
-    "missing_payment_history": "611",
+    "missing_payment_history": "611(a)",
     "duplicate_account": "607(b)",
     "wrong_creditor_name": "609(a)(1)",
     "incorrect_high_credit": "623(a)(1)",
@@ -164,11 +178,24 @@ VIOLATION_FCRA_MAP = {
     "mixed_file": "607(b)",
     "identity_error": "607(b)",
     "balance_discrepancy": "623(a)(1)",
-    "late_payment_dispute": "611",
+    "late_payment_dispute": "611(a)",
     "charge_off_dispute": "623(a)(1)",
     "collection_dispute": "623(b)",
     "not_mine": "607(b)",
     "fraud_alert": "605",
+
+    # === METRO-2 FIELD VIOLATIONS ===
+    "missing_dofd": "623(a)(1)",
+    "missing_date_opened": "623(a)(1)",
+    "missing_date_reported": "623(a)(2)",
+    "missing_high_credit": "623(a)(1)",
+    "missing_credit_limit": "623(a)(1)",
+    "missing_terms": "607(b)",
+    "missing_account_type": "607(b)",
+    "missing_payment_status": "623(a)(1)",
+    "missing_current_balance": "623(a)(1)",
+
+    # === REINVESTIGATION VIOLATIONS ===
     "reinsertion": "611(a)(5)",
     "failure_to_investigate": "611(a)(1)",
     "incomplete_investigation": "611(a)(1)",

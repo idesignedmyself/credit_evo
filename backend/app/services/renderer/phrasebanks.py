@@ -27,11 +27,11 @@ OPENINGS = {
         "These items are being reported in violation of federal law and must be addressed.",
     ],
     "conversational": [
-        "I've reviewed my credit report and found some items that appear to be inaccurate.",
+        "I've reviewed my credit report and found items that are inaccurate.",
         "After checking my credit report, I noticed several errors that need to be corrected.",
-        "I'm writing because I found some problems with my credit report that I'd like fixed.",
-        "My credit report contains information that doesn't appear to be accurate.",
-        "I need your help correcting some errors I've discovered on my credit report.",
+        "I'm writing because I found problems with my credit report that must be fixed.",
+        "My credit report contains information that is not accurate.",
+        "I need your help correcting errors I've discovered on my credit report.",
     ],
     "narrative": [
         "I want to share my experience with what I found on my credit report.",

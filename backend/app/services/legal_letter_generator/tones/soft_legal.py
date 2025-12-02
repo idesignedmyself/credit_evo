@@ -31,21 +31,21 @@ class SoftLegalTone:
         "RE: Help Needed to Correct Credit Report Errors",
     ]
 
-    # Accessible section headers
+    # Accessible section headers - STRICT ORDER enforced
+    # Order: Header → Intro → Disputed Items → Legal Basis → MOV → Case Law → Demands → Signature
     SECTION_HEADERS = {
         "introduction": "About This Dispute",
-        "legal_basis": "My Rights Under the Law",
         "violations": "Items I'm Disputing",
-        "metro2": "Data Issues Found",
+        "legal_basis": "My Rights Under the Law",
         "mov": "What I Need to See",
         "case_law": "Legal Support",
         "demands": "What I'm Asking For",
-        "conclusion": "Thank You",
     }
 
     # Accessible expressions
     EXPRESSIONS = {
         "dispute_intro": [
+            "I'm writing to request your assistance reviewing some items on my credit file",
             "I'm writing because I found some errors on my credit report that need to be fixed",
             "I recently reviewed my credit report and found some information that isn't correct",
             "I need your help correcting some mistakes on my credit file",

@@ -31,21 +31,21 @@ class StrictLegalTone:
         "RE: Demand for Reinvestigation and Correction of Inaccurate Credit Information",
     ]
 
-    # Legal section headers
+    # Legal section headers - STRICT ORDER enforced
+    # Order: Header → Intro → Disputed Items → Legal Basis → MOV → Case Law → Demands → Signature
     SECTION_HEADERS = {
         "introduction": "I. PRELIMINARY STATEMENT",
-        "legal_basis": "II. LEGAL BASIS FOR DISPUTE",
-        "violations": "III. SPECIFIC VIOLATIONS AND INACCURACIES",
-        "metro2": "IV. METRO-2 COMPLIANCE DEFICIENCIES",
-        "mov": "V. METHOD OF VERIFICATION REQUIREMENTS",
-        "case_law": "VI. APPLICABLE CASE LAW",
-        "demands": "VII. FORMAL DEMANDS",
-        "conclusion": "VIII. RESERVATION OF RIGHTS",
+        "violations": "II. SPECIFIC VIOLATIONS AND INACCURACIES",
+        "legal_basis": "III. LEGAL BASIS FOR DISPUTE",
+        "mov": "IV. METHOD OF VERIFICATION REQUIREMENTS",
+        "case_law": "V. APPLICABLE CASE LAW",
+        "demands": "VI. FORMAL DEMANDS",
     }
 
     # Legal phrases and expressions
     EXPRESSIONS = {
         "dispute_intro": [
+            "This letter serves as formal notice of inaccuracies in your reporting",
             "Pursuant to the Fair Credit Reporting Act, 15 U.S.C. § 1681 et seq., I hereby formally dispute",
             "Under the provisions of FCRA Section 611, I am exercising my statutory right to dispute",
             "This letter constitutes formal notice of dispute as provided under 15 U.S.C. § 1681i",

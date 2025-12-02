@@ -4,11 +4,268 @@ Combines all components to generate structured legal dispute letters.
 """
 import json
 import random
+import re
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, List, Any, Optional, Tuple, Set
 
 from .grouping_strategies import LegalGrouper, GroupingStrategy
+
+
+# =============================================================================
+# SECTION DEDUPLICATION GUARD
+# =============================================================================
+# RULE: Each section header may appear only ONCE in the final letter.
+# This prevents:
+#   - Double MOV blocks
+#   - Double case-law blocks
+#   - Extra accuracy paragraphs
+#   - Repeated section headers
+# =============================================================================
+
+@dataclass
+class DeduplicationResult:
+    """Result of deduplication operation."""
+    original_section_count: int = 0
+    deduplicated_section_count: int = 0
+    duplicates_removed: List[str] = field(default_factory=list)
+    duplicate_headers_found: List[str] = field(default_factory=list)
+    repeated_paragraphs_removed: int = 0
+    is_clean: bool = True
+
+
+class SectionDeduplicator:
+    """
+    Deduplication guard for legal letter sections.
+
+    Enforces the rule that each section header may appear only ONCE.
+    Tracks inserted sections and prevents duplicates at assembly time.
+    """
+
+    # Canonical section identifiers (used for tracking)
+    SECTION_IDS = {
+        "header", "introduction", "violations", "legal_basis",
+        "mov", "case_law", "demands", "signature", "metro2"
+    }
+
+    # Patterns that indicate duplicate content (case-insensitive)
+    DUPLICATE_PATTERNS = [
+        # MOV-related duplicates
+        r"method\s+of\s+verification",
+        r"verification\s+requirements",
+        r"mandatory\s+verification",
+        # Case law duplicates
+        r"applicable\s+case\s+law",
+        r"legal\s+standards",
+        r"case\s+law\s+and\s+precedent",
+        # Accuracy paragraph duplicates
+        r"maximum\s+possible\s+accuracy",
+        r"assure\s+maximum\s+possible\s+accuracy",
+        # Legal basis duplicates
+        r"legal\s+basis\s+for\s+dispute",
+        r"fcra\s+violations\s+identified",
+    ]
+
+    def __init__(self):
+        """Initialize the deduplicator with empty tracking state."""
+        self._inserted_sections: Set[str] = set()
+        self._section_content_hashes: Dict[str, int] = {}
+        self._duplicate_log: List[str] = []
+
+    def reset(self):
+        """Reset tracking state for a new letter generation."""
+        self._inserted_sections.clear()
+        self._section_content_hashes.clear()
+        self._duplicate_log.clear()
+
+    def can_insert(self, section_id: str) -> bool:
+        """
+        Check if a section can be inserted (hasn't been inserted yet).
+
+        Args:
+            section_id: The canonical section identifier
+
+        Returns:
+            True if section can be inserted, False if already present
+        """
+        return section_id.lower() not in self._inserted_sections
+
+    def mark_inserted(self, section_id: str, content: str = None):
+        """
+        Mark a section as inserted and optionally track its content hash.
+
+        Args:
+            section_id: The canonical section identifier
+            content: Optional content to hash for duplicate detection
+        """
+        section_key = section_id.lower()
+        self._inserted_sections.add(section_key)
+
+        if content:
+            self._section_content_hashes[section_key] = hash(content.strip())
+
+    def try_insert(self, section_id: str, content: str) -> Optional[str]:
+        """
+        Attempt to insert a section. Returns content if allowed, None if duplicate.
+
+        This is the primary guard function. Use this instead of directly appending.
+
+        Args:
+            section_id: The canonical section identifier
+            content: The section content to insert
+
+        Returns:
+            The content if section can be inserted, None if it's a duplicate
+        """
+        if not content or not content.strip():
+            return None
+
+        if not self.can_insert(section_id):
+            self._duplicate_log.append(f"BLOCKED duplicate section: {section_id}")
+            return None
+
+        self.mark_inserted(section_id, content)
+        return content
+
+    def deduplicate_final(self, letter_content: str) -> Tuple[str, DeduplicationResult]:
+        """
+        Final pass deduplication on assembled letter content.
+
+        Removes any duplicate section headers that slipped through,
+        and eliminates repeated paragraphs.
+
+        Args:
+            letter_content: The assembled letter content
+
+        Returns:
+            Tuple of (cleaned_content, DeduplicationResult)
+        """
+        result = DeduplicationResult()
+        result.original_section_count = len(letter_content.split('\n\n'))
+
+        lines = letter_content.split('\n')
+        cleaned_lines = []
+        seen_headers: Set[str] = set()
+        seen_paragraphs: Set[int] = set()
+
+        current_paragraph = []
+
+        for line in lines:
+            # Check for section headers (lines that look like headers)
+            is_header = self._is_section_header(line)
+
+            if is_header:
+                header_key = self._normalize_header(line)
+                if header_key in seen_headers:
+                    # Skip this duplicate header
+                    result.duplicate_headers_found.append(line.strip())
+                    result.is_clean = False
+                    continue
+                seen_headers.add(header_key)
+
+            # Track paragraphs for duplicate detection
+            if line.strip() == '' and current_paragraph:
+                para_text = '\n'.join(current_paragraph)
+                para_hash = hash(para_text.strip().lower())
+
+                if para_hash in seen_paragraphs and len(para_text) > 100:
+                    # Skip duplicate paragraph (only if substantial)
+                    result.repeated_paragraphs_removed += 1
+                    result.is_clean = False
+                    current_paragraph = []
+                    continue
+
+                seen_paragraphs.add(para_hash)
+                cleaned_lines.extend(current_paragraph)
+                cleaned_lines.append('')
+                current_paragraph = []
+            elif line.strip():
+                current_paragraph.append(line)
+
+        # Don't forget last paragraph
+        if current_paragraph:
+            cleaned_lines.extend(current_paragraph)
+
+        # Remove duplicate MOV/Case Law blocks using pattern matching
+        cleaned_content = '\n'.join(cleaned_lines)
+        cleaned_content, pattern_removals = self._remove_duplicate_blocks(cleaned_content)
+        result.duplicates_removed.extend(pattern_removals)
+
+        result.deduplicated_section_count = len(cleaned_content.split('\n\n'))
+        result.is_clean = result.is_clean and len(result.duplicates_removed) == 0
+
+        return cleaned_content, result
+
+    def _is_section_header(self, line: str) -> bool:
+        """Check if a line appears to be a section header."""
+        line = line.strip()
+        if not line:
+            return False
+
+        # Roman numeral headers (I., II., III., etc.)
+        if re.match(r'^[IVX]+\.\s+[A-Z]', line):
+            return True
+
+        # Markdown headers
+        if line.startswith('**') and line.endswith('**'):
+            return True
+        if line.startswith('###') or line.startswith('##'):
+            return True
+
+        # All caps headers
+        if line.isupper() and len(line) > 10:
+            return True
+
+        return False
+
+    def _normalize_header(self, header: str) -> str:
+        """Normalize a header for comparison."""
+        # Remove markdown formatting
+        normalized = re.sub(r'[*#]+', '', header)
+        # Remove roman numerals
+        normalized = re.sub(r'^[IVX]+\.\s*', '', normalized)
+        # Lowercase and strip
+        return normalized.strip().lower()
+
+    def _remove_duplicate_blocks(self, content: str) -> Tuple[str, List[str]]:
+        """Remove duplicate content blocks based on patterns."""
+        removals = []
+
+        for pattern in self.DUPLICATE_PATTERNS:
+            # Find all matches
+            matches = list(re.finditer(pattern, content, re.IGNORECASE))
+
+            if len(matches) > 1:
+                # Keep first occurrence, remove subsequent ones
+                # Find the paragraph containing each match and remove duplicates
+                for match in matches[1:]:
+                    # Find paragraph boundaries around this match
+                    start = content.rfind('\n\n', 0, match.start())
+                    end = content.find('\n\n', match.end())
+
+                    if start == -1:
+                        start = 0
+                    if end == -1:
+                        end = len(content)
+
+                    # Extract and remove the duplicate paragraph
+                    duplicate_block = content[start:end]
+                    if len(duplicate_block.strip()) < 500:  # Only remove smaller blocks
+                        content = content[:start] + content[end:]
+                        removals.append(f"Removed duplicate: {pattern}")
+
+        return content, removals
+
+    def get_insertion_log(self) -> List[str]:
+        """Get the log of insertion attempts."""
+        return list(self._duplicate_log)
+
+    def get_inserted_sections(self) -> Set[str]:
+        """Get the set of sections that have been inserted."""
+        return set(self._inserted_sections)
+
+
 from .metro2_explanations import Metro2ExplanationBuilder, get_metro2_explanation
 from .case_law import CaseLawLibrary, STANDARD_REINVESTIGATION_CITE
 from .mov_requirements import MOVBuilder
@@ -143,6 +400,10 @@ class LegalLetterAssembler:
         # Initialize structural fixer for post-diversity integrity enforcement
         self.structural_fixer = create_structural_fixer()
 
+        # Initialize section deduplicator for duplicate prevention
+        # RULE: Each section header may appear only ONCE in the final letter
+        self.deduplicator = SectionDeduplicator()
+
     def generate(
         self,
         violations: List[Dict[str, Any]],
@@ -188,52 +449,76 @@ class LegalLetterAssembler:
             v.get("fcra_section", "611") for v in violations
         ))
 
-        # Build letter sections
+        # =================================================================
+        # DEDUPLICATION GUARD: Reset and prepare for new letter generation
+        # RULE: Each section header may appear only ONCE in the final letter
+        # =================================================================
+        self.deduplicator.reset()
+
+        # Build letter sections in STRICT ORDER with deduplication guards
+        # Enforces: Header → Intro → Disputed Items → Legal Basis → MOV → Case Law → Demands → Signature
+        # This order is immutable and prevents section duplication/orphaning
         sections = []
 
-        # 1. Header
-        sections.append(self._build_header(consumer, recipient))
+        # 1. HEADER (consumer info + date + subject line)
+        header_content = self.deduplicator.try_insert("header", self._build_header(consumer, recipient))
+        if header_content:
+            sections.append(header_content)
 
-        # 2. Opening/Subject line
-        sections.append(self._build_opening())
+        # 2. INTRO (tone-specific introduction paragraph)
+        intro_content = self.deduplicator.try_insert("introduction", self._build_introduction(bureau))
+        if intro_content:
+            sections.append(intro_content)
 
-        # 3. Introduction (with bureau-specific content)
-        sections.append(self._build_introduction(bureau))
-
-        # 4. Legal basis section
-        sections.append(self._build_legal_basis(fcra_sections))
-
-        # 5. Violations section (grouped)
-        sections.append(self._build_violations_section(grouped, violations))
-
-        # 6. Metro-2 section (if applicable and legal letter)
-        # Civil letters exclude Metro-2 technical details
+        # 3. DISPUTED ITEMS (violations section with Metro-2 inline if applicable)
+        violations_section = self._build_violations_section(grouped, violations)
+        # Inline Metro-2 explanations within violations to prevent duplication
         if self.include_metro2 and self.is_legal_letter:
             metro2_section = self._build_metro2_section(violations)
             if metro2_section:
-                sections.append(metro2_section)
+                violations_section = f"{violations_section}\n\n{metro2_section}"
+        violations_content = self.deduplicator.try_insert("violations", violations_section)
+        if violations_content:
+            sections.append(violations_content)
 
-        # 7. MOV section (legal letters only)
-        # Civil letters are forbidden from including MOV requirements
+        # 4. LEGAL BASIS
+        legal_basis_content = self.deduplicator.try_insert("legal_basis", self._build_legal_basis(fcra_sections))
+        if legal_basis_content:
+            sections.append(legal_basis_content)
+
+        # 5. METHOD OF VERIFICATION (legal letters only) - DEDUP GUARDED
         if self.include_mov and self.is_legal_letter:
-            sections.append(self._build_mov_section(violations))
+            mov_content = self.deduplicator.try_insert("mov", self._build_mov_section(violations))
+            if mov_content:
+                sections.append(mov_content)
 
-        # 8. Case law section (legal letters only)
-        # Civil letters are forbidden from including case law citations
+        # 6. CASE LAW (legal letters only, if tone requires it) - DEDUP GUARDED
         if self.include_case_law and self.is_legal_letter:
-            sections.append(self._build_case_law_section(violations))
+            case_law_content = self.deduplicator.try_insert("case_law", self._build_case_law_section(violations))
+            if case_law_content:
+                sections.append(case_law_content)
 
-        # 9. Demands section
-        sections.append(self._build_demands_section())
+        # 7. DEMANDS
+        demands_content = self.deduplicator.try_insert("demands", self._build_demands_section())
+        if demands_content:
+            sections.append(demands_content)
 
-        # 10. Conclusion (with bureau-specific content)
-        sections.append(self._build_conclusion(bureau))
-
-        # 11. Signature block
-        sections.append(self._build_signature(consumer))
+        # 8. SIGNATURE BLOCK (includes closing statement)
+        signature_content = self.deduplicator.try_insert("signature", self._build_signature(consumer))
+        if signature_content:
+            sections.append(signature_content)
 
         # Combine sections
         letter_content = "\n\n".join(filter(None, sections))
+
+        # =================================================================
+        # FINAL DEDUPLICATION PASS: Catch any duplicates that slipped through
+        # This handles edge cases like duplicate paragraphs or repeated headers
+        # =================================================================
+        letter_content, dedup_result = self.deduplicator.deduplicate_final(letter_content)
+
+        # Store deduplication metadata for return
+        self._deduplication_result = dedup_result
 
         # Apply tone mask for domain isolation
         # This filters forbidden phrases and applies domain-specific rules
@@ -371,45 +656,61 @@ class LegalLetterAssembler:
             lines.append(intro)
             lines.append("")
 
-        # Add strategy-specific preamble for structural differentiation
-        strategy_preamble = self.diversity_engine.get_strategy_preamble(self.grouping_strategy.value)
-        lines.append(strategy_preamble)
+        # Add preamble - different for civil vs legal
+        if self.is_civil_letter:
+            # Civil letters use simple, non-legal preamble
+            lines.append("I've identified the following issues on my credit report:")
+        else:
+            # Legal letters use strategy-specific preamble
+            strategy_preamble = self.diversity_engine.get_strategy_preamble(self.grouping_strategy.value)
+            lines.append(strategy_preamble)
         lines.append("")
 
-        # Get strategy-specific formatting configuration
-        strategy_fmt = self.diversity_engine.get_strategy_format(self.grouping_strategy.value)
+        # Get strategy-specific formatting configuration (legal only)
+        strategy_fmt = self.diversity_engine.get_strategy_format(self.grouping_strategy.value) if not self.is_civil_letter else {}
 
-        # Format each group with strategy-specific headers
+        # Format each group with appropriate headers
         violation_index = 1
-        between_transition = TRANSITIONS.get(self.tone, {}).get("between_violations", "")
+        between_transition = TRANSITIONS.get(self.tone, {}).get("between_violations", "") if not self.is_civil_letter else ""
 
         for group_key, group_violations in grouped.items():
-            # Add group header based on strategy with distinct formatting
-            if self.grouping_strategy == GroupingStrategy.BY_FCRA_SECTION:
-                from .grouping_strategies import FCRA_SECTIONS
-                section_info = FCRA_SECTIONS.get(group_key, {})
-                group_title = section_info.get("title", f"Section {group_key} Violations")
-                lines.append(f"### STATUTORY CATEGORY: {group_title}")
-                lines.append(f"Legal Reference: {resolve_statute(group_key)}")
-            elif self.grouping_strategy == GroupingStrategy.BY_CREDITOR:
-                lines.append(f"### FURNISHER: {group_key}")
-                lines.append(f"Reporting entity requiring investigation")
-            elif self.grouping_strategy == GroupingStrategy.BY_METRO2_FIELD:
-                lines.append(f"### DATA ELEMENT: {group_key.replace('_', ' ').title()}")
-                lines.append(f"Metro-2 field with reporting discrepancies")
-            elif self.grouping_strategy == GroupingStrategy.BY_SEVERITY:
-                severity_labels = {"high": "CRITICAL", "medium": "MODERATE", "low": "MINOR"}
-                label = severity_labels.get(group_key.lower(), group_key.upper())
-                lines.append(f"### PRIORITY LEVEL: {label}")
-                lines.append(f"Impact severity: {group_key.replace('_', ' ').title()}")
+            # Civil letters don't show legal-style group headers
+            if self.is_civil_letter:
+                # Simple creditor grouping for civil letters
+                if self.grouping_strategy == GroupingStrategy.BY_CREDITOR:
+                    lines.append(f"**{group_key}**")
+                    lines.append("")
+            else:
+                # Legal letters use strategy-specific headers
+                if self.grouping_strategy == GroupingStrategy.BY_FCRA_SECTION:
+                    from .grouping_strategies import FCRA_SECTIONS
+                    section_info = FCRA_SECTIONS.get(group_key, {})
+                    group_title = section_info.get("title", f"Section {group_key} Violations")
+                    lines.append(f"### STATUTORY CATEGORY: {group_title}")
+                    lines.append(f"Legal Reference: {resolve_statute(group_key)}")
+                elif self.grouping_strategy == GroupingStrategy.BY_CREDITOR:
+                    lines.append(f"### FURNISHER: {group_key}")
+                    lines.append(f"Reporting entity requiring investigation")
+                elif self.grouping_strategy == GroupingStrategy.BY_METRO2_FIELD:
+                    lines.append(f"### DATA ELEMENT: {group_key.replace('_', ' ').title()}")
+                    lines.append(f"Metro-2 field with reporting discrepancies")
+                elif self.grouping_strategy == GroupingStrategy.BY_SEVERITY:
+                    severity_labels = {"high": "CRITICAL", "medium": "MODERATE", "low": "MINOR"}
+                    label = severity_labels.get(group_key.lower(), group_key.upper())
+                    lines.append(f"### PRIORITY LEVEL: {label}")
+                    lines.append(f"Impact severity: {group_key.replace('_', ' ').title()}")
+                lines.append("")
 
-            lines.append("")
-
-            # Format each violation in group with strategy-specific formatting
+            # Format each violation - use tone engine's format_violation for civil letters
             for violation in group_violations.violations:
-                formatted = self._format_violation_with_strategy(
-                    violation, violation_index, self.grouping_strategy.value, strategy_fmt
-                )
+                if self.is_civil_letter and hasattr(self.tone_engine, 'format_violation'):
+                    # Civil letters use tone engine's native format with factual evidence
+                    formatted = self.tone_engine.format_violation(violation, violation_index)
+                else:
+                    # Legal letters use strategy-specific formatting
+                    formatted = self._format_violation_with_strategy(
+                        violation, violation_index, self.grouping_strategy.value, strategy_fmt
+                    )
                 lines.append(formatted)
                 violation_index += 1
 
@@ -419,10 +720,15 @@ class LegalLetterAssembler:
 
             lines.append("")
 
-        # Add strategy-specific summary at end
-        strategy_summary = self.diversity_engine.get_strategy_summary(self.grouping_strategy.value)
-        lines.append(strategy_summary)
-        lines.append("")
+        # Add summary at end - different for civil vs legal
+        if self.is_civil_letter:
+            # Civil letters don't need legal-style summaries
+            pass
+        else:
+            # Legal letters use strategy-specific summary
+            strategy_summary = self.diversity_engine.get_strategy_summary(self.grouping_strategy.value)
+            lines.append(strategy_summary)
+            lines.append("")
 
         return "\n".join(lines)
 
@@ -920,6 +1226,21 @@ def generate_legal_letter(
             "domain": structural_metadata.domain,
         }
 
+    # Get deduplication metadata
+    dedup_result = getattr(assembler, '_deduplication_result', None)
+    dedup_meta_dict = None
+    if dedup_result:
+        dedup_meta_dict = {
+            "original_section_count": dedup_result.original_section_count,
+            "deduplicated_section_count": dedup_result.deduplicated_section_count,
+            "duplicates_removed": dedup_result.duplicates_removed,
+            "duplicate_headers_found": dedup_result.duplicate_headers_found,
+            "repeated_paragraphs_removed": dedup_result.repeated_paragraphs_removed,
+            "is_clean": dedup_result.is_clean,
+            "sections_inserted": list(assembler.deduplicator.get_inserted_sections()),
+            "insertion_log": assembler.deduplicator.get_insertion_log(),
+        }
+
     return {
         "letter": letter,
         "validation_issues": [
@@ -954,4 +1275,6 @@ def generate_legal_letter(
         "diversity_stats": diversity_stats,
         # Structural integrity metadata
         "structural_metadata": structural_meta_dict,
+        # Deduplication guard metadata
+        "deduplication_metadata": dedup_meta_dict,
     }

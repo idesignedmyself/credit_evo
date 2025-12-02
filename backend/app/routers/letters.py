@@ -32,6 +32,7 @@ from ..services.legal_letter_generator import (
     list_tones as get_legal_tones,
     GroupingStrategy,
 )
+from ..services.legal_letter_generator.grouping_strategies import get_violation_fcra_section
 from ..services.civil_letter_generator import (
     generate_civil_letter,
     is_civil_tone,
@@ -188,9 +189,17 @@ async def generate_letter(
     consumer = reconstruct_consumer(report)
 
     try:
+        # AUTO-DETECT LEGAL TONES: If tone is legal, force use_legal=True
+        # This ensures legal tones ALWAYS route to LegalLetterAssembler
+        # regardless of what the frontend sends
+        tone_lower = request.tone.lower()
+        if tone_lower in LEGAL_TONES:
+            request.use_legal = True
+            logger.info(f"Auto-detected legal tone '{request.tone}', forcing use_legal=True")
+
         # Route civil tones to CivilAssembler v2
         # Civil tones: conversational, formal, assertive, narrative
-        if request.tone.lower() in CIVIL_TONES or is_civil_tone(request.tone):
+        if tone_lower in CIVIL_TONES or is_civil_tone(request.tone):
             # Convert violations to dictionary format for civil generator
             civil_violations = [
                 {
@@ -278,12 +287,17 @@ async def generate_letter(
             )
 
             # Convert violations to legal generator format
+            # Use get_violation_fcra_section() to map violation type to FCRA section
+            # instead of hardcoded "611" fallback - this ensures proper routing:
+            # - obsolete_account (>7 years) → 605(a) / § 1681c(a)
+            # - stale_reporting (>308 days) → 611(a) / § 1681i(a)
+            # - accuracy issues → appropriate section
             legal_violations = [
                 {
                     "creditor_name": v.creditor_name,
                     "account_number_masked": v.account_number_masked,
                     "violation_type": v.violation_type.value,
-                    "fcra_section": v.fcra_section or "611",
+                    "fcra_section": v.fcra_section or get_violation_fcra_section(v.violation_type.value),
                     "metro2_field": v.metro2_field,
                     "evidence": v.evidence.get("reason", "") if v.evidence else v.description,
                     "severity": v.severity.value,

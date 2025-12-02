@@ -31,21 +31,21 @@ class ProfessionalTone:
         "RE: Consumer Dispute and Verification Request",
     ]
 
-    # Section headers
+    # Section headers - STRICT ORDER enforced
+    # Order: Header → Intro → Disputed Items → Legal Basis → MOV → Case Law → Demands → Signature
     SECTION_HEADERS = {
         "introduction": "Introduction",
-        "legal_basis": "Legal Framework",
         "violations": "Disputed Items",
-        "metro2": "Data Quality Issues",
+        "legal_basis": "Legal Framework",
         "mov": "Verification Requirements",
         "case_law": "Legal Standards",
         "demands": "Requested Actions",
-        "conclusion": "Summary and Next Steps",
     }
 
     # Professional expressions
     EXPRESSIONS = {
         "dispute_intro": [
+            "This letter is a formal dispute submitted pursuant to FCRA § 611",
             "I am writing to formally dispute inaccurate information appearing on my credit report",
             "This letter serves as my formal dispute of the following credit reporting errors",
             "Please accept this letter as my dispute of certain information on my credit file",
