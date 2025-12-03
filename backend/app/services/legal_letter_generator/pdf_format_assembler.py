@@ -15,6 +15,24 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Tuple
 from enum import Enum
+import re
+
+
+def _format_readable_date(date_str: str) -> str:
+    """
+    Convert date string to readable format.
+    Input: "2025-01-26" or "2015-04-20"
+    Output: "January 26, 2025" or "April 20, 2015"
+    """
+    if not date_str:
+        return ""
+    try:
+        # Try parsing YYYY-MM-DD format
+        dt = datetime.strptime(date_str, "%Y-%m-%d")
+        return dt.strftime("%B %d, %Y")
+    except ValueError:
+        # If it's already in a different format or invalid, return as-is
+        return date_str
 
 
 class ViolationCategory(str, Enum):
@@ -80,12 +98,14 @@ CATEGORY_CONFIGS: Dict[ViolationCategory, CategoryConfig] = {
         metro2_fields="Metro 2 Field 8 (Date Reported)",
         explanation=(
             "Under Metro 2 reporting standards, furnishers are required to update account information "
-            "at regular intervals. The following accounts have not been updated in an extended period, "
-            "raising questions about the accuracy and currency of the reported information:"
+            "monthly. The following accounts have not been updated in over 308 days (approximately 10 months), "
+            "indicating the furnisher has failed to maintain current, accurate reporting as required by "
+            "FCRA Section 623(a)(2) and Metro 2 Format guidelines:"
         ),
         resolution=(
-            "These accounts require verification and update. If current information cannot be obtained "
-            "and verified, the stale data must be deleted pursuant to FCRA Section 611(a)(5)(A)."
+            "These accounts require immediate verification and update with current information. If the furnisher "
+            "cannot provide current, verified data, the stale information must be deleted pursuant to "
+            "FCRA Section 611(a)(5)(A) as it cannot be confirmed accurate."
         ),
         fcra_section="611(a)"
     ),
@@ -244,8 +264,8 @@ def _classify_violation(violation: Dict[str, Any]) -> ViolationCategory:
     if "obsolete" in evidence or "2555" in evidence or "7 year" in evidence or "seven year" in evidence:
         return ViolationCategory.OBSOLETE_ACCOUNT
 
-    # Check for stale reporting
-    if days and 308 < days <= 2555:
+    # Check for stale reporting (>= 308 days)
+    if days and 308 <= days <= 2555:
         return ViolationCategory.STALE_REPORTING
     if v_type == "stale_reporting":
         return ViolationCategory.STALE_REPORTING
@@ -293,11 +313,40 @@ def _classify_violation(violation: Dict[str, Any]) -> ViolationCategory:
 
 
 def _group_violations_by_category(violations: List[Dict[str, Any]]) -> Dict[ViolationCategory, List[Dict[str, Any]]]:
-    """Group violations by their category for Roman numeral sections."""
+    """
+    Group violations by their category for Roman numeral sections.
+
+    IMPORTANT: If an account is OBSOLETE (should be deleted), we exclude it from
+    all other categories. It's contradictory to say "delete this account" AND
+    "fix this field on this account" - pick one. Deletion takes priority.
+    """
     groups: Dict[ViolationCategory, List[Dict[str, Any]]] = {}
 
+    # First pass: identify all accounts that are obsolete (should be deleted)
+    obsolete_accounts = set()
     for violation in violations:
         category = _classify_violation(violation)
+        if category == ViolationCategory.OBSOLETE_ACCOUNT:
+            # Track by creditor + account number to identify the account
+            account_key = (
+                violation.get("creditor_name", ""),
+                violation.get("account_number_masked", "")
+            )
+            obsolete_accounts.add(account_key)
+
+    # Second pass: group violations, excluding obsolete accounts from non-obsolete categories
+    for violation in violations:
+        category = _classify_violation(violation)
+        account_key = (
+            violation.get("creditor_name", ""),
+            violation.get("account_number_masked", "")
+        )
+
+        # If this account is obsolete but this violation is NOT the obsolete violation,
+        # skip it - we don't need to fix fields on accounts that should be deleted
+        if account_key in obsolete_accounts and category != ViolationCategory.OBSOLETE_ACCOUNT:
+            continue
+
         if category not in groups:
             groups[category] = []
         groups[category].append(violation)
@@ -318,12 +367,119 @@ def _to_roman(num: int) -> str:
     return roman_num
 
 
+def _format_consumer_name(name: str) -> str:
+    """
+    Format consumer name properly with spaces.
+    Fixes issues like "TIFFANYCBROWN" -> "TIFFANY C BROWN"
+    Also removes trailing hyphens/punctuation.
+    """
+    if not name:
+        return "[CONSUMER NAME]"
+
+    # Remove trailing punctuation like hyphens
+    name = name.rstrip('-').strip()
+
+    # If name already has spaces, just return it
+    if ' ' in name:
+        return name
+
+    # If name is all uppercase without spaces, try to detect word boundaries
+    if name.isupper():
+        # Common first names to help detect boundaries
+        common_first_names = [
+            'TIFFANY', 'MICHAEL', 'CHRISTOPHER', 'JENNIFER', 'ELIZABETH',
+            'WILLIAM', 'MATTHEW', 'ANTHONY', 'STEPHANIE', 'PATRICIA',
+            'JESSICA', 'ASHLEY', 'AMANDA', 'MELISSA', 'MICHELLE',
+            'DAVID', 'JAMES', 'ROBERT', 'JOHN', 'MARY', 'LINDA',
+            'BARBARA', 'SUSAN', 'MARGARET', 'DOROTHY', 'RICHARD',
+            'JOSEPH', 'THOMAS', 'CHARLES', 'DANIEL', 'SARAH', 'KAREN',
+            'NANCY', 'BETTY', 'HELEN', 'SANDRA', 'DONNA', 'CAROL',
+        ]
+
+        # Common last names
+        common_last_names = [
+            'BROWN', 'SMITH', 'JOHNSON', 'WILLIAMS', 'JONES', 'MILLER',
+            'DAVIS', 'GARCIA', 'RODRIGUEZ', 'WILSON', 'MARTINEZ',
+            'ANDERSON', 'TAYLOR', 'THOMAS', 'HERNANDEZ', 'MOORE',
+            'MARTIN', 'JACKSON', 'THOMPSON', 'WHITE', 'LOPEZ', 'LEE',
+            'GONZALEZ', 'HARRIS', 'CLARK', 'LEWIS', 'ROBINSON', 'WALKER',
+            'PEREZ', 'HALL', 'YOUNG', 'ALLEN', 'SANCHEZ', 'WRIGHT',
+            'KING', 'SCOTT', 'GREEN', 'BAKER', 'ADAMS', 'NELSON',
+        ]
+
+        # Try to match known first name + middle initial + last name
+        for first in common_first_names:
+            if name.startswith(first) and len(name) > len(first):
+                remainder = name[len(first):]
+                # Check if next char is a single letter (middle initial)
+                if len(remainder) >= 2:
+                    middle_initial = remainder[0]
+                    possible_last = remainder[1:]
+                    # Verify the last name looks reasonable (3+ chars)
+                    if len(possible_last) >= 3:
+                        return f"{first} {middle_initial} {possible_last}"
+                # No middle initial - check for direct first + last
+                for last in common_last_names:
+                    if remainder == last:
+                        return f"{first} {last}"
+
+        # Fallback: Try pattern matching for FirstMiddleLast
+        # Look for pattern like FIRST (4+ chars) + MIDDLE (1 char) + LAST (4+ chars)
+        match = re.match(r'^([A-Z]{4,})([A-Z])([A-Z]{4,})$', name)
+        if match:
+            return f"{match.group(1)} {match.group(2)} {match.group(3)}"
+
+        # Try FirstLast without middle (both 4+ chars)
+        match = re.match(r'^([A-Z]{4,})([A-Z]{4,})$', name)
+        if match:
+            return f"{match.group(1)} {match.group(2)}"
+
+    return name
+
+
+def _format_address(address: str) -> str:
+    """
+    Format address properly with spaces.
+    Fixes issues like "6NEW YORK" -> "6 NEW YORK"
+    """
+    if not address:
+        return ""
+
+    # Fix street numbers followed directly by text (no space)
+    # Pattern: digits immediately followed by letters
+    address = re.sub(r'(\d)([A-Za-z])', r'\1 \2', address)
+
+    return address
+
+
+def _format_city_state_zip(city_state_zip: str) -> str:
+    """
+    Format city/state/zip properly.
+    Fixes issues like "10026-," -> "10026"
+    """
+    if not city_state_zip:
+        return ""
+
+    # Remove trailing punctuation like ",-" or "-,"
+    city_state_zip = re.sub(r'[,\-]+\s*$', '', city_state_zip)
+
+    # Remove dangling comma before zip
+    city_state_zip = re.sub(r',\s*,', ',', city_state_zip)
+
+    return city_state_zip.strip()
+
+
 def _format_account_bullet(violation: Dict[str, Any]) -> str:
-    """Format a single account as a bullet point."""
+    """Format a single account as a bullet point with specific factual details."""
     creditor = violation.get("creditor_name", "Unknown")
     account = violation.get("account_number_masked", "")
     evidence = violation.get("evidence", "")
     days = violation.get("days_since_update")
+    last_reported_date_raw = violation.get("last_reported_date", "")
+    missing_field = violation.get("missing_field", "")
+
+    # Convert date to readable format (January 26, 2025 instead of 2025-01-26)
+    last_reported_date = _format_readable_date(last_reported_date_raw)
 
     # Build account identifier
     if account:
@@ -333,13 +489,38 @@ def _format_account_bullet(violation: Dict[str, Any]) -> str:
 
     # Add specific issue details
     details = []
-    if days:
-        if days > 2555:
-            years = round(days / 365, 1)
-            details.append(f"{days:,} days since last update ({years} years - exceeds 7-year limit)")
-        elif days > 308:
-            details.append(f"{days:,} days since last update (stale reporting)")
 
+    # Handle obsolete accounts (>2555 days)
+    if days and days > 2555:
+        years = round(days / 365, 1)
+        if last_reported_date:
+            details.append(f"Last reported {last_reported_date} ({days:,} days ago / {years} years - exceeds 7-year limit)")
+        else:
+            details.append(f"{days:,} days since last reported ({years} years - exceeds 7-year limit)")
+
+    # Handle stale reporting (>=308 days but <=2555)
+    elif days and days >= 308:
+        if last_reported_date:
+            details.append(f"Last reported {last_reported_date} ({days:,} days ago - stale reporting)")
+        else:
+            details.append(f"{days:,} days since last reported (stale reporting)")
+
+    # Handle missing field violations
+    if missing_field:
+        field_impacts = {
+            "scheduled_payment": "Missing Scheduled Payment field (Metro 2 Field 13) prevents verification of payment terms for accuracy",
+            "dofd": "Missing Date of First Delinquency (Metro 2 Field 25) prevents proper obsolescence calculation under FCRA § 605(a)",
+            "payment_history": "Missing Payment History Profile prevents accurate assessment of payment performance",
+            "original_creditor": "Missing Original Creditor name violates FCRA § 623(a)(6) debt buyer reporting requirements",
+            "balance": "Missing or inconsistent balance information prevents accurate credit utilization calculation",
+        }
+        field_lower = missing_field.lower().replace(" ", "_")
+        if field_lower in field_impacts:
+            details.append(f"{field_impacts[field_lower]}, violating duty under 15 U.S.C. § 1681e(b) to maintain maximum possible accuracy")
+        else:
+            details.append(f"Missing {missing_field} field prevents proper verification, violating 15 U.S.C. § 1681e(b)")
+
+    # Add evidence if not already covered
     if evidence and evidence not in str(details):
         # Clean up evidence text
         evidence_clean = evidence.strip()
@@ -357,7 +538,7 @@ def _build_reinvestigation_section() -> str:
 
 Under FCRA Section 611(a), you are required to conduct a reinvestigation of the disputed items within 30 days of receiving this dispute. This reinvestigation must be reasonable and cannot consist of simply verifying the information with the furnisher.
 
-Pursuant to FCRA Section 611(a)(6)(B)(iii), upon completion of your reinvestigation, you must provide me with:
+Pursuant to FCRA Section 611(a)(6), upon completion of your reinvestigation, you must provide me with:
 
 1. Written notice of the results of the reinvestigation
 2. A description of the procedure used to determine the accuracy of the disputed information
@@ -394,13 +575,16 @@ These cases establish that your reinvestigation must include review of original 
 
 def _build_signature_block(consumer_name: str, ssn_last4: str = None) -> str:
     """Build the signature block with enclosures."""
+    # Format consumer name properly (remove hyphens, add spaces)
+    formatted_name = _format_consumer_name(consumer_name)
+
     lines = [
         "Sincerely,",
         "",
         "",
         "",
         "________________________________",
-        consumer_name,
+        formatted_name,
         "",
         "Date: ________________________",
     ]
@@ -542,16 +726,19 @@ class PDFFormatAssembler:
         today = datetime.now().strftime("%B %d, %Y")
         bureau_info = BUREAU_ADDRESSES.get(bureau.lower(), BUREAU_ADDRESSES["transunion"])
 
+        # Format consumer name properly
+        consumer_name = _format_consumer_name(consumer.get("name", "[CONSUMER NAME]"))
+
         lines = [
             f"Date: {today}",
             "",
             # Consumer address (sender)
-            consumer.get("name", "[CONSUMER NAME]"),
+            consumer_name,
         ]
         if consumer.get("address"):
-            lines.append(consumer["address"])
+            lines.append(_format_address(consumer["address"]))
         if consumer.get("city_state_zip"):
-            lines.append(consumer["city_state_zip"])
+            lines.append(_format_city_state_zip(consumer["city_state_zip"]))
 
         lines.extend([
             "",

@@ -341,7 +341,48 @@ async def generate_letter(
         # Use Legal/Metro-2 Structured Letter Generator (PDF Format)
         elif request.use_legal:
             # Convert violations to PDF format assembler format
-            # Include days_since_update for proper obsolete/stale classification
+            # Map audit evidence fields to PDF assembler expected names:
+            # - audit stores "date_reported" -> PDF expects "last_reported_date"
+            # - audit stores "days_since_update" -> PDF expects "days_since_update" (same)
+            # - for missing field violations, extract field name from description or use violation_type
+            def get_missing_field_name(v):
+                """Extract missing field name for missing_dofd, missing_date_opened violations."""
+                vtype = v.violation_type.value if v.violation_type else ""
+                if vtype == "missing_dofd":
+                    return "Scheduled Payment"  # Metro 2 Field 13 (Scheduled Payment Amount)
+                elif vtype == "missing_date_opened":
+                    return "Date Opened"
+                return None
+
+            def get_days_since_update(v):
+                """Extract days since update, handling different evidence field names."""
+                if not v.evidence:
+                    return None
+                # Stale reporting uses "days_since_update"
+                if "days_since_update" in v.evidence:
+                    return v.evidence["days_since_update"]
+                # Obsolete accounts: calculate total days from DOFD or date_opened
+                # days_past is days past the 7-year mark, so add 2555 (7 years) to get total age
+                if "days_past" in v.evidence:
+                    return v.evidence["days_past"] + 2555  # Total days since DOFD
+                if "days_past_7_years" in v.evidence:
+                    return v.evidence["days_past_7_years"] + 2555  # Total days since date_opened
+                return None
+
+            def get_last_reported_date(v):
+                """Extract last reported date, handling different evidence field names."""
+                if not v.evidence:
+                    return None
+                # Stale reporting uses "date_reported"
+                if "date_reported" in v.evidence:
+                    return v.evidence["date_reported"]
+                # Obsolete accounts use "dofd" (Date of First Delinquency) or "date_opened"
+                if "dofd" in v.evidence:
+                    return v.evidence["dofd"]
+                if "date_opened" in v.evidence:
+                    return v.evidence["date_opened"]
+                return None
+
             pdf_violations = [
                 {
                     "creditor_name": v.creditor_name,
@@ -350,7 +391,9 @@ async def generate_letter(
                     "fcra_section": v.fcra_section or get_violation_fcra_section(v.violation_type.value),
                     "metro2_field": v.metro2_field,
                     "evidence": v.evidence.get("reason", "") if v.evidence else v.description,
-                    "days_since_update": v.evidence.get("days_since_update") if v.evidence else None,
+                    "days_since_update": get_days_since_update(v),
+                    "missing_field": get_missing_field_name(v),
+                    "last_reported_date": get_last_reported_date(v),
                     "severity": v.severity.value,
                 }
                 for v in filtered_violations

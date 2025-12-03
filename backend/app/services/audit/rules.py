@@ -251,12 +251,14 @@ class SingleBureauRules:
                     furnisher_type=account.furnisher_type,
                     bureau=bureau,
                     description=(
-                        f"This open original creditor account is missing the Scheduled Payment field."
+                        f"This open original creditor account is missing the Scheduled Payment field "
+                        f"(Metro 2 Field 13). This omission violates the duty under 15 U.S.C. § 1681e(b) "
+                        f"to maintain reasonable procedures to assure maximum possible accuracy."
                     ),
                     expected_value="Valid scheduled payment amount",
                     actual_value="Not Reported",
                     fcra_section="611(a)",
-                    metro2_field=None,
+                    metro2_field="13",
                     evidence={}
                 ))
 
@@ -665,13 +667,15 @@ class TemporalRules:
                 furnisher_type=account.furnisher_type,
                 bureau=bureau,
                 description=(
-                    f"This account was last reported on {account.date_reported.strftime('%B %d, %Y')}, "
-                    f"which is {days_since_update} days ago. Data is stale and requires verification."
+                    f"This account was last reported on {account.date_reported.strftime('%B %d, %Y')} "
+                    f"({days_since_update} days ago). Under Metro 2 standards, furnishers must update "
+                    f"accounts regularly. Failure to do so renders the data unverifiable under "
+                    f"FCRA § 611(a)(5)(A)."
                 ),
                 expected_value="Recent update within 90 days",
                 actual_value=f"{days_since_update} days since last update",
                 fcra_section="611(a)",
-                metro2_field=None,
+                metro2_field="8",
                 evidence={
                     "date_reported": str(account.date_reported),
                     "days_since_update": days_since_update
