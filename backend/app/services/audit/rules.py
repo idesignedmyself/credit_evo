@@ -545,8 +545,13 @@ class TemporalRules:
                 obsolete_date = _add_years(dofd, 7)
 
                 if obsolete_date < today:
-                    days_past = (today - obsolete_date).days
-                    months_past = days_past // 30
+                    # Calculate days/months past the 7-year limit
+                    days_past_limit = (today - obsolete_date).days
+                    months_past_limit = days_past_limit // 30
+
+                    # Calculate TOTAL time since DOFD
+                    total_days_since_dofd = (today - dofd).days
+                    total_years_since_dofd = round(total_days_since_dofd / 365, 1)
 
                     violations.append(Violation(
                         violation_type=ViolationType.OBSOLETE_ACCOUNT,
@@ -557,20 +562,22 @@ class TemporalRules:
                         furnisher_type=account.furnisher_type,
                         bureau=bureau,
                         description=(
-                            f"This account has a DOFD of {dofd.strftime('%B %d, %Y')}, meaning the "
-                            f"7-year reporting period expired on {obsolete_date.strftime('%B %d, %Y')}. "
-                            f"This account is approximately {months_past} months past the legal limit and "
-                            f"must be deleted from the credit report."
+                            f"This account has a Date of First Delinquency (DOFD) of {dofd.strftime('%B %d, %Y')} "
+                            f"({total_days_since_dofd:,} days ago / {total_years_since_dofd} years). Under FCRA Section 605(a), "
+                            f"adverse information must be deleted 7 years after the DOFD. The reporting period expired on "
+                            f"{obsolete_date.strftime('%B %d, %Y')} ({months_past_limit} months ago). This account must be deleted immediately."
                         ),
-                        expected_value=f"Removal by {obsolete_date}",
-                        actual_value=f"Still reporting as of {today}",
+                        expected_value=f"Deletion required by {obsolete_date.strftime('%B %d, %Y')} (7 years after DOFD)",
+                        actual_value=f"Still reporting {total_years_since_dofd} years after DOFD",
                         fcra_section="605(a)",
                         metro2_field="25",
                         evidence={
                             "dofd": str(dofd),
                             "obsolete_date": str(obsolete_date),
-                            "days_past": days_past,
-                            "months_past": months_past
+                            "days_past": days_past_limit,
+                            "months_past": months_past_limit,
+                            "total_days_since_dofd": total_days_since_dofd,
+                            "years_since_dofd": total_years_since_dofd
                         }
                     ))
                     return violations  # Don't double-count
@@ -590,12 +597,16 @@ class TemporalRules:
                 obsolete_date = _add_years(date_opened, 7)
 
                 if obsolete_date < today:
-                    days_past = (today - obsolete_date).days
-                    months_past = days_past // 30
-                    years_past = days_past // 365
+                    # Calculate days/months past the 7-year limit
+                    days_past_limit = (today - obsolete_date).days
+                    months_past_limit = days_past_limit // 30
+
+                    # Calculate TOTAL age of account (from date_opened to today)
+                    total_days_old = (today - date_opened).days
+                    total_years_old = round(total_days_old / 365, 1)
 
                     # Only flag if significantly past (at least 6 months past 7 years)
-                    if days_past >= 180:  # 6+ months past the 7-year mark
+                    if days_past_limit >= 180:  # 6+ months past the 7-year mark
                         violations.append(Violation(
                             violation_type=ViolationType.OBSOLETE_ACCOUNT,
                             severity=Severity.HIGH,
@@ -605,21 +616,22 @@ class TemporalRules:
                             furnisher_type=account.furnisher_type,
                             bureau=bureau,
                             description=(
-                                f"This account was opened on {date_opened.strftime('%B %d, %Y')}, making it "
-                                f"over {years_past} years old. Under FCRA 605(a), negative information older "
-                                f"than 7 years must be deleted. This account has exceeded the legal reporting "
-                                f"limit by approximately {months_past} months and must be removed."
+                                f"This account was opened on {date_opened.strftime('%B %d, %Y')} "
+                                f"({total_days_old:,} days ago / {total_years_old} years). Under FCRA Section 605(a), "
+                                f"adverse information cannot be reported beyond 7 years. This account has exceeded "
+                                f"the statutory reporting limit by {months_past_limit} months and must be deleted immediately."
                             ),
-                            expected_value=f"Removal after 7 years (by {obsolete_date.strftime('%B %d, %Y')})",
-                            actual_value=f"Still reporting {years_past}+ years after account opened",
+                            expected_value=f"Deletion required by {obsolete_date.strftime('%B %d, %Y')} (7 years after account opened)",
+                            actual_value=f"Still reporting {total_years_old} years after account opened",
                             fcra_section="605(a)",
                             metro2_field=None,
                             evidence={
                                 "date_opened": str(date_opened),
                                 "obsolete_date": str(obsolete_date),
-                                "days_past_7_years": days_past,
-                                "months_past_7_years": months_past,
-                                "years_old": years_past + 7,
+                                "days_past_7_years": days_past_limit,
+                                "months_past_7_years": months_past_limit,
+                                "total_days_old": total_days_old,
+                                "years_old": total_years_old,
                                 "missing_dofd": True
                             }
                         ))

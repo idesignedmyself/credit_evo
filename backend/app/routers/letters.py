@@ -361,12 +361,17 @@ async def generate_letter(
                 # Stale reporting uses "days_since_update"
                 if "days_since_update" in v.evidence:
                     return v.evidence["days_since_update"]
-                # Obsolete accounts: calculate total days from DOFD or date_opened
-                # days_past is days past the 7-year mark, so add 2555 (7 years) to get total age
+                # Obsolete accounts with DOFD: use total_days_since_dofd
+                if "total_days_since_dofd" in v.evidence:
+                    return v.evidence["total_days_since_dofd"]
+                # Obsolete accounts without DOFD: use total_days_old
+                if "total_days_old" in v.evidence:
+                    return v.evidence["total_days_old"]
+                # Fallback for old data: calculate from days_past + 2555
                 if "days_past" in v.evidence:
-                    return v.evidence["days_past"] + 2555  # Total days since DOFD
+                    return v.evidence["days_past"] + 2555
                 if "days_past_7_years" in v.evidence:
-                    return v.evidence["days_past_7_years"] + 2555  # Total days since date_opened
+                    return v.evidence["days_past_7_years"] + 2555
                 return None
 
             def get_last_reported_date(v):
