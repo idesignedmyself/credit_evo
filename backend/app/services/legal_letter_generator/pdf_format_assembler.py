@@ -558,9 +558,16 @@ I specifically request that you provide the method of verification for each disp
 A simple automated verification response from the furnisher is insufficient. Per Cushman v. Trans Union Corp., 115 F.3d 220 (3d Cir. 1997), your reinvestigation must involve independent verification using original source documentation."""
 
 
-def _build_case_law_section() -> str:
-    """Build the case law section at the bottom of the letter."""
-    return """Legal Standards and Applicable Case Law
+def _build_case_law_section(has_obsolete_accounts: bool = False) -> str:
+    """
+    Build the case law section at the bottom of the letter.
+
+    Args:
+        has_obsolete_accounts: If True, includes 15 U.S.C. § 1681c(c)(1) citation
+                               for the 7-year obsolescence rule. Only relevant when
+                               the dispute contains accounts exceeding the 7-year limit.
+    """
+    base_section = """Legal Standards and Applicable Case Law
 
 The following legal standards govern your reinvestigation obligations:
 
@@ -568,9 +575,21 @@ Cushman v. Trans Union Corp., 115 F.3d 220 (3d Cir. 1997)
 Holding: A CRA's reinvestigation procedures are unreasonable as a matter of law if the CRA merely parrots back information from the furnisher without independent verification. The reinvestigation must go beyond simply accepting the furnisher's verification.
 
 Henson v. CSC Credit Services, 29 F.3d 280 (7th Cir. 1994)
-Holding: A credit reporting agency cannot discharge its duty to reinvestigate by merely "rubber-stamping" the furnisher's original entry. The FCRA requires meaningful review of disputed information.
+Holding: A credit reporting agency cannot discharge its duty to reinvestigate by merely "rubber-stamping" the furnisher's original entry. The FCRA requires meaningful review of disputed information."""
+
+    # Add obsolescence citation ONLY if dispute contains accounts >7 years old
+    if has_obsolete_accounts:
+        obsolescence_citation = """
+
+15 U.S.C. § 1681c(c)(1) (FCRA Section 605(c)(1))
+Statutory Requirement: The seven-year reporting period for adverse accounts must begin no later than 180 days after the Date of First Delinquency (DOFD). This date is fixed by federal law and cannot be reset by subsequent payments, charge-offs, or transfers. Reporting a later date (such as Date of Last Activity) to extend this period constitutes illegal re-aging."""
+        base_section += obsolescence_citation
+
+    closing = """
 
 These cases establish that your reinvestigation must include review of original source documentation, not merely acceptance of furnisher verification codes. Failure to conduct a reasonable reinvestigation constitutes a violation of FCRA Section 611 and may expose you to statutory and actual damages."""
+
+    return base_section + closing
 
 
 def _build_signature_block(consumer_name: str, ssn_last4: str = None) -> str:
@@ -697,7 +716,9 @@ class PDFFormatAssembler:
         sections.append("")
 
         # 7. Case Law (at the very end before signature)
-        sections.append(_build_case_law_section())
+        # Include 15 U.S.C. § 1681c(c)(1) citation ONLY if dispute has obsolete accounts
+        has_obsolete = ViolationCategory.OBSOLETE_ACCOUNT in grouped and len(grouped[ViolationCategory.OBSOLETE_ACCOUNT]) > 0
+        sections.append(_build_case_law_section(has_obsolete_accounts=has_obsolete))
         sections.append("")
 
         # 8. Signature Block
