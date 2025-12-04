@@ -346,12 +346,14 @@ async def generate_letter(
             # - audit stores "days_since_update" -> PDF expects "days_since_update" (same)
             # - for missing field violations, extract field name from description or use violation_type
             def get_missing_field_name(v):
-                """Extract missing field name for missing_dofd, missing_date_opened violations."""
+                """Extract missing field name for missing field violations."""
                 vtype = v.violation_type.value if v.violation_type else ""
-                if vtype == "missing_dofd":
-                    return "Scheduled Payment"  # Metro 2 Field 13 (Scheduled Payment Amount)
+                if vtype == "missing_dofd" or vtype == "chargeoff_missing_dofd":
+                    return "DOFD"  # Metro 2 Field 25 (Date of First Delinquency)
                 elif vtype == "missing_date_opened":
-                    return "Date Opened"
+                    return "Date Opened"  # Metro 2 Field 10
+                elif vtype == "missing_scheduled_payment":
+                    return "Scheduled Payment"  # Metro 2 Field 13
                 return None
 
             def get_days_since_update(v):

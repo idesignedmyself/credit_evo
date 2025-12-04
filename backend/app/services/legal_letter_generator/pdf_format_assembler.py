@@ -251,9 +251,19 @@ BUREAU_ADDRESSES = {
 
 def _classify_violation(violation: Dict[str, Any]) -> ViolationCategory:
     """Classify a violation into a category for grouping."""
-    v_type = violation.get("violation_type", "").lower()
-    evidence = violation.get("evidence", "").lower()
-    creditor = violation.get("creditor_name", "").lower()
+    v_type = (violation.get("violation_type") or "").lower()
+    evidence = (violation.get("evidence") or "").lower()
+    creditor = (violation.get("creditor_name") or "").lower()
+    missing_field = (violation.get("missing_field") or "").lower()
+
+    # FIRST: Check for specific missing field types - these should NOT be misclassified
+    # Missing Scheduled Payment goes to OTHER (not DOFD!)
+    if v_type == "missing_scheduled_payment" or missing_field == "scheduled_payment":
+        return ViolationCategory.OTHER
+
+    # Missing Date Opened goes to OTHER
+    if v_type == "missing_date_opened" or missing_field == "date_opened":
+        return ViolationCategory.OTHER
 
     # Check for obsolete accounts (>7 years / 2555 days)
     days = violation.get("days_since_update")
@@ -272,8 +282,8 @@ def _classify_violation(violation: Dict[str, Any]) -> ViolationCategory:
     if "stale" in evidence or "308 days" in evidence:
         return ViolationCategory.STALE_REPORTING
 
-    # Check for missing DOFD
-    if v_type in ["missing_dofd", "dofd_replaced_with_date_opened"]:
+    # Check for missing DOFD - ONLY actual DOFD violations, not other missing fields
+    if v_type in ["missing_dofd", "dofd_replaced_with_date_opened", "chargeoff_missing_dofd"]:
         return ViolationCategory.MISSING_DOFD
     if "dofd" in evidence or "date of first delinquency" in evidence:
         return ViolationCategory.MISSING_DOFD
