@@ -85,3 +85,89 @@ After these fixes:
 - No more `NoneType` crashes when fields are `None`
 
 Each violation type now routes to its correct category section in the generated letter.
+
+---
+
+## Issue: Wrong Metro 2 Field Number for Scheduled Payment
+
+### Problem
+The system was citing **Field 13** for Missing Scheduled Payment violations. Field 13 is actually "Terms Duration" (number of months), not the payment amount.
+
+### Metro 2 Base Segment Field Reference
+
+| Field | Name | Description |
+|-------|------|-------------|
+| **Field 10** | Date Opened | Date the account was opened |
+| **Field 13** | Terms Duration | Number of months the terms are in effect |
+| **Field 15** | Scheduled Monthly Payment Amount | The whole dollar amount of the regular monthly payment due |
+| **Field 17A** | Account Status | 2-character code indicating current status (e.g., "11" = current) |
+| **Field 17B** | Payment Rating | 1-character code for payment status (e.g., '1' = 30 days past due) |
+| **Field 25** | Date of First Delinquency (DOFD) | Date when account first became delinquent |
+| **Field 8** | Date Reported | Date the information was reported to the bureau |
+
+### Root Cause
+**Files affected:**
+- `app/services/audit/rules.py` (line 255, 261)
+- `app/routers/letters.py` (line 356)
+- `app/services/legal_letter_generator/pdf_format_assembler.py` (line 521)
+
+All referenced "Metro 2 Field 13" instead of the correct "Metro 2 Field 15".
+
+### Fix
+Changed all instances from Field 13 to Field 15:
+
+**Before (Wrong):**
+```python
+description=(
+    f"This open original creditor account is missing the Scheduled Payment field "
+    f"(Metro 2 Field 13)..."
+),
+metro2_field="13",
+```
+
+**After (Correct):**
+```python
+description=(
+    f"This open original creditor account is missing the Scheduled Payment field "
+    f"(Metro 2 Field 15)..."
+),
+metro2_field="15",
+```
+
+---
+
+## Letter Section Structure
+
+The legal dispute letter is organized into Roman numeral sections by violation category:
+
+| Section | Category | Metro 2 Field | Description |
+|---------|----------|---------------|-------------|
+| **I** | Obsolete Accounts | Field 25 (DOFD) | Accounts exceeding 7-year reporting limit per FCRA § 605(a) |
+| **II** | Missing DOFD | Field 25 | Derogatory accounts without Date of First Delinquency |
+| **III** | Stale Reporting | Field 8 | Accounts not updated in >308 days |
+| **IV** | Other Violations | Various | Missing Scheduled Payment (Field 15), Date Opened (Field 10), etc. |
+
+### Classification Logic
+
+Violations are classified in `_classify_violation()` with the following priority:
+
+1. **Specific field violations first** (Scheduled Payment, Date Opened) → Section IV
+2. **Obsolete accounts** (>2555 days / 7 years) → Section I
+3. **Stale reporting** (308-2555 days) → Section III
+4. **Missing DOFD** → Section II
+5. **Everything else** → Section IV
+
+This prevents field-specific violations from being misclassified into DOFD or other categories.
+
+---
+
+## Validation Checklist
+
+After re-uploading a report, verify:
+
+- [ ] Section I contains only obsolete accounts (>7 years old)
+- [ ] Section II contains only Missing DOFD violations (Field 25)
+- [ ] Section III contains only Stale Reporting violations (Field 8)
+- [ ] Section IV contains Scheduled Payment (Field 15), Date Opened (Field 10), and other miscellaneous violations
+- [ ] No duplicate Field numbers in the same bullet (e.g., "Field 15...Field 13")
+- [ ] All Metro 2 field references are correct per the table above
