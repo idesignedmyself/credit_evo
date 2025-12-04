@@ -24,7 +24,7 @@ const LetterPage = () => {
   const [searchParams] = useSearchParams();
   const letterId = searchParams.get('letterId');
   const navigate = useNavigate();
-  const { selectedViolationIds, violations, auditResult, fetchAuditResults } = useViolationStore();
+  const { selectedViolationIds, selectedDiscrepancyIds, violations, auditResult, fetchAuditResults } = useViolationStore();
   const {
     currentLetter,
     isGeneratingLetter,
@@ -64,7 +64,7 @@ const LetterPage = () => {
 
   const handleGenerate = async () => {
     try {
-      await generateLetter(reportId, selectedViolationIds);
+      await generateLetter(reportId, selectedViolationIds, selectedDiscrepancyIds);
     } catch (err) {
       // Error handled by store
     }

@@ -84,6 +84,7 @@ class LetterRequest(BaseModel):
     tone: str = "conversational"  # Default to conversational for Credit Copilot
     variation_seed: Optional[int] = None
     selected_violations: Optional[List[str]] = None  # List of violation IDs to include
+    selected_discrepancies: Optional[List[str]] = None  # List of discrepancy IDs to include
     bureau: str = "transunion"  # Target bureau for the letter
     use_copilot: bool = True  # Use Credit Copilot human-language generator
     use_legal: bool = False  # Use Legal/Metro-2 structured letter generator
@@ -190,6 +191,27 @@ def reconstruct_consumer(report: ReportDB) -> Consumer:
     )
 
 
+def reconstruct_discrepancies(discrepancies_data: list) -> list:
+    """Reconstruct discrepancy dictionaries from stored JSON data."""
+    discrepancies = []
+    for d in discrepancies_data or []:
+        try:
+            discrepancy = {
+                "discrepancy_id": d.get("discrepancy_id", ""),
+                "violation_type": d.get("violation_type", ""),
+                "creditor_name": d.get("creditor_name", ""),
+                "account_fingerprint": d.get("account_fingerprint", ""),
+                "field_name": d.get("field_name", ""),
+                "values_by_bureau": d.get("values_by_bureau", {}),
+                "description": d.get("description", ""),
+                "severity": d.get("severity", "MEDIUM"),
+            }
+            discrepancies.append(discrepancy)
+        except Exception as e:
+            logger.warning(f"Could not reconstruct discrepancy: {e}")
+    return discrepancies
+
+
 # =============================================================================
 # API ENDPOINTS
 # =============================================================================
@@ -245,6 +267,18 @@ async def generate_letter(
     # Re-classify stale_reporting violations that are actually obsolete (>7 years)
     # This fixes cached violations that were classified before the audit rules were updated
     filtered_violations = reclassify_obsolete_violations(filtered_violations)
+
+    # Reconstruct discrepancies from stored JSON
+    all_discrepancies = reconstruct_discrepancies(audit_db.discrepancies_data or [])
+
+    # Filter discrepancies if specific ones are selected
+    if request.selected_discrepancies:
+        filtered_discrepancies = [
+            d for d in all_discrepancies
+            if d.get("discrepancy_id") in request.selected_discrepancies
+        ]
+    else:
+        filtered_discrepancies = []  # Don't include discrepancies by default
 
     # Reconstruct consumer
     consumer = reconstruct_consumer(report)
@@ -420,6 +454,7 @@ async def generate_letter(
                 consumer=pdf_consumer,
                 bureau=request.bureau,
                 seed=request.variation_seed,
+                discrepancies=filtered_discrepancies,
             )
 
             if not pdf_result["is_valid"]:

@@ -66,6 +66,8 @@ class AuditResultDB(Base):
 
     # Store violations as JSON array
     violations_data = Column(JSON)
+    # Store cross-bureau discrepancies as JSON array
+    discrepancies_data = Column(JSON)
     clean_accounts = Column(JSON)  # List of account IDs
 
     created_at = Column(DateTime, default=datetime.utcnow)

@@ -19,6 +19,7 @@ export const letterApi = {
    * @param {Object} params - Letter generation parameters
    * @param {string} params.report_id - The report UUID
    * @param {Array<string>} params.selected_violations - Optional violation IDs to include
+   * @param {Array<string>} params.selected_discrepancies - Optional discrepancy IDs to include (cross-bureau)
    * @param {string} params.tone - Letter tone (formal|assertive|conversational|narrative for civilian, professional|strict_legal|soft_legal|aggressive for legal)
    * @param {string} params.grouping_strategy - Grouping strategy
    * @param {string} params.bureau - Target bureau (transunion|experian|equifax)
@@ -29,6 +30,7 @@ export const letterApi = {
   generate: async ({
     report_id,
     selected_violations,
+    selected_discrepancies,
     tone = 'formal',
     grouping_strategy = 'by_violation_type',
     bureau = 'transunion',
@@ -46,6 +48,10 @@ export const letterApi = {
 
     if (selected_violations && selected_violations.length > 0) {
       payload.selected_violations = selected_violations;
+    }
+
+    if (selected_discrepancies && selected_discrepancies.length > 0) {
+      payload.selected_discrepancies = selected_discrepancies;
     }
 
     const response = await apiClient.post('/letters/generate', payload);

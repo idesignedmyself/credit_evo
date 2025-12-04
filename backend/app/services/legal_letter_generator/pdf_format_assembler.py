@@ -602,6 +602,63 @@ These cases establish that your reinvestigation must include review of original 
     return base_section + closing
 
 
+def _format_discrepancy_bullet(discrepancy: Dict[str, Any]) -> str:
+    """Format a single cross-bureau discrepancy as a bullet point."""
+    creditor = discrepancy.get("creditor_name", "Unknown")
+    field_name = discrepancy.get("field_name", "Data")
+    values_by_bureau = discrepancy.get("values_by_bureau", {})
+    violation_type = discrepancy.get("violation_type", "").replace("_", " ").title()
+
+    # Build the bureau comparison string
+    bureau_values = []
+    for bureau, value in values_by_bureau.items():
+        bureau_name = bureau.upper() if len(bureau) <= 3 else bureau.title()
+        bureau_values.append(f"{bureau_name}: {value}")
+
+    comparison_str = ", ".join(bureau_values)
+
+    # Format the bullet
+    return f"• {creditor}: {field_name} differs across bureaus ({comparison_str})"
+
+
+def _build_cross_bureau_section(section_num: int, discrepancies: List[Dict[str, Any]]) -> str:
+    """Build a Roman numeral section for cross-bureau discrepancies."""
+    roman = _to_roman(section_num)
+
+    lines = [
+        f"{roman}. Cross-Bureau Reporting Inconsistencies (FCRA § 623(a)(1) / Metro 2 Compliance)",
+        "",
+        "Under FCRA Section 623(a)(1), furnishers are required to report accurate information to all "
+        "consumer reporting agencies. The Metro 2 format requires consistent reporting across all bureaus. "
+        "The following accounts show discrepancies between bureau reports, indicating potential furnisher "
+        "reporting errors:",
+        "",
+    ]
+
+    # Group discrepancies by creditor for cleaner output
+    by_creditor: Dict[str, List[Dict[str, Any]]] = {}
+    for disc in discrepancies:
+        creditor = disc.get("creditor_name", "Unknown")
+        if creditor not in by_creditor:
+            by_creditor[creditor] = []
+        by_creditor[creditor].append(disc)
+
+    # Format bullets
+    for creditor, cred_discrepancies in by_creditor.items():
+        for disc in cred_discrepancies:
+            lines.append(_format_discrepancy_bullet(disc))
+
+    lines.extend([
+        "",
+        "These cross-bureau inconsistencies demonstrate that the furnisher is not reporting consistent, "
+        "accurate information to all bureaus as required by law. Under FCRA Section 623(a)(1)(B), furnishers "
+        "must correct and update information they determine to be inaccurate. The differing values across "
+        "bureaus prove at minimum one bureau's data is inaccurate and must be investigated and corrected.",
+    ])
+
+    return "\n".join(lines)
+
+
 def _build_signature_block(consumer_name: str, ssn_last4: str = None) -> str:
     """Build the signature block with enclosures."""
     # Format consumer name properly (remove hyphens, add spaces)
@@ -659,6 +716,7 @@ class PDFFormatAssembler:
         violations: List[Dict[str, Any]],
         consumer: Dict[str, Any],
         bureau: str,
+        discrepancies: List[Dict[str, Any]] = None,
     ) -> Tuple[str, Dict[str, Any]]:
         """
         Generate a letter matching the PDF template format.
@@ -667,10 +725,12 @@ class PDFFormatAssembler:
             violations: List of violation dictionaries
             consumer: Consumer info with name, address, ssn_last4
             bureau: Target bureau (transunion, experian, equifax)
+            discrepancies: Optional list of cross-bureau discrepancy dictionaries
 
         Returns:
             Tuple of (letter_content, metadata)
         """
+        discrepancies = discrepancies or []
         sections = []
 
         # 1. Title
@@ -721,6 +781,13 @@ class PDFFormatAssembler:
                 categories_used.append(category.value)
                 section_num += 1
 
+        # 5b. Cross-Bureau Discrepancies section (if any discrepancies provided)
+        if discrepancies:
+            sections.append(_build_cross_bureau_section(section_num, discrepancies))
+            sections.append("")
+            categories_used.append("cross_bureau")
+            section_num += 1
+
         # 6. Reinvestigation Requirements
         sections.append(_build_reinvestigation_section())
         sections.append("")
@@ -746,6 +813,7 @@ class PDFFormatAssembler:
             "sections_generated": section_num - 1,
             "categories_used": categories_used,
             "total_violations": len(violations),
+            "total_discrepancies": len(discrepancies),
             "bureau": bureau,
             "generated_at": datetime.now().isoformat(),
         }
@@ -829,6 +897,7 @@ def generate_pdf_format_letter(
     consumer: Dict[str, Any],
     bureau: str,
     seed: int = None,
+    discrepancies: List[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Generate a letter in PDF template format.
@@ -838,12 +907,13 @@ def generate_pdf_format_letter(
         consumer: Consumer info with name, address, ssn_last4
         bureau: Target bureau
         seed: Optional random seed
+        discrepancies: Optional list of cross-bureau discrepancy dictionaries
 
     Returns:
         Dict with 'letter', 'metadata', 'is_valid'
     """
     assembler = PDFFormatAssembler(seed=seed)
-    letter, metadata = assembler.generate(violations, consumer, bureau)
+    letter, metadata = assembler.generate(violations, consumer, bureau, discrepancies=discrepancies)
 
     return {
         "letter": letter,

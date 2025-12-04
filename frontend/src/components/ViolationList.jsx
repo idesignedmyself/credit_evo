@@ -26,6 +26,7 @@ import {
 } from '../utils';
 
 import ViolationToggle from './ViolationToggle';
+import DiscrepancyToggle from './DiscrepancyToggle';
 import AccountAccordion from './AccountAccordion';
 
 const ViolationList = () => {
@@ -33,8 +34,11 @@ const ViolationList = () => {
 
   const {
     violations,
+    discrepancies,
     selectedViolationIds,
+    selectedDiscrepancyIds,
     toggleViolation,
+    toggleDiscrepancy,
     isLoading,
     error
   } = useViolationStore();
@@ -94,10 +98,16 @@ const ViolationList = () => {
         <Tabs
           value={groupBy}
           onChange={(e, v) => setGroupBy(v)}
+          sx={{
+            '& .MuiTab-root': {
+              fontWeight: 'bold',
+            },
+          }}
         >
           <Tab value="type" label="Group by Type" />
           <Tab value="account" label="Group by Account" />
           <Tab value="bureau" label="Group by Bureau" />
+          <Tab value="crossbureau" label={`Cross-Bureau (${discrepancies?.length || 0})`} />
           <Tab value="accounts" label={`Accounts (${accounts.length})`} />
         </Tabs>
       </Box>
@@ -189,6 +199,41 @@ const ViolationList = () => {
             ))}
           </Box>
         ))}
+      </Box>
+
+      {/* CROSS-BUREAU TAB */}
+      <Box hidden={groupBy !== "crossbureau"}>
+        {(!discrepancies || discrepancies.length === 0) ? (
+          <Paper sx={{ p: 3, textAlign: 'center' }}>
+            <Typography variant="body1" color="text.secondary">
+              No cross-bureau discrepancies found. This means the same accounts are being reported consistently across all bureaus.
+            </Typography>
+          </Paper>
+        ) : (
+          <Box sx={{ mb: 3 }}>
+            <Typography
+              variant="subtitle1"
+              sx={{
+                fontWeight: 'bold',
+                mb: 1,
+                pb: 1,
+                borderBottom: '2px solid',
+                borderColor: 'primary.main',
+              }}
+            >
+              Cross-Bureau Discrepancies ({discrepancies.length})
+            </Typography>
+
+            {discrepancies.map((discrepancy, index) => (
+              <DiscrepancyToggle
+                key={discrepancy.discrepancy_id || index}
+                discrepancy={discrepancy}
+                isSelected={selectedDiscrepancyIds.includes(discrepancy.discrepancy_id)}
+                onToggle={toggleDiscrepancy}
+              />
+            ))}
+          </Box>
+        )}
       </Box>
 
       {/* ACCOUNTS TAB */}

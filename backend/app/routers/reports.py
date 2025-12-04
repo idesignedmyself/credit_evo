@@ -49,12 +49,26 @@ class ViolationResponse(BaseModel):
     metro2_field: Optional[str]
 
 
+class DiscrepancyResponse(BaseModel):
+    """Cross-bureau discrepancy response model."""
+    discrepancy_id: str
+    violation_type: str
+    creditor_name: str
+    account_fingerprint: str
+    field_name: str
+    values_by_bureau: dict  # e.g., {"transunion": "$5,000", "experian": "$5,200"}
+    description: str
+    severity: str
+
+
 class AuditResultResponse(BaseModel):
     audit_id: str
     report_id: str
     total_accounts_audited: int
     total_violations_found: int
     violations: List[ViolationResponse]
+    discrepancies: List[DiscrepancyResponse] = []
+    total_discrepancies_found: int = 0
     clean_account_count: int
 
 
@@ -240,6 +254,10 @@ async def upload_report(
         # Audit → AuditResult
         audit_result = audit_report(report)
 
+        # Serialize discrepancies for storage
+        serialized_audit = serialize_audit(audit_result)
+        discrepancies_data = serialized_audit.get('discrepancies', [])
+
         # Save audit result to database
         db_audit = AuditResultDB(
             id=audit_result.audit_id,
@@ -247,11 +265,14 @@ async def upload_report(
             bureau=audit_result.bureau.value,
             total_accounts_audited=audit_result.total_accounts_audited,
             total_violations_found=audit_result.total_violations_found,
-            violations_data=serialize_audit(audit_result).get('violations', []),
+            violations_data=serialized_audit.get('violations', []),
+            discrepancies_data=discrepancies_data,
             clean_accounts=audit_result.clean_accounts
         )
         db.add(db_audit)
         db.commit()
+
+        logger.info(f"Audit saved: {audit_result.total_violations_found} violations, {len(discrepancies_data)} cross-bureau discrepancies")
 
         # Extract credit scores for response
         credit_scores_data = serialized_report.get('credit_scores')
@@ -368,12 +389,30 @@ async def get_audit_result(
         for v in violations_data
     ]
 
+    # Convert stored discrepancies back to response format
+    discrepancies_data = audit.discrepancies_data or []
+    discrepancies_response = [
+        DiscrepancyResponse(
+            discrepancy_id=d.get('discrepancy_id', ''),
+            violation_type=d.get('violation_type', ''),
+            creditor_name=d.get('creditor_name', ''),
+            account_fingerprint=d.get('account_fingerprint', ''),
+            field_name=d.get('field_name', ''),
+            values_by_bureau=d.get('values_by_bureau', {}),
+            description=d.get('description', ''),
+            severity=d.get('severity', 'medium')
+        )
+        for d in discrepancies_data
+    ]
+
     return AuditResultResponse(
         audit_id=audit.id,
         report_id=audit.report_id,
         total_accounts_audited=audit.total_accounts_audited,
         total_violations_found=audit.total_violations_found,
         violations=violations_response,
+        discrepancies=discrepancies_response,
+        total_discrepancies_found=len(discrepancies_response),
         clean_account_count=len(audit.clean_accounts or [])
     )
 

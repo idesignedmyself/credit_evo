@@ -127,7 +127,12 @@ class CrossBureauRules:
 
     @staticmethod
     def check_date_opened_mismatch(accounts: Dict[Bureau, Account]) -> List[CrossBureauDiscrepancy]:
-        """Check if Date Opened differs significantly (>30 days) across bureaus."""
+        """
+        Check if Date Opened differs across bureaus.
+
+        Zero tolerance - FCRA requires "maximum possible accuracy".
+        The same furnisher should report the same date to all bureaus.
+        """
         discrepancies = []
 
         dates = {
@@ -137,11 +142,14 @@ class CrossBureauRules:
         }
 
         if len(dates) >= 2:
-            date_list = list(dates.values())
-            max_diff = max(abs((d1 - d2).days) for i, d1 in enumerate(date_list) for d2 in date_list[i+1:])
+            unique_dates = set(dates.values())
 
-            if max_diff > 30:
+            # Zero tolerance - any difference is a violation
+            if len(unique_dates) > 1:
                 ref_account = list(accounts.values())[0]
+                date_list = list(dates.values())
+                max_diff = max(abs((d1 - d2).days) for i, d1 in enumerate(date_list) for d2 in date_list[i+1:])
+
                 discrepancies.append(CrossBureauDiscrepancy(
                     violation_type=ViolationType.DATE_OPENED_MISMATCH,
                     creditor_name=ref_account.creditor_name,
@@ -149,8 +157,9 @@ class CrossBureauRules:
                     field_name="Date Opened",
                     values_by_bureau={b: str(d) for b, d in dates.items()},
                     description=(
-                        f"Date Opened differs by {max_diff} days across bureaus for "
-                        f"{ref_account.creditor_name}"
+                        f"Date Opened inconsistent across bureaus for {ref_account.creditor_name}: "
+                        f"{', '.join(f'{b.value}={d}' for b, d in dates.items())}. "
+                        f"FCRA §623(a)(1) requires furnishers to report accurate information to all bureaus."
                     ),
                     severity=Severity.MEDIUM
                 ))
@@ -159,7 +168,12 @@ class CrossBureauRules:
 
     @staticmethod
     def check_balance_mismatch(accounts: Dict[Bureau, Account]) -> List[CrossBureauDiscrepancy]:
-        """Check if balance differs across bureaus."""
+        """
+        Check if balance differs across bureaus.
+
+        Zero tolerance - FCRA requires "maximum possible accuracy".
+        Balance reported on the same date should be identical across all bureaus.
+        """
         discrepancies = []
 
         balances = {
@@ -169,13 +183,16 @@ class CrossBureauRules:
         }
 
         if len(balances) >= 2:
-            balance_list = list(balances.values())
-            max_balance = max(balance_list)
-            min_balance = min(balance_list)
+            unique_balances = set(balances.values())
 
-            # Flag if difference > 10% of max balance
-            if max_balance > 0 and (max_balance - min_balance) / max_balance > 0.10:
+            # Zero tolerance - any difference is a violation
+            if len(unique_balances) > 1:
                 ref_account = list(accounts.values())[0]
+                balance_list = list(balances.values())
+                max_balance = max(balance_list)
+                min_balance = min(balance_list)
+                diff = max_balance - min_balance
+
                 discrepancies.append(CrossBureauDiscrepancy(
                     violation_type=ViolationType.BALANCE_MISMATCH,
                     creditor_name=ref_account.creditor_name,
@@ -183,8 +200,10 @@ class CrossBureauRules:
                     field_name="Balance",
                     values_by_bureau={b: f"${v:,.2f}" for b, v in balances.items()},
                     description=(
-                        f"Balance differs across bureaus for {ref_account.creditor_name}: "
-                        f"range ${min_balance:,.2f} - ${max_balance:,.2f}"
+                        f"Balance inconsistent across bureaus for {ref_account.creditor_name}: "
+                        f"{', '.join(f'{b.value}=${v:,.2f}' for b, v in balances.items())} "
+                        f"(${diff:,.2f} difference). "
+                        f"FCRA §623(a)(1) requires furnishers to report accurate information to all bureaus."
                     ),
                     severity=Severity.MEDIUM
                 ))

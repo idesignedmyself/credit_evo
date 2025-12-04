@@ -148,7 +148,7 @@ const useUIStore = create((set, get) => ({
     }
   },
 
-  generateLetter: async (reportId, selectedViolationIds) => {
+  generateLetter: async (reportId, selectedViolationIds, selectedDiscrepancyIds = []) => {
     set({ isGeneratingLetter: true, error: null });
     try {
       const state = get();
@@ -156,6 +156,7 @@ const useUIStore = create((set, get) => ({
       const letter = await letterApi.generate({
         report_id: reportId,
         selected_violations: selectedViolationIds,
+        selected_discrepancies: selectedDiscrepancyIds,
         tone: state.selectedTone,
         grouping_strategy: state.groupingStrategy,
         bureau: state.selectedBureau,

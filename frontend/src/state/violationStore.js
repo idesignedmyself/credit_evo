@@ -9,7 +9,9 @@ const useViolationStore = create((set, get) => ({
   // State
   auditResult: null,
   violations: [],
+  discrepancies: [],  // Cross-bureau discrepancies
   selectedViolationIds: [],
+  selectedDiscrepancyIds: [],  // Selected cross-bureau discrepancies
   isLoading: false,
   error: null,
 
@@ -21,7 +23,9 @@ const useViolationStore = create((set, get) => ({
       set({
         auditResult: result,
         violations: result.violations || [],
+        discrepancies: result.discrepancies || [],  // Store discrepancies
         selectedViolationIds: [],
+        selectedDiscrepancyIds: [],
         isLoading: false,
       });
       return result;
@@ -76,6 +80,39 @@ const useViolationStore = create((set, get) => ({
     });
   },
 
+  // Discrepancy selection actions
+  toggleDiscrepancy: (discrepancyId) => {
+    set((state) => {
+      const isSelected = state.selectedDiscrepancyIds.includes(discrepancyId);
+      return {
+        selectedDiscrepancyIds: isSelected
+          ? state.selectedDiscrepancyIds.filter(id => id !== discrepancyId)
+          : [...state.selectedDiscrepancyIds, discrepancyId],
+      };
+    });
+  },
+
+  selectAllDiscrepancies: () => {
+    set((state) => ({
+      selectedDiscrepancyIds: state.discrepancies.map(d => d.discrepancy_id),
+    }));
+  },
+
+  deselectAllDiscrepancies: () => {
+    set({ selectedDiscrepancyIds: [] });
+  },
+
+  isDiscrepancySelected: (discrepancyId) => {
+    return get().selectedDiscrepancyIds.includes(discrepancyId);
+  },
+
+  getSelectedDiscrepancies: () => {
+    const state = get();
+    return state.discrepancies.filter(d =>
+      state.selectedDiscrepancyIds.includes(d.discrepancy_id)
+    );
+  },
+
   isViolationSelected: (violationId) => {
     return get().selectedViolationIds.includes(violationId);
   },
@@ -117,7 +154,9 @@ const useViolationStore = create((set, get) => ({
     set({
       auditResult: null,
       violations: [],
+      discrepancies: [],
       selectedViolationIds: [],
+      selectedDiscrepancyIds: [],
       error: null,
     });
   },
@@ -130,7 +169,9 @@ const useViolationStore = create((set, get) => ({
     set({
       auditResult: null,
       violations: [],
+      discrepancies: [],
       selectedViolationIds: [],
+      selectedDiscrepancyIds: [],
       isLoading: false,
       error: null,
     });
