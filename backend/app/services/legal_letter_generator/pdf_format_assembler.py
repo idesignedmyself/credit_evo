@@ -518,7 +518,7 @@ def _format_account_bullet(violation: Dict[str, Any]) -> str:
     # Handle missing field violations
     if missing_field:
         field_impacts = {
-            "scheduled_payment": "Missing Scheduled Payment field (Metro 2 Field 13) prevents verification of payment terms for accuracy",
+            "scheduled_payment": "Missing Scheduled Payment field (Metro 2 Field 15) prevents verification of payment terms for accuracy",
             "dofd": "Missing Date of First Delinquency (Metro 2 Field 25) prevents proper obsolescence calculation under FCRA § 605(a)",
             "payment_history": "Missing Payment History Profile prevents accurate assessment of payment performance",
             "original_creditor": "Missing Original Creditor name violates FCRA § 623(a)(6) debt buyer reporting requirements",

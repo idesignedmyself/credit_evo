@@ -353,7 +353,7 @@ async def generate_letter(
                 elif vtype == "missing_date_opened":
                     return "Date Opened"  # Metro 2 Field 10
                 elif vtype == "missing_scheduled_payment":
-                    return "Scheduled Payment"  # Metro 2 Field 13
+                    return "Scheduled Payment"  # Metro 2 Field 15
                 return None
 
             def get_days_since_update(v):

@@ -3,13 +3,13 @@
 ## Issue: Category Mismatch in Section II
 
 ### Problem
-Section II header was "Missing DOFD (Field 25)" but contained a **Scheduled Payment violation (Field 13)** instead of an actual DOFD violation.
+Section II header was "Missing DOFD (Field 25)" but contained a **Scheduled Payment violation (Field 15)** instead of an actual DOFD violation.
 
 **Example of incorrect output:**
 ```
 II. Accounts Missing Date of First Delinquency (Metro 2 Field 25)
 ...
-• MIDLAND CRED (Account #30058****): Missing Scheduled Payment field (Metro 2 Field 13)
+• MIDLAND CRED (Account #30058****): Missing Scheduled Payment field (Metro 2 Field 15)
 ```
 
 This caused confusion because the violation listed did not match the section category.
@@ -36,7 +36,7 @@ if vtype == "missing_dofd" or vtype == "chargeoff_missing_dofd":
 elif vtype == "missing_date_opened":
     return "Date Opened"  # Metro 2 Field 10
 elif vtype == "missing_scheduled_payment":
-    return "Scheduled Payment"  # Metro 2 Field 13
+    return "Scheduled Payment"  # Metro 2 Field 15
 ```
 
 ### 2. Missing Early Classification in `pdf_format_assembler.py`

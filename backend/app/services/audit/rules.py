@@ -252,13 +252,13 @@ class SingleBureauRules:
                     bureau=bureau,
                     description=(
                         f"This open original creditor account is missing the Scheduled Payment field "
-                        f"(Metro 2 Field 13). This omission violates the duty under 15 U.S.C. § 1681e(b) "
+                        f"(Metro 2 Field 15). This omission violates the duty under 15 U.S.C. § 1681e(b) "
                         f"to maintain reasonable procedures to assure maximum possible accuracy."
                     ),
                     expected_value="Valid scheduled payment amount",
                     actual_value="Not Reported",
                     fcra_section="611(a)",
-                    metro2_field="13",
+                    metro2_field="15",
                     evidence={}
                 ))
 
