@@ -469,6 +469,7 @@ class CrossBureauDiscrepancy:
 
     # Account matching info
     creditor_name: str = ""
+    account_number_masked: str = ""  # Masked account number for display
     account_fingerprint: str = ""  # For matching across bureaus
 
     # What differs

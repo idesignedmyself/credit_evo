@@ -71,6 +71,7 @@ const DiscrepancyToggle = React.memo(({ discrepancy, isSelected, onToggle }) => 
 
           <Typography variant="body2" color="text.secondary">
             {discrepancy.creditor_name}
+            {discrepancy.account_number_masked && ` (${discrepancy.account_number_masked})`}
             {discrepancy.field_name && ` - ${discrepancy.field_name}`}
           </Typography>
 

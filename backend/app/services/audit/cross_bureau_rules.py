@@ -113,6 +113,7 @@ class CrossBureauRules:
                 discrepancies.append(CrossBureauDiscrepancy(
                     violation_type=ViolationType.DOFD_MISMATCH,
                     creditor_name=ref_account.creditor_name,
+                    account_number_masked=ref_account.account_number_masked or "",
                     account_fingerprint=create_account_fingerprint(ref_account),
                     field_name="Date of First Delinquency",
                     values_by_bureau={b: str(d) for b, d in dofds.items()},
@@ -153,6 +154,7 @@ class CrossBureauRules:
                 discrepancies.append(CrossBureauDiscrepancy(
                     violation_type=ViolationType.DATE_OPENED_MISMATCH,
                     creditor_name=ref_account.creditor_name,
+                    account_number_masked=ref_account.account_number_masked or "",
                     account_fingerprint=create_account_fingerprint(ref_account),
                     field_name="Date Opened",
                     values_by_bureau={b: str(d) for b, d in dates.items()},
@@ -196,6 +198,7 @@ class CrossBureauRules:
                 discrepancies.append(CrossBureauDiscrepancy(
                     violation_type=ViolationType.BALANCE_MISMATCH,
                     creditor_name=ref_account.creditor_name,
+                    account_number_masked=ref_account.account_number_masked or "",
                     account_fingerprint=create_account_fingerprint(ref_account),
                     field_name="Balance",
                     values_by_bureau={b: f"${v:,.2f}" for b, v in balances.items()},
@@ -226,6 +229,7 @@ class CrossBureauRules:
             discrepancies.append(CrossBureauDiscrepancy(
                 violation_type=ViolationType.STATUS_MISMATCH,
                 creditor_name=ref_account.creditor_name,
+                account_number_masked=ref_account.account_number_masked or "",
                 account_fingerprint=create_account_fingerprint(ref_account),
                 field_name="Account Status",
                 values_by_bureau={b: s.value for b, s in statuses.items()},
@@ -255,6 +259,7 @@ class CrossBureauRules:
                 discrepancies.append(CrossBureauDiscrepancy(
                     violation_type=ViolationType.PAYMENT_HISTORY_MISMATCH,
                     creditor_name=ref_account.creditor_name,
+                    account_number_masked=ref_account.account_number_masked or "",
                     account_fingerprint=create_account_fingerprint(ref_account),
                     field_name="Payment History",
                     values_by_bureau=histories,
@@ -284,6 +289,7 @@ class CrossBureauRules:
                 discrepancies.append(CrossBureauDiscrepancy(
                     violation_type=ViolationType.PAST_DUE_MISMATCH,
                     creditor_name=ref_account.creditor_name,
+                    account_number_masked=ref_account.account_number_masked or "",
                     account_fingerprint=create_account_fingerprint(ref_account),
                     field_name="Past Due Amount",
                     values_by_bureau={b: f"${v:,.2f}" for b, v in past_dues.items()},
@@ -312,6 +318,7 @@ class CrossBureauRules:
             discrepancies.append(CrossBureauDiscrepancy(
                 violation_type=ViolationType.CLOSED_VS_OPEN_CONFLICT,
                 creditor_name=ref_account.creditor_name,
+                account_number_masked=ref_account.account_number_masked or "",
                 account_fingerprint=create_account_fingerprint(ref_account),
                 field_name="Open/Closed Status",
                 values_by_bureau={b: s.value for b, s in statuses.items()},
@@ -349,6 +356,7 @@ class CrossBureauRules:
                 discrepancies.append(CrossBureauDiscrepancy(
                     violation_type=ViolationType.CREDITOR_NAME_MISMATCH,
                     creditor_name=ref_account.creditor_name,
+                    account_number_masked=ref_account.account_number_masked or "",
                     account_fingerprint=create_account_fingerprint(ref_account),
                     field_name="Creditor Name",
                     values_by_bureau=names,
@@ -378,6 +386,7 @@ class CrossBureauRules:
                 discrepancies.append(CrossBureauDiscrepancy(
                     violation_type=ViolationType.ACCOUNT_NUMBER_MISMATCH,
                     creditor_name=ref_account.creditor_name,
+                    account_number_masked=ref_account.account_number_masked or "",
                     account_fingerprint=create_account_fingerprint(ref_account),
                     field_name="Account Number (last 4)",
                     values_by_bureau=acct_nums,

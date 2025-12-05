@@ -54,6 +54,7 @@ class DiscrepancyResponse(BaseModel):
     discrepancy_id: str
     violation_type: str
     creditor_name: str
+    account_number_masked: str = ""  # Masked account number for display
     account_fingerprint: str
     field_name: str
     values_by_bureau: dict  # e.g., {"transunion": "$5,000", "experian": "$5,200"}
@@ -396,6 +397,7 @@ async def get_audit_result(
             discrepancy_id=d.get('discrepancy_id', ''),
             violation_type=d.get('violation_type', ''),
             creditor_name=d.get('creditor_name', ''),
+            account_number_masked=d.get('account_number_masked', ''),
             account_fingerprint=d.get('account_fingerprint', ''),
             field_name=d.get('field_name', ''),
             values_by_bureau=d.get('values_by_bureau', {}),
