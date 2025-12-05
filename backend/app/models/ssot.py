@@ -62,6 +62,7 @@ class ViolationType(str, Enum):
     CLOSED_OC_REPORTING_PAST_DUE = "closed_oc_reporting_past_due"  # NEW
     CHARGEOFF_MISSING_DOFD = "chargeoff_missing_dofd"  # NEW
     STATUS_PAYMENT_HISTORY_MISMATCH = "status_payment_history_mismatch"  # NEW - Chargeoff status but OK payment history
+    PHANTOM_LATE_PAYMENT = "phantom_late_payment"  # Late markers during $0 due or forbearance periods
 
     # Cross-bureau violations
     DOFD_MISMATCH = "dofd_mismatch"

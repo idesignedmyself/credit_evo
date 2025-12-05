@@ -43,6 +43,7 @@ class ViolationCategory(str, Enum):
     AMOUNT_PAST_DUE_ERROR = "amount_past_due_error"
     BALANCE_ERROR = "balance_error"
     PAYMENT_STATUS_ERROR = "payment_status_error"
+    PHANTOM_LATE_PAYMENT = "phantom_late_payment"  # Late markers during $0 due or forbearance
     MISSING_PAYMENT_HISTORY = "missing_payment_history"
     STUDENT_LOAN_VERIFICATION = "student_loan_verification"
     COLLECTION_VERIFICATION = "collection_verification"
@@ -154,6 +155,24 @@ CATEGORY_CONFIGS: Dict[ViolationCategory, CategoryConfig] = {
             "status/comments are incorrect, or the payment history is incorrect - both cannot be accurate. "
             "Under FCRA Section 623(a)(1), furnishers are prohibited from reporting information they know or "
             "should know is inaccurate. Reporting contradictory data fields constitutes a willful violation."
+        ),
+        fcra_section="623(a)(1)"
+    ),
+    ViolationCategory.PHANTOM_LATE_PAYMENT: CategoryConfig(
+        title="Accounts Reporting Late Payments During $0 Due or Forbearance Periods",
+        metro2_fields="Metro 2 Fields 15 (Scheduled Payment) and 25 (Payment History Profile)",
+        explanation=(
+            "Under FCRA Section 623(a)(1), furnishers cannot report a consumer as delinquent for failing "
+            "to make a payment that was not due. When an account has a $0 scheduled payment (such as during "
+            "forbearance, deferment, COVID-related payment pause, or hardship programs), reporting late "
+            "payment markers (30, 60, 90+ days) is legally impermissible. The following accounts show "
+            "'phantom' late payments during periods when no payment was required:"
+        ),
+        resolution=(
+            "These phantom late payment markers must be immediately removed. A consumer cannot be reported "
+            "as delinquent for failing to pay $0. Under the CARES Act and FCRA Section 623(c), if a consumer "
+            "was in forbearance or had no payment due, any delinquency markers during that period are inaccurate "
+            "by definition and must be deleted."
         ),
         fcra_section="623(a)(1)"
     ),
@@ -303,6 +322,10 @@ def _classify_violation(violation: Dict[str, Any]) -> ViolationCategory:
     # Check for payment status errors
     if v_type in ["incorrect_payment_status", "payment_history_error", "wrong_account_status", "status_payment_history_mismatch"]:
         return ViolationCategory.PAYMENT_STATUS_ERROR
+
+    # Check for phantom late payments (late markers during $0 due or forbearance)
+    if v_type == "phantom_late_payment":
+        return ViolationCategory.PHANTOM_LATE_PAYMENT
 
     # Check for missing payment history
     if v_type in ["missing_payment_history", "missing_payment_field"]:
@@ -534,6 +557,43 @@ def _format_account_bullet(violation: Dict[str, Any]) -> str:
                 f"However, Payment History Profile shows {ok_months} out of {total_months} months as "
                 f"current/OK — a charge-off requires prior delinquency (120-180 days), which is absent"
             )
+
+        if details:
+            return f"• {account_id}: {'; '.join(details)}"
+
+    # Handle Phantom Late Payment violations with structured evidence
+    if violation_type == "phantom_late_payment" and isinstance(evidence, dict):
+        scheduled_payment = evidence.get("scheduled_payment")
+        has_forbearance = evidence.get("has_forbearance", False)
+        forbearance_remarks = evidence.get("forbearance_remarks", "")
+        late_markers = evidence.get("late_markers", [])
+        trigger_reason = evidence.get("trigger_reason", [])
+
+        # Build the phantom late payment description
+        phantom_parts = []
+
+        # Show why no payment was due
+        if scheduled_payment is not None and scheduled_payment == 0:
+            phantom_parts.append("Scheduled Payment: $0 (no payment was due)")
+        if has_forbearance and forbearance_remarks:
+            # Truncate long remarks
+            remarks_short = forbearance_remarks[:60] + "..." if len(forbearance_remarks) > 60 else forbearance_remarks
+            phantom_parts.append(f'Account remarks indicate forbearance/deferment: "{remarks_short}"')
+
+        if phantom_parts:
+            details.append(" and ".join(phantom_parts))
+
+        # Show the phantom late markers found
+        if late_markers:
+            late_text = ", ".join([
+                f"{m.get('month', '')} {m.get('year', '')}: {m.get('status', '')}"
+                for m in late_markers[:4]
+            ])
+            if len(late_markers) > 4:
+                late_text += f" (+{len(late_markers) - 4} more)"
+            details.append(f"Yet Payment History shows late markers: {late_text}")
+
+        details.append("Cannot be late on a $0 payment or during forbearance")
 
         if details:
             return f"• {account_id}: {'; '.join(details)}"
@@ -809,6 +869,7 @@ class PDFFormatAssembler:
             ViolationCategory.OBSOLETE_ACCOUNT,
             ViolationCategory.MISSING_DOFD,
             ViolationCategory.STALE_REPORTING,
+            ViolationCategory.PHANTOM_LATE_PAYMENT,
             ViolationCategory.AMOUNT_PAST_DUE_ERROR,
             ViolationCategory.BALANCE_ERROR,
             ViolationCategory.PAYMENT_STATUS_ERROR,

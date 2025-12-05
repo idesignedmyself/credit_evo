@@ -552,6 +552,146 @@ class SingleBureauRules:
 
         return violations
 
+    @staticmethod
+    def check_phantom_late_payment(
+        account: Account,
+        bureau: Bureau,
+        bureau_data: Optional[BureauAccountData] = None
+    ) -> List[Violation]:
+        """
+        Check for "Phantom Late Payments" - late markers reported during periods
+        when no payment was due ($0 scheduled payment or forbearance/deferment).
+
+        FCRA §623(a)(1) requires accurate reporting. A consumer cannot be reported
+        as 30/60/90 days late if:
+        1. The scheduled payment was $0 (no payment required)
+        2. The account was in forbearance, deferment, or hardship program
+        3. The account had COVID-related payment pause
+
+        This is especially common with:
+        - Student loans during in-school deferment or forbearance
+        - Mortgages during COVID forbearance (CARES Act)
+        - Auto loans with payment deferrals
+        - Credit cards with hardship programs
+
+        Detection Logic:
+        1. Check if scheduled_payment == 0 OR remarks indicate forbearance
+        2. Look for ANY late markers (30, 60, 90, 120+) in payment history
+        3. If both conditions met, fire violation
+        """
+        violations = []
+
+        # Get payment history and remarks from bureau_data if provided
+        payment_history = []
+        remarks = ""
+        scheduled_payment = account.scheduled_payment
+
+        if bureau_data:
+            if hasattr(bureau_data, 'payment_history'):
+                payment_history = bureau_data.payment_history or []
+            if hasattr(bureau_data, 'remarks'):
+                remarks = bureau_data.remarks or ""
+            if hasattr(bureau_data, 'scheduled_payment') and bureau_data.scheduled_payment is not None:
+                scheduled_payment = bureau_data.scheduled_payment
+
+        # Skip if no payment history to analyze
+        if not payment_history:
+            return violations
+
+        remarks_lower = remarks.lower() if remarks else ""
+
+        # CONDITION 1: Check for forbearance/deferment indicators in remarks
+        forbearance_indicators = [
+            'forbearance', 'deferment', 'deferred', 'defer',
+            'hardship', 'hardship program', 'payment plan',
+            'covid', 'cares act', 'pandemic', 'disaster',
+            'natural disaster', 'payment pause', 'payment holiday',
+            'temporary hardship', 'modification', 'loan mod',
+            'in school', 'in-school', 'grace period',
+            'military', 'servicememember', 'scra',
+            'unemployment deferment', 'economic hardship'
+        ]
+        has_forbearance_remarks = any(ind in remarks_lower for ind in forbearance_indicators)
+
+        # CONDITION 2: Check if scheduled payment is $0 (no payment required)
+        has_zero_payment_due = scheduled_payment is not None and scheduled_payment == 0
+
+        # If neither condition is met, no phantom late payment possible
+        if not has_forbearance_remarks and not has_zero_payment_due:
+            return violations
+
+        # CONDITION 3: Check for late markers in payment history
+        # Format: [{"month": "Jan", "year": 2024, "status": "OK"}, ...]
+        late_markers = []
+        late_statuses = ['30', '60', '90', '120', '150', '180', 'CO', 'FC', 'RP']
+
+        for entry in payment_history:
+            if isinstance(entry, dict):
+                status = str(entry.get('status', '')).upper().strip()
+                # Check if status indicates late payment (30, 60, 90, etc.)
+                if any(late in status for late in late_statuses):
+                    month = entry.get('month', '')
+                    year = entry.get('year', '')
+                    late_markers.append({
+                        'month': month,
+                        'year': year,
+                        'status': status
+                    })
+
+        # If no late markers found, no violation
+        if not late_markers:
+            return violations
+
+        # BUILD VIOLATION
+        # Determine the triggering condition for clearer messaging
+        trigger_reason = []
+        if has_zero_payment_due:
+            trigger_reason.append(f"Scheduled Payment: $0 (no payment required)")
+        if has_forbearance_remarks:
+            # Extract the specific forbearance indicator found
+            found_indicators = [ind for ind in forbearance_indicators if ind in remarks_lower]
+            if found_indicators:
+                trigger_reason.append(f"Account remarks indicate: {found_indicators[0]}")
+
+        trigger_text = " and ".join(trigger_reason)
+
+        # Format late markers for description
+        late_marker_text = ", ".join([
+            f"{m['month']} {m['year']}: {m['status']}" for m in late_markers[:5]
+        ])
+        if len(late_markers) > 5:
+            late_marker_text += f" (and {len(late_markers) - 5} more)"
+
+        violations.append(Violation(
+            violation_type=ViolationType.PHANTOM_LATE_PAYMENT,
+            severity=Severity.HIGH,
+            account_id=account.account_id,
+            creditor_name=account.creditor_name,
+            account_number_masked=account.account_number_masked,
+            furnisher_type=account.furnisher_type,
+            bureau=bureau,
+            description=(
+                f"This account shows late payment markers ({late_marker_text}) during a period "
+                f"when no payment was due. {trigger_text}. Under FCRA §623(a)(1), a furnisher "
+                f"cannot report a consumer as delinquent for failing to make a payment that "
+                f"was not required. These phantom late markers must be removed."
+            ),
+            expected_value="No late markers during $0 due or forbearance periods",
+            actual_value=f"{len(late_markers)} late marker(s) found: {late_marker_text}",
+            fcra_section="623(a)(1)",
+            metro2_field="25",  # Payment History Profile
+            evidence={
+                "scheduled_payment": scheduled_payment,
+                "has_forbearance": has_forbearance_remarks,
+                "forbearance_remarks": remarks[:200] if remarks else None,
+                "late_markers": late_markers,
+                "late_marker_count": len(late_markers),
+                "trigger_reason": trigger_reason
+            }
+        ))
+
+        return violations
+
 
 # =============================================================================
 # FURNISHER RULES

@@ -230,6 +230,9 @@ class AuditEngine:
         violations.extend(self.single_bureau_rules.check_status_payment_history_mismatch(
             account_for_bureau, bureau, bureau_data
         ))
+        violations.extend(self.single_bureau_rules.check_phantom_late_payment(
+            account_for_bureau, bureau, bureau_data
+        ))
 
         return violations
 

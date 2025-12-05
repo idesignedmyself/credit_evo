@@ -55,13 +55,19 @@
 - **Implementation:** Check ECOA code for AU designation vs. liability reporting
 - **File:** `app/services/audit/rules.py`
 
-### [ ] Phantom Late Payments - Forbearance (50% success)
+### [x] Phantom Late Payments - Forbearance (50% success) - ✅ IMPLEMENTED
 - **Category:** Payment History Errors
 - **Description:** Late markers during $0 due or forbearance periods
 - **Legal Basis:** FCRA §623(a)(1)
-- **Current:** Partial - no explicit forbearance detection
-- **Implementation:** Parse special comments for forbearance indicators
-- **File:** `app/services/audit/rules.py`
+- **Status:** ✅ Fully implemented with forbearance detection
+- **Rule:** `check_phantom_late_payment()` in `app/services/audit/rules.py:556`
+- **ViolationType:** `PHANTOM_LATE_PAYMENT`
+- **Criteria:**
+  - Fires when scheduled_payment == $0 (no payment due) AND late markers exist in payment history
+  - Also fires when remarks indicate forbearance/deferment/hardship AND late markers exist
+  - Detects: COVID forbearance, CARES Act, student loan deferment, hardship programs
+  - Late markers detected: 30, 60, 90, 120, 150, 180, CO, FC, RP
+- **Forbearance Indicators Detected:** forbearance, deferment, hardship, COVID, CARES Act, pandemic, payment pause, in-school, grace period, military/SCRA, unemployment deferment
 
 ### [ ] Unauthorized Hard Inquiries (50% success)
 - **Category:** Inquiry Violations
