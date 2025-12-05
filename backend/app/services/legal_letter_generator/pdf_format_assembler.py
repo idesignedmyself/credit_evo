@@ -140,16 +140,20 @@ CATEGORY_CONFIGS: Dict[ViolationCategory, CategoryConfig] = {
         fcra_section="623(a)(2)"
     ),
     ViolationCategory.PAYMENT_STATUS_ERROR: CategoryConfig(
-        title="Accounts with Payment Status Errors",
-        metro2_fields="Metro 2 Fields 17A and 17B",
+        title="Accounts with Payment Status / Payment History Contradictions",
+        metro2_fields="Metro 2 Fields 17A, 17B, and 25 (Payment History Profile)",
         explanation=(
-            "The Account Status (Field 17A) and Payment Rating (Field 17B) must accurately reflect "
-            "the current payment status of the account. The following accounts have payment status "
-            "reporting that does not align with actual payment history:"
+            "The Account Status (Field 17A), Payment Rating (Field 17B), Comments/Special Comments, and "
+            "Payment History Profile (Field 25) must be internally consistent. An account cannot show "
+            "a charge-off status while simultaneously reporting 24 months of on-time payments - a charge-off "
+            "requires prior delinquency (typically 120-180 days past due). The following accounts have "
+            "payment status or comment fields that contradict the payment history profile:"
         ),
         resolution=(
-            "Payment status errors must be corrected immediately. Under FCRA Section 623(a)(1), "
-            "furnishers are prohibited from reporting information they know or should know is inaccurate."
+            "These internal contradictions must be investigated and corrected immediately. Either the payment "
+            "status/comments are incorrect, or the payment history is incorrect - both cannot be accurate. "
+            "Under FCRA Section 623(a)(1), furnishers are prohibited from reporting information they know or "
+            "should know is inaccurate. Reporting contradictory data fields constitutes a willful violation."
         ),
         fcra_section="623(a)(1)"
     ),
@@ -252,7 +256,9 @@ BUREAU_ADDRESSES = {
 def _classify_violation(violation: Dict[str, Any]) -> ViolationCategory:
     """Classify a violation into a category for grouping."""
     v_type = (violation.get("violation_type") or "").lower()
-    evidence = (violation.get("evidence") or "").lower()
+    # Evidence can be a string or a dict - handle both cases
+    evidence_raw = violation.get("evidence") or ""
+    evidence = evidence_raw.lower() if isinstance(evidence_raw, str) else ""
     creditor = (violation.get("creditor_name") or "").lower()
     missing_field = (violation.get("missing_field") or "").lower()
 
@@ -295,7 +301,7 @@ def _classify_violation(violation: Dict[str, Any]) -> ViolationCategory:
         return ViolationCategory.BALANCE_ERROR
 
     # Check for payment status errors
-    if v_type in ["incorrect_payment_status", "payment_history_error", "wrong_account_status"]:
+    if v_type in ["incorrect_payment_status", "payment_history_error", "wrong_account_status", "status_payment_history_mismatch"]:
         return ViolationCategory.PAYMENT_STATUS_ERROR
 
     # Check for missing payment history
@@ -489,6 +495,7 @@ def _format_account_bullet(violation: Dict[str, Any]) -> str:
     dofd_raw = violation.get("dofd", "") or violation.get("date_of_first_delinquency", "")
     dofd_source = violation.get("dofd_source", "")  # "explicit", "inferred", or ""
     missing_field = violation.get("missing_field", "")
+    violation_type = violation.get("violation_type", "")
 
     # Convert dates to readable format (January 26, 2025 instead of 2025-01-26)
     last_reported_date = _format_readable_date(last_reported_date_raw)
@@ -502,6 +509,34 @@ def _format_account_bullet(violation: Dict[str, Any]) -> str:
 
     # Add specific issue details
     details = []
+
+    # Handle Status/Payment History Mismatch violations with structured evidence
+    if violation_type == "status_payment_history_mismatch" and isinstance(evidence, dict):
+        payment_status = evidence.get("payment_status", "")
+        comments = evidence.get("comments", "")
+        ok_months = evidence.get("ok_months", 0)
+        total_months = evidence.get("total_months", 0)
+
+        # Build the contradiction description
+        contradiction_parts = []
+        if payment_status:
+            contradiction_parts.append(f'Payment Status shows "{payment_status}"')
+        if comments:
+            # Truncate long comments
+            comments_short = comments[:80] + "..." if len(comments) > 80 else comments
+            contradiction_parts.append(f'Comments state "{comments_short}"')
+
+        if contradiction_parts:
+            details.append(f"{' and '.join(contradiction_parts)}, indicating charge-off/collection status")
+
+        if ok_months and total_months:
+            details.append(
+                f"However, Payment History Profile shows {ok_months} out of {total_months} months as "
+                f"current/OK — a charge-off requires prior delinquency (120-180 days), which is absent"
+            )
+
+        if details:
+            return f"• {account_id}: {'; '.join(details)}"
 
     # Handle obsolete accounts (>2555 days / 7 years from DOFD per FCRA 605(a))
     if days and days > 2555:

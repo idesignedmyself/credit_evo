@@ -124,12 +124,16 @@
 
 ### [x] Invalid Status Codes (50% success) - ✅ IMPLEMENTED
 - **Category:** Metro 2 Format Violations
-- **Description:** Status/Comments inconsistent with payment history
-- **Status:** ✅ Fully implemented - detects chargeoff status OR comments with OK payment history
-- **Rule:** `check_status_payment_history_mismatch()` in `app/services/audit/rules.py:417`
+- **Description:** Payment Status inconsistent with Payment History Profile
+- **Status:** ✅ Fully implemented with false-positive prevention
+- **Rule:** `check_status_payment_history_mismatch()` in `app/services/audit/rules.py:418`
 - **ViolationType:** `STATUS_PAYMENT_HISTORY_MISMATCH`
-- **Criteria:** Flags when Payment Status OR Comments/Remarks indicate chargeoff/collection but 80%+ of payment history shows "OK"
-- **Includes:** "Payment Pattern Malformation" - Special comments contradict payment profile
+- **Criteria:**
+  - ONLY fires when **Payment Status** explicitly indicates chargeoff/collection/recovery/repo/foreclosure
+  - Does NOT fire on Comments alone (avoids "Closed by Credit Grantor" false positives)
+  - Requires 80%+ of payment history showing "OK" to be a contradiction
+- **Valid Triggers:** "Collection/Chargeoff", "Transferred to recovery", "Charge-off", "Repossession"
+- **False Positive Prevention:** Benign statuses like "Paid", "Closed", "Current" won't trigger even with suspicious comments
 
 ### [ ] Missing Tradelines (35% success)
 - **Category:** Cross-Bureau Inconsistencies

@@ -421,17 +421,24 @@ class SingleBureauRules:
         bureau_data: Optional[BureauAccountData] = None
     ) -> List[Violation]:
         """
-        Check if Payment Status OR Comments contradict Payment History.
+        Check if Payment Status contradicts Payment History.
 
         FCRA §623(a)(1) requires accurate reporting. A charged-off account
         cannot have 24 consecutive months of "OK" (current) payment history.
 
-        Example violations:
-        1. Payment Status = "Collection/Chargeoff" but History = all OK
-        2. Comments = "Charged off account" but History = all OK
+        IMPORTANT: This rule ONLY fires when the Payment Status field explicitly
+        indicates chargeoff/collection/derogatory. Comments alone (like "Closed by
+        Credit Grantor") are NOT sufficient to trigger this violation, as a bank
+        can legitimately close an unused account with all-OK history.
 
-        This is internally inconsistent - if the account is charged off,
-        the payment history should show delinquency markers (30, 60, 90, CO, etc.)
+        Example violations (VALID):
+        1. Payment Status = "Collection/Chargeoff" but History = all OK
+        2. Payment Status = "Charge-off" but History = all OK
+        3. Payment Status contains "Recovery" but History = all OK
+
+        Example NON-violations (FALSE POSITIVES to avoid):
+        1. Comments = "Closed by Credit Grantor" but Status = "Paid" and History = OK
+           (This is a legitimate bank closure of unused account)
         """
         violations = []
 
@@ -453,25 +460,37 @@ class SingleBureauRules:
         payment_status_lower = payment_status.lower()
         remarks_lower = remarks.lower()
 
-        derogatory_indicators = [
+        # PRIMARY TRIGGER: Payment Status must explicitly indicate derogatory status
+        # These are the "slam dunk" indicators that MUST be present in payment_status
+        primary_derogatory_indicators = [
             'chargeoff', 'charge-off', 'charge off', 'charged off',
             'collection', 'derogatory', 'unpaid', 'bad debt',
-            'written off', 'profit and loss', 'closed by credit grantor'
+            'written off', 'profit and loss', 'recovery',
+            'repossession', 'repo', 'foreclosure'
         ]
 
-        # Check BOTH payment_status AND remarks/comments for derogatory indicators
-        is_derogatory_status = any(ind in payment_status_lower for ind in derogatory_indicators)
-        is_derogatory_comments = any(ind in remarks_lower for ind in derogatory_indicators)
+        # BENIGN indicators - if these are in payment_status WITHOUT primary indicators,
+        # do NOT fire even if comments mention "closed by credit grantor"
+        benign_status_indicators = [
+            'paid', 'closed', 'current', 'transferred'
+        ]
 
-        # Identify which field(s) indicate chargeoff
-        chargeoff_source = []
-        if is_derogatory_status:
-            chargeoff_source.append(f"Payment Status: \"{payment_status}\"")
-        if is_derogatory_comments:
-            chargeoff_source.append(f"Comments: \"{remarks[:100]}{'...' if len(remarks) > 100 else ''}\"")
+        # Check if payment_status has a PRIMARY derogatory indicator
+        is_derogatory_status = any(ind in payment_status_lower for ind in primary_derogatory_indicators)
 
-        if not is_derogatory_status and not is_derogatory_comments:
+        # Check if payment_status is benign (paid/closed without derogatory)
+        is_benign_status = (
+            any(ind in payment_status_lower for ind in benign_status_indicators) and
+            not is_derogatory_status
+        )
+
+        # ONLY fire if payment_status explicitly indicates derogatory
+        # Do NOT fire based on comments alone (avoids "Closed by Credit Grantor" false positives)
+        if not is_derogatory_status:
             return violations
+
+        # Additional check: If status is derogatory but also says "Paid", might be resolved
+        # e.g., "Charge off - Paid" is a resolved chargeoff, still contradicts OK history though
 
         # Extract status codes from payment history
         # Format: [{"month": "Jan", "year": 2024, "status": "OK"}, ...]
@@ -487,9 +506,21 @@ class SingleBureauRules:
         ok_count = sum(1 for s in status_codes if s in ('OK', 'C', 'CURRENT', '0', '-'))
         total_count = len(status_codes)
 
-        # If 80%+ of the payment history shows "OK" but status/comments indicate chargeoff,
+        # If 80%+ of the payment history shows "OK" but status indicates chargeoff,
         # that's a contradiction
         if total_count >= 6 and ok_count >= (total_count * 0.8):
+            # Build source description - always payment_status, optionally include comments
+            chargeoff_source = [f"Payment Status: \"{payment_status}\""]
+
+            # Check if comments provide additional supporting evidence (but not sole trigger)
+            comment_derog_indicators = [
+                'charged off', 'charge off', 'collection', 'recovery',
+                'bad debt', 'written off', 'profit and loss'
+            ]
+            has_supporting_comments = any(ind in remarks_lower for ind in comment_derog_indicators)
+            if has_supporting_comments and remarks:
+                chargeoff_source.append(f"Comments: \"{remarks[:100]}{'...' if len(remarks) > 100 else ''}\"")
+
             source_text = " and ".join(chargeoff_source)
             violations.append(Violation(
                 violation_type=ViolationType.STATUS_PAYMENT_HISTORY_MISMATCH,
