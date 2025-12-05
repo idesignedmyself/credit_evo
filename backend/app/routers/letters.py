@@ -411,18 +411,52 @@ async def generate_letter(
                 return None
 
             def get_last_reported_date(v):
-                """Extract last reported date, handling different evidence field names."""
+                """Extract last reported date (Metro 2 Field 8 - Date Reported)."""
                 if not v.evidence:
                     return None
-                # Stale reporting uses "date_reported"
+                # Stale reporting uses "date_reported" (Metro 2 Field 8)
                 if "date_reported" in v.evidence:
                     return v.evidence["date_reported"]
-                # Obsolete accounts use "dofd" (Date of First Delinquency) or "date_opened"
+                return None
+
+            def get_dofd(v):
+                """Extract Date of First Delinquency (Metro 2 Field 25) for obsolete accounts."""
+                if not v.evidence:
+                    return None
+                # DOFD is the key field for FCRA 605(a) 7-year calculation
                 if "dofd" in v.evidence:
                     return v.evidence["dofd"]
+                # Fall back to date_opened for accounts where DOFD calculation was based on that
                 if "date_opened" in v.evidence:
                     return v.evidence["date_opened"]
                 return None
+
+            def get_dofd_source(v):
+                """
+                Determine the source of DOFD: 'explicit', 'inferred', or '' (missing).
+
+                - 'explicit': DOFD was directly reported in Metro 2 Field 25
+                - 'inferred': DOFD was calculated from payment history per FCRA 605(c)(1)
+                - '': No DOFD available (itself a violation for derogatory accounts)
+                """
+                if not v.evidence:
+                    return ""
+                # Check if evidence indicates DOFD source
+                if "dofd_source" in v.evidence:
+                    return v.evidence["dofd_source"]
+                # Infer source: if we have "dofd" in evidence, it was either explicit or inferred
+                # If we have total_days_since_dofd, we calculated from actual DOFD
+                if "dofd" in v.evidence:
+                    # If evidence also mentions "inferred" or payment history, it's inferred
+                    reason = v.evidence.get("reason", "").lower()
+                    if "inferred" in reason or "payment history" in reason:
+                        return "inferred"
+                    # Otherwise assume explicit from Metro 2 Field 25
+                    return "explicit"
+                # If using date_opened as fallback, it's because DOFD is missing
+                if "date_opened" in v.evidence and "dofd" not in v.evidence:
+                    return ""  # No DOFD - using date_opened as fallback
+                return ""
 
             pdf_violations = [
                 {
@@ -435,6 +469,8 @@ async def generate_letter(
                     "days_since_update": get_days_since_update(v),
                     "missing_field": get_missing_field_name(v),
                     "last_reported_date": get_last_reported_date(v),
+                    "dofd": get_dofd(v),  # FCRA 605(a) uses DOFD for 7-year calculation
+                    "dofd_source": get_dofd_source(v),  # 'explicit', 'inferred', or ''
                     "severity": v.severity.value,
                 }
                 for v in filtered_violations

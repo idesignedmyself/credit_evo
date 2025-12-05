@@ -486,10 +486,13 @@ def _format_account_bullet(violation: Dict[str, Any]) -> str:
     evidence = violation.get("evidence", "")
     days = violation.get("days_since_update")
     last_reported_date_raw = violation.get("last_reported_date", "")
+    dofd_raw = violation.get("dofd", "") or violation.get("date_of_first_delinquency", "")
+    dofd_source = violation.get("dofd_source", "")  # "explicit", "inferred", or ""
     missing_field = violation.get("missing_field", "")
 
-    # Convert date to readable format (January 26, 2025 instead of 2025-01-26)
+    # Convert dates to readable format (January 26, 2025 instead of 2025-01-26)
     last_reported_date = _format_readable_date(last_reported_date_raw)
+    dofd_date = _format_readable_date(dofd_raw)
 
     # Build account identifier
     if account:
@@ -500,13 +503,23 @@ def _format_account_bullet(violation: Dict[str, Any]) -> str:
     # Add specific issue details
     details = []
 
-    # Handle obsolete accounts (>2555 days)
+    # Handle obsolete accounts (>2555 days / 7 years from DOFD per FCRA 605(a))
     if days and days > 2555:
         years = round(days / 365, 1)
-        if last_reported_date:
-            details.append(f"Last reported {last_reported_date} ({days:,} days ago / {years} years - exceeds 7-year limit)")
+        # FCRA 605(a)(4) + 605(c)(1): 7-year period runs from DOFD (Date of First Delinquency)
+        # DOFD = date of commencement of delinquency + 180 days per 605(c)(1)
+        if dofd_date and dofd_source == "explicit":
+            # Explicit DOFD from Metro 2 Field 25
+            details.append(f"DOFD: {dofd_date} (Metro 2 Field 25) — {days:,} days / {years} years exceeds FCRA § 605(a) 7-year limit")
+        elif dofd_date and dofd_source == "inferred":
+            # DOFD inferred from payment history analysis
+            details.append(f"DOFD: {dofd_date} (inferred from payment history per § 605(c)(1)) — {days:,} days / {years} years exceeds FCRA § 605(a) 7-year limit. Note: Metro 2 Field 25 not explicitly reported.")
+        elif dofd_date:
+            # DOFD available but source unknown
+            details.append(f"DOFD: {dofd_date} — {days:,} days / {years} years exceeds FCRA § 605(a) 7-year limit")
         else:
-            details.append(f"{days:,} days since last reported ({years} years - exceeds 7-year limit)")
+            # No DOFD available - dual violation (missing DOFD + obsolete)
+            details.append(f"Metro 2 Field 25 (DOFD) NOT REPORTED — per FCRA § 605(c)(1), the 7-year period begins 180 days after commencement of delinquency. Based on account age of {days:,} days / {years} years, this account exceeds the § 605(a) 7-year limit regardless of actual DOFD.")
 
     # Handle stale reporting (>=308 days but <=2555)
     elif days and days >= 308:

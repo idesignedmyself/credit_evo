@@ -18,7 +18,9 @@ from bs4 import BeautifulSoup, Tag
 
 from ...models.ssot import (
     NormalizedReport, Account, BureauAccountData, Consumer, Inquiry, PublicRecord,
-    Bureau, FurnisherType, AccountStatus, CreditScore
+    Bureau, FurnisherType, AccountStatus, CreditScore,
+    PersonalInfo, BureauPersonalInfo, Address, Employer,
+    AccountSummary, BureauAccountSummary, CreditorContact
 )
 
 logger = logging.getLogger(__name__)
@@ -63,6 +65,8 @@ def _clean_text(text: Optional[str]) -> Optional[str]:
     if not text:
         return None
     text = re.sub(r"\s+", " ", text).strip()
+    # Remove trailing dashes (IdentityIQ formatting artifact)
+    text = text.rstrip('-')
     if text.upper() in NOT_REPORTED:
         return None
     return text
@@ -381,6 +385,9 @@ class IdentityIQHTMLParser:
         public_records = self._extract_public_records(soup)
         report_date = self._extract_report_date(soup)
         credit_scores = self._extract_credit_scores(soup)
+        personal_info = self._extract_personal_info(soup)
+        account_summary = self._extract_account_summary(soup)
+        creditor_contacts = self._extract_creditor_contacts(soup)
 
         report = NormalizedReport(
             consumer=consumer,
@@ -389,7 +396,10 @@ class IdentityIQHTMLParser:
             accounts=accounts,
             inquiries=inquiries,
             public_records=public_records,
+            creditor_contacts=creditor_contacts,
             credit_scores=credit_scores,
+            personal_info=personal_info,
+            account_summary=account_summary,
             source_file=str(html_path)
         )
 
@@ -716,7 +726,10 @@ class IdentityIQHTMLParser:
         return data
 
     def _extract_inquiries(self, soup: BeautifulSoup) -> List[Inquiry]:
-        """Extract credit inquiries from HTML."""
+        """Extract credit inquiries from HTML.
+
+        Columns: Creditor Name | Type of Business | Date of Inquiry | Credit Bureau
+        """
         inquiries = []
 
         for tr in soup.find_all('tr'):
@@ -724,20 +737,34 @@ class IdentityIQHTMLParser:
 
             if len(cells) == 4:
                 creditor = cells[0].get_text(strip=True)
-                business_type = cells[1].get_text(strip=True)
+                business_type = _clean_text(cells[1].get_text(strip=True))
                 inquiry_date = cells[2].get_text(strip=True)
+                bureau_str = _clean_text(cells[3].get_text(strip=True))
 
                 if not creditor or len(creditor) < 3:
                     continue
 
                 inquiry_type = "hard"
-                if "soft" in business_type.lower():
+                if business_type and "soft" in business_type.lower():
                     inquiry_type = "soft"
+
+                # Map bureau string to Bureau enum
+                bureau = None
+                if bureau_str:
+                    bureau_lower = bureau_str.lower()
+                    if 'transunion' in bureau_lower:
+                        bureau = Bureau.TRANSUNION
+                    elif 'experian' in bureau_lower:
+                        bureau = Bureau.EXPERIAN
+                    elif 'equifax' in bureau_lower:
+                        bureau = Bureau.EQUIFAX
 
                 inquiry = Inquiry(
                     creditor_name=creditor,
                     inquiry_date=_parse_date(inquiry_date),
-                    inquiry_type=inquiry_type
+                    inquiry_type=inquiry_type,
+                    type_of_business=business_type,
+                    bureau=bureau
                 )
 
                 inquiries.append(inquiry)
@@ -872,6 +899,391 @@ class IdentityIQHTMLParser:
             return credit_score
 
         return None
+
+    def _extract_personal_info(self, soup: BeautifulSoup) -> Optional[PersonalInfo]:
+        """
+        Extract detailed personal information for each bureau using CSS selectors.
+
+        Fields extracted per bureau:
+        - Credit Report Date
+        - Name
+        - Also Known As
+        - Former (names)
+        - Date of Birth
+        - Current Address(es)
+        - Previous Address(es)
+        - Employers
+
+        HTML structure: table.rpt_table4column with 3 td.info cells per row (TU, EX, EQ)
+        """
+        personal_info = PersonalInfo()
+
+        # Initialize bureau data
+        bureau_data = {
+            Bureau.TRANSUNION: BureauPersonalInfo(bureau=Bureau.TRANSUNION),
+            Bureau.EXPERIAN: BureauPersonalInfo(bureau=Bureau.EXPERIAN),
+            Bureau.EQUIFAX: BureauPersonalInfo(bureau=Bureau.EQUIFAX),
+        }
+
+        bureaus_list = [Bureau.TRANSUNION, Bureau.EXPERIAN, Bureau.EQUIFAX]
+
+        # CSS selector for the Personal Information section
+        # Path: #ctrlCreditReport > transunion-report > div.ng-binding.ng-scope > div:nth-child(7)
+        # This section contains a table with 3 columns: TransUnion, Experian, Equifax
+        personal_section = soup.select_one(
+            '#ctrlCreditReport > transunion-report > div.ng-binding.ng-scope > div:nth-child(7)'
+        )
+
+        # Fallback to first rpt_table4column if specific path not found
+        if personal_section:
+            personal_table = personal_section.select_one('table.rpt_table4column')
+        else:
+            personal_table = soup.select_one('table.rpt_table4column')
+
+        if personal_table:
+            # Process each row in the personal info table
+            for row in personal_table.select('tr'):
+                label_cell = row.select_one('td.label')
+                if not label_cell:
+                    continue
+
+                label = label_cell.get_text(strip=True)
+                info_cells = row.select('td.info')
+
+                if len(info_cells) < 3:
+                    continue
+
+                # Get values for each bureau (columns: TU, EX, EQ)
+                values = [_clean_text(cell.get_text(strip=True)) for cell in info_cells[:3]]
+
+                # Map labels to fields
+                if 'Credit Report Date' in label:
+                    for i, bureau in enumerate(bureaus_list):
+                        if values[i]:
+                            bureau_data[bureau].credit_report_date = _parse_date(values[i])
+
+                elif label == 'Name:' or 'Name (Primary)' in label:
+                    for i, bureau in enumerate(bureaus_list):
+                        if values[i]:
+                            bureau_data[bureau].name_primary = values[i]
+
+                elif 'Also Known As' in label:
+                    for i, bureau in enumerate(bureaus_list):
+                        if values[i]:
+                            # Multiple AKAs may be separated by newlines in the cell
+                            akas = [a.strip() for a in values[i].split('\n') if a.strip() and a.strip() != '-']
+                            bureau_data[bureau].also_known_as = akas
+
+                elif label == 'Former:' or 'Former Name' in label:
+                    for i, bureau in enumerate(bureaus_list):
+                        if values[i]:
+                            formers = [f.strip() for f in values[i].split('\n') if f.strip() and f.strip() != '-']
+                            bureau_data[bureau].former_names = formers
+
+                elif 'Date of Birth' in label:
+                    for i, bureau in enumerate(bureaus_list):
+                        if values[i]:
+                            # Store raw value for partial dates (e.g., "1975" from Experian)
+                            bureau_data[bureau].date_of_birth_raw = values[i]
+                            # Also try to parse as full date
+                            bureau_data[bureau].date_of_birth = _parse_date(values[i])
+
+                elif 'Current Address' in label:
+                    for i, bureau in enumerate(bureaus_list):
+                        if values[i]:
+                            # Multiple addresses may be in the same cell, separated by newlines
+                            addr_lines = [a.strip() for a in values[i].split('\n') if a.strip() and a.strip() != '-']
+                            for addr_text in addr_lines:
+                                address = Address(full_address=addr_text, address_type="current")
+                                self._parse_address_components(address)
+                                bureau_data[bureau].current_addresses.append(address)
+
+                elif 'Previous Address' in label:
+                    for i, bureau in enumerate(bureaus_list):
+                        if values[i]:
+                            addr_lines = [a.strip() for a in values[i].split('\n') if a.strip() and a.strip() != '-']
+                            for addr_text in addr_lines:
+                                address = Address(full_address=addr_text, address_type="previous")
+                                self._parse_address_components(address)
+                                bureau_data[bureau].previous_addresses.append(address)
+
+                elif 'Employer' in label:
+                    for i, bureau in enumerate(bureaus_list):
+                        if values[i]:
+                            emp_lines = [e.strip() for e in values[i].split('\n') if e.strip() and e.strip() != '-']
+                            for emp_name in emp_lines:
+                                employer = Employer(name=emp_name)
+                                bureau_data[bureau].employers.append(employer)
+
+        # Build the PersonalInfo object
+        personal_info.bureaus = bureau_data
+
+        # Set canonical values (pick first non-empty from TU > EX > EQ)
+        for bureau in bureaus_list:
+            if bureau_data[bureau].name_primary and not personal_info.canonical_name:
+                personal_info.canonical_name = bureau_data[bureau].name_primary
+            if bureau_data[bureau].date_of_birth and not personal_info.canonical_dob:
+                personal_info.canonical_dob = bureau_data[bureau].date_of_birth
+
+        # Collect all unique names
+        all_names_set = set()
+        for bureau in bureau_data.values():
+            if bureau.name_primary:
+                all_names_set.add(bureau.name_primary)
+            all_names_set.update(bureau.also_known_as)
+            all_names_set.update(bureau.former_names)
+        personal_info.all_names = list(all_names_set)
+
+        # Collect all addresses (deduplicated by full_address)
+        seen_addresses = set()
+        for bureau in bureau_data.values():
+            for addr in bureau.current_addresses + bureau.previous_addresses:
+                if addr.full_address and addr.full_address not in seen_addresses:
+                    seen_addresses.add(addr.full_address)
+                    personal_info.all_addresses.append(addr)
+
+        # Collect all employers (deduplicated by name)
+        seen_employers = set()
+        for bureau in bureau_data.values():
+            for emp in bureau.employers:
+                if emp.name and emp.name not in seen_employers:
+                    seen_employers.add(emp.name)
+                    personal_info.all_employers.append(emp)
+
+        logger.info(f"Extracted personal info - Name: {personal_info.canonical_name}, "
+                   f"Addresses: {len(personal_info.all_addresses)}, "
+                   f"Employers: {len(personal_info.all_employers)}")
+        return personal_info
+
+    def _extract_account_summary(self, soup: BeautifulSoup) -> Optional[AccountSummary]:
+        """
+        Extract account summary statistics for each bureau using CSS selectors.
+
+        Fields extracted per bureau:
+        - Total Accounts
+        - Open Accounts
+        - Closed Accounts
+        - Delinquent
+        - Derogatory
+        - Collection
+        - Balances
+        - Payments
+        - Public Records
+        - Inquiries (2 years)
+
+        CSS Path: #ctrlCreditReport > transunion-report > div.ng-binding.ng-scope > div:nth-child(11) > table.re-even-odd.rpt_content_table.rpt_content_header.rpt_table4column
+        """
+        account_summary = AccountSummary()
+
+        # Initialize bureau data
+        bureau_data = {
+            Bureau.TRANSUNION: BureauAccountSummary(bureau=Bureau.TRANSUNION),
+            Bureau.EXPERIAN: BureauAccountSummary(bureau=Bureau.EXPERIAN),
+            Bureau.EQUIFAX: BureauAccountSummary(bureau=Bureau.EQUIFAX),
+        }
+
+        bureaus_list = [Bureau.TRANSUNION, Bureau.EXPERIAN, Bureau.EQUIFAX]
+
+        # CSS selector for the Account Summary section
+        summary_table = soup.select_one(
+            '#ctrlCreditReport > transunion-report > div.ng-binding.ng-scope > div:nth-child(11) > '
+            'table.re-even-odd.rpt_content_table.rpt_content_header.rpt_table4column'
+        )
+
+        if not summary_table:
+            # Fallback: find any table with these classes that has summary-like content
+            for table in soup.select('table.rpt_table4column'):
+                text = table.get_text(strip=True).lower()
+                if 'total accounts' in text or 'open accounts' in text:
+                    summary_table = table
+                    break
+
+        if summary_table:
+            # Process each row in the summary table
+            for row in summary_table.select('tr'):
+                label_cell = row.select_one('td.label')
+                if not label_cell:
+                    continue
+
+                label = label_cell.get_text(strip=True).lower()
+                info_cells = row.select('td.info')
+
+                if len(info_cells) < 3:
+                    continue
+
+                # Get values for each bureau (columns: TU, EX, EQ)
+                values = [_clean_text(cell.get_text(strip=True)) for cell in info_cells[:3]]
+
+                # Map labels to fields
+                if 'total accounts' in label:
+                    for i, bureau in enumerate(bureaus_list):
+                        if values[i]:
+                            bureau_data[bureau].total_accounts = self._parse_int(values[i])
+
+                elif 'open accounts' in label:
+                    for i, bureau in enumerate(bureaus_list):
+                        if values[i]:
+                            bureau_data[bureau].open_accounts = self._parse_int(values[i])
+
+                elif 'closed accounts' in label:
+                    for i, bureau in enumerate(bureaus_list):
+                        if values[i]:
+                            bureau_data[bureau].closed_accounts = self._parse_int(values[i])
+
+                elif 'delinquent' in label and 'non' not in label:
+                    for i, bureau in enumerate(bureaus_list):
+                        if values[i]:
+                            bureau_data[bureau].delinquent = self._parse_int(values[i])
+
+                elif 'derogatory' in label:
+                    for i, bureau in enumerate(bureaus_list):
+                        if values[i]:
+                            bureau_data[bureau].derogatory = self._parse_int(values[i])
+
+                elif 'collection' in label:
+                    for i, bureau in enumerate(bureaus_list):
+                        if values[i]:
+                            bureau_data[bureau].collection = self._parse_int(values[i])
+
+                elif 'balance' in label:
+                    for i, bureau in enumerate(bureaus_list):
+                        if values[i]:
+                            bureau_data[bureau].balances = _parse_money(values[i])
+
+                elif 'payment' in label and 'history' not in label:
+                    for i, bureau in enumerate(bureaus_list):
+                        if values[i]:
+                            bureau_data[bureau].payments = _parse_money(values[i])
+
+                elif 'public record' in label:
+                    for i, bureau in enumerate(bureaus_list):
+                        if values[i]:
+                            bureau_data[bureau].public_records = self._parse_int(values[i])
+
+                elif 'inquir' in label:  # inquiries, inquiry
+                    for i, bureau in enumerate(bureaus_list):
+                        if values[i]:
+                            bureau_data[bureau].inquiries_2_years = self._parse_int(values[i])
+
+        # Build the AccountSummary object
+        account_summary.bureaus = bureau_data
+
+        # Log summary
+        tu = bureau_data[Bureau.TRANSUNION]
+        logger.info(f"Extracted account summary - TU: {tu.total_accounts} total, "
+                   f"{tu.open_accounts} open, {tu.derogatory} derogatory")
+        return account_summary
+
+    def _extract_creditor_contacts(self, soup: BeautifulSoup) -> List[CreditorContact]:
+        """
+        Extract creditor contact information from HTML.
+
+        Columns: Creditor Name | Address | Phone
+        Identified by phone number pattern in 3rd column: (XXX) XXX-XXXX
+        """
+        contacts = []
+        seen_creditors = set()
+        phone_pattern = re.compile(r'\(\d{3}\)\s*\d{3}-\d{4}')
+
+        for tr in soup.find_all('tr'):
+            cells = tr.find_all('td')
+
+            # Creditor contacts table has 3 columns with phone in 3rd
+            if len(cells) == 3:
+                phone_raw = cells[2].get_text(strip=True)
+
+                # Only process rows where 3rd column has phone number pattern
+                if not phone_pattern.search(phone_raw):
+                    continue
+
+                creditor_name = _clean_text(cells[0].get_text(strip=True))
+                address_raw = cells[1].get_text(strip=True)
+                phone = _clean_text(phone_raw)
+
+                # Skip if no creditor name
+                if not creditor_name or len(creditor_name) < 3:
+                    continue
+
+                # Skip duplicates
+                if creditor_name in seen_creditors:
+                    continue
+                seen_creditors.add(creditor_name)
+
+                # Parse address - format: "STREET ADDRESSCITY,ST ZIP"
+                # Clean up non-breaking spaces
+                address_raw = address_raw.replace('\xa0', ' ')
+                address_str = _clean_text(address_raw)
+
+                # Try to extract city, state, zip from address
+                city = None
+                state = None
+                zip_code = None
+                street = address_str
+
+                if address_str:
+                    # Pattern: ends with "CITY,ST ZIP" or "CITY, ST ZIP"
+                    match = re.search(r',\s*([A-Z]{2})\s*(\d{5}(?:-\d{4})?)$', address_str)
+                    if match:
+                        state = match.group(1)
+                        zip_code = match.group(2)
+                        # Everything before the match is street + city
+                        before_match = address_str[:match.start()]
+                        # Try to split city from street (city is usually right before comma)
+                        city_match = re.search(r'([A-Z][A-Z\s]+)$', before_match)
+                        if city_match:
+                            city = city_match.group(1).strip()
+                            street = before_match[:city_match.start()].strip()
+                        else:
+                            street = before_match.strip()
+
+                contact = CreditorContact(
+                    creditor_name=creditor_name,
+                    address=street,
+                    city=city,
+                    state=state,
+                    zip_code=zip_code,
+                    phone=phone
+                )
+                contacts.append(contact)
+
+        logger.info(f"Extracted {len(contacts)} creditor contacts")
+        return contacts
+
+    def _parse_int(self, value: Optional[str]) -> Optional[int]:
+        """Parse string to int, handling commas and cleaning."""
+        if not value:
+            return None
+        try:
+            # Remove commas and any non-numeric characters except minus sign
+            cleaned = re.sub(r'[^\d-]', '', value)
+            return int(cleaned) if cleaned else None
+        except ValueError:
+            return None
+
+    def _parse_address_components(self, address: Address) -> None:
+        """Parse address string into components (street, city, state, zip)."""
+        if not address.full_address:
+            return
+
+        # IdentityIQ format: "STREET ADDRESSCITY, STZIP" (sometimes no comma/space)
+        # Try multiple patterns
+        patterns = [
+            # Standard: "123 Main St, City, ST 12345"
+            r"(.+?),\s*([^,]+),\s*([A-Z]{2})\s*(\d{5}(?:-\d{4})?)",
+            # No comma before state: "123 Main StCity, ST12345"
+            r"(.+?)([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*),\s*([A-Z]{2})\s*(\d{5}(?:-\d{4})?)",
+            # Compact: "123 MAIN STNEW YORK, NY10026"
+            r"(.+?)([A-Z\s]+),\s*([A-Z]{2})(\d{5}(?:-\d{4})?)",
+        ]
+
+        for pattern in patterns:
+            match = re.match(pattern, address.full_address)
+            if match:
+                address.street = match.group(1).strip()
+                address.city = match.group(2).strip()
+                address.state = match.group(3)
+                address.zip_code = match.group(4)
+                break
 
 
 # =============================================================================

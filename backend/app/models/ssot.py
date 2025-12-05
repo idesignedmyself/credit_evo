@@ -94,6 +94,123 @@ class Tone(str, Enum):
 
 
 # =============================================================================
+# PERSONAL INFORMATION MODELS (New Dashboard Components)
+# =============================================================================
+
+@dataclass
+class Address:
+    """Consumer address from credit report."""
+    full_address: str = ""
+    street: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    zip_code: Optional[str] = None
+    address_type: str = "current"  # "current" or "previous"
+    date_reported: Optional[date] = None
+
+
+@dataclass
+class Employer:
+    """Employer information from credit report."""
+    employer_id: str = field(default_factory=lambda: str(uuid4()))
+    name: str = ""
+    date_hired: Optional[date] = None
+    date_verified: Optional[date] = None
+    position: Optional[str] = None
+
+
+@dataclass
+class BureauPersonalInfo:
+    """Bureau-specific personal information."""
+    bureau: Bureau = Bureau.TRANSUNION
+
+    # Report metadata
+    credit_report_date: Optional[date] = None
+
+    # Names
+    name_primary: Optional[str] = None
+    also_known_as: List[str] = field(default_factory=list)
+    former_names: List[str] = field(default_factory=list)
+
+    # Personal details
+    date_of_birth: Optional[date] = None
+    date_of_birth_raw: Optional[str] = None  # Raw string for partial dates (e.g., "1975")
+
+    # Addresses
+    current_addresses: List[Address] = field(default_factory=list)
+    previous_addresses: List[Address] = field(default_factory=list)
+
+    # Employment
+    employers: List[Employer] = field(default_factory=list)
+
+
+@dataclass
+class PersonalInfo:
+    """
+    Aggregated personal information across all bureaus.
+
+    Used for dashboard display - shows side-by-side bureau comparison.
+    """
+    # Per-bureau data for comparison view
+    bureaus: Dict[Bureau, BureauPersonalInfo] = field(default_factory=dict)
+
+    # Canonical/merged values (most common or most recent)
+    canonical_name: Optional[str] = None
+    canonical_dob: Optional[date] = None
+    all_names: List[str] = field(default_factory=list)  # Deduplicated across bureaus
+    all_addresses: List[Address] = field(default_factory=list)  # Deduplicated
+    all_employers: List[Employer] = field(default_factory=list)  # Deduplicated
+
+    def get_bureau_info(self, bureau: Bureau) -> Optional[BureauPersonalInfo]:
+        """Get personal info for a specific bureau."""
+        return self.bureaus.get(bureau)
+
+    def has_bureau(self, bureau: Bureau) -> bool:
+        """Check if we have personal info for a specific bureau."""
+        return bureau in self.bureaus
+
+
+# =============================================================================
+# ACCOUNT SUMMARY MODELS (Dashboard Components)
+# =============================================================================
+
+@dataclass
+class BureauAccountSummary:
+    """Account summary statistics for a single bureau."""
+    bureau: Bureau = Bureau.TRANSUNION
+
+    total_accounts: Optional[int] = None
+    open_accounts: Optional[int] = None
+    closed_accounts: Optional[int] = None
+    delinquent: Optional[int] = None
+    derogatory: Optional[int] = None
+    collection: Optional[int] = None
+    balances: Optional[float] = None
+    payments: Optional[float] = None
+    public_records: Optional[int] = None
+    inquiries_2_years: Optional[int] = None
+
+
+@dataclass
+class AccountSummary:
+    """
+    Aggregated account summary across all bureaus.
+
+    Used for dashboard display - shows side-by-side bureau comparison.
+    """
+    # Per-bureau data for comparison view
+    bureaus: Dict[Bureau, BureauAccountSummary] = field(default_factory=dict)
+
+    def get_bureau_summary(self, bureau: Bureau) -> Optional[BureauAccountSummary]:
+        """Get account summary for a specific bureau."""
+        return self.bureaus.get(bureau)
+
+    def has_bureau(self, bureau: Bureau) -> bool:
+        """Check if we have summary for a specific bureau."""
+        return bureau in self.bureaus
+
+
+# =============================================================================
 # SSOT #1: NORMALIZED REPORT (Output of Parsing Layer)
 # =============================================================================
 
@@ -223,6 +340,8 @@ class Inquiry:
     creditor_name: str = ""
     inquiry_date: Optional[date] = None
     inquiry_type: str = ""  # hard/soft
+    type_of_business: Optional[str] = None  # e.g., "Bank", "Finance Company"
+    bureau: Optional[Bureau] = None  # Which bureau reported this inquiry
 
 
 @dataclass
@@ -234,6 +353,20 @@ class PublicRecord:
     court_name: Optional[str] = None
     amount: Optional[float] = None
     status: Optional[str] = None
+
+
+@dataclass
+class CreditorContact:
+    """Creditor contact information."""
+    contact_id: str = field(default_factory=lambda: str(uuid4()))
+    creditor_name: str = ""
+    address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    zip_code: Optional[str] = None
+    phone: Optional[str] = None
+    # Link to account if applicable
+    account_id: Optional[str] = None
 
 
 @dataclass
@@ -268,9 +401,16 @@ class NormalizedReport:
     accounts: List[Account] = field(default_factory=list)
     inquiries: List[Inquiry] = field(default_factory=list)
     public_records: List[PublicRecord] = field(default_factory=list)
+    creditor_contacts: List[CreditorContact] = field(default_factory=list)
 
     # Credit scores per bureau
     credit_scores: Optional[CreditScore] = None
+
+    # Personal information (detailed, per-bureau)
+    personal_info: Optional[PersonalInfo] = None
+
+    # Account summary (per-bureau statistics)
+    account_summary: Optional[AccountSummary] = None
 
     # Metadata
     parse_timestamp: datetime = field(default_factory=datetime.now)

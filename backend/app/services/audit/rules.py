@@ -522,20 +522,60 @@ class TemporalRules:
     """
 
     @staticmethod
+    def _has_delinquent_payment_history(account: Account) -> bool:
+        """
+        Check if account has ANY delinquent entries in payment history.
+        Returns False if all payments are OK/Current (positive account).
+        Returns True if there's any 30/60/90/120/CO/etc marker.
+        """
+        # Get payment history from the primary bureau's data
+        payment_history = []
+        if account.bureau in account.bureaus:
+            bureau_data = account.bureaus[account.bureau]
+            payment_history = bureau_data.payment_history if bureau_data.payment_history else []
+
+        if not payment_history:
+            return False  # No history = can't confirm delinquency
+
+        # OK/Current statuses - these are NOT delinquent
+        ok_statuses = {"OK", "ok", "Ok", "C", "c", "Current", "current", "", "-", None}
+
+        for entry in payment_history:
+            status = entry.get("status", "")
+            if status not in ok_statuses:
+                # Found a delinquent marker (30, 60, 90, 120, CO, etc.)
+                return True
+
+        return False  # All OK = positive account
+
+    @staticmethod
     def check_obsolete_account(account: Account, bureau: Bureau) -> List[Violation]:
         """
         Check if account has exceeded 7-year reporting limit.
 
         FCRA §605(a) limits reporting to 7 years from DOFD.
-        For closed/derogatory accounts without DOFD, uses date_opened as fallback.
+        IMPORTANT: Only applies to ADVERSE information!
+        - Accounts with all-OK payment history are POSITIVE and NOT subject to 7-year rule
+        - Closed/Paid accounts with good history HELP credit scores
         """
         violations = []
         today = date.today()
 
-        # Derogatory statuses that should have 7-year limit
+        # CRITICAL CHECK: If payment history is all "OK", this is a POSITIVE account
+        # FCRA 605(a) does NOT apply to positive information - it can stay forever
+        if not TemporalRules._has_delinquent_payment_history(account):
+            # Check payment status as backup - payment_status is a string, not an enum
+            positive_statuses = ["current", "paid", "ok", "as agreed", None, ""]
+            ps_lower = account.payment_status.lower() if account.payment_status else None
+            if ps_lower in positive_statuses or account.payment_status is None:
+                return violations  # Positive account - do NOT flag as obsolete
+
+        # Derogatory statuses that are subject to FCRA 605(a) 7-year limit
+        # NOTE: CLOSED is NOT derogatory - a closed account with good history is POSITIVE
+        # Only actual adverse statuses should trigger 7-year rule
         derogatory_statuses = [
             AccountStatus.CHARGEOFF, AccountStatus.COLLECTION,
-            AccountStatus.DEROGATORY, AccountStatus.CLOSED
+            AccountStatus.DEROGATORY
         ]
 
         # First try: Use DOFD if available
@@ -584,12 +624,14 @@ class TemporalRules:
 
         # Fallback: Use date_opened for closed accounts without DOFD
         # This catches accounts >7 years old that may have negative info
+        # IMPORTANT: FCRA 605(a) only applies to ADVERSE information!
+        # Positive closed accounts (paid, current, no delinquencies) are NOT subject to 7-year rule
         if account.date_opened and not account.date_of_first_delinquency:
-            # Check if account is closed or has derogatory indicators
+            # Check if account has ACTUAL derogatory indicators
+            # Do NOT flag accounts just because balance == 0 (that's often a good thing!)
             is_potentially_obsolete = (
-                account.account_status in derogatory_statuses or
-                account.balance == 0 or  # Closed accounts often have $0 balance
-                (account.date_closed and account.date_closed < _add_years(today, -7))  # Closed >7 years ago
+                account.account_status in derogatory_statuses
+                # Only consider closed accounts if they have negative comments/indicators
             )
 
             if is_potentially_obsolete:

@@ -138,9 +138,157 @@ RawReport → BureauParser(TU|EX|EQ) → NormalizedReport
   "report_date": "YYYY-MM-DD",
   "accounts": [],
   "inquiries": [],
-  "public_records": []
+  "public_records": [],
+  "personal_info": {},
+  "account_summary": {}
 }
 ```
+
+---
+
+## **HTML Parser Location**
+
+**File:** `backend/app/services/parsing/html_parser.py`
+
+### **Parser Methods Summary**
+
+| Method | Line | What It Parses | Output Model |
+|--------|------|----------------|--------------|
+| `_extract_consumer()` | 407 | Basic consumer info (name, address, DOB) | `Consumer` |
+| `_extract_accounts_merged()` | 461 | All tradeline accounts (merged across bureaus) | `List[Account]` |
+| `_extract_account_data_for_header()` | 614 | Per-account bureau-specific data | `Dict[Bureau, BureauAccountData]` |
+| `_extract_inquiries()` | 726 | Hard/soft inquiries with type_of_business & bureau | `List[Inquiry]` |
+| `_extract_public_records()` | 755 | Bankruptcies, judgments, liens | `List[PublicRecord]` |
+| `_extract_report_date()` | 765 | Credit report date | `date` |
+| `_extract_credit_scores()` | 776 | Credit scores per bureau | `CreditScore` |
+| `_extract_personal_info()` | 884 | Detailed personal info per bureau | `PersonalInfo` |
+| `_extract_account_summary()` | 1036 | Account statistics per bureau | `AccountSummary` |
+| `_extract_creditor_contacts()` | 1100+ | Creditor contact info (name, address, phone) | `List[CreditorContact]` |
+
+### **Inquiry Fields**
+
+Each inquiry includes:
+- **creditor_name**: Name of the creditor who pulled the report
+- **inquiry_date**: Date of the inquiry
+- **inquiry_type**: Hard or soft inquiry
+- **type_of_business**: Type of business (e.g., "Bank", "Finance Company", "Bank Credit Cards")
+- **bureau**: Which bureau reported this inquiry (TransUnion, Experian, or Equifax)
+
+### **Creditor Contact Fields**
+
+Each creditor contact includes:
+- **creditor_name**: Name of the creditor
+- **address**: Street address (parsed from full address)
+- **city**: City (parsed)
+- **state**: State (parsed)
+- **zip_code**: ZIP code (parsed)
+- **phone**: Phone number (format: `(XXX) XXX-XXXX`)
+
+### **CSS Selectors for IdentityIQ Reports**
+
+| Section | CSS Path |
+|---------|----------|
+| Personal Information | `#ctrlCreditReport > transunion-report > div.ng-binding.ng-scope > div:nth-child(7)` |
+| Account Summary | `#ctrlCreditReport > transunion-report > div.ng-binding.ng-scope > div:nth-child(11) > table.re-even-odd.rpt_content_table.rpt_content_header.rpt_table4column` |
+
+### **Personal Information Fields (per bureau: TU/EX/EQ)**
+
+- Credit Report Date
+- Name
+- Also Known As
+- Former (names)
+- Date of Birth
+- Current Address(es)
+- Previous Address(es)
+- Employers
+
+### **Account Summary Fields (per bureau: TU/EX/EQ)**
+
+- Total Accounts
+- Open Accounts
+- Closed Accounts
+- Delinquent
+- Derogatory
+- Collection
+- Balances
+- Payments
+- Public Records
+- Inquiries (2 years)
+
+---
+
+## **DOFD Inference Logic**
+
+**Location:** `backend/app/services/parsing/html_parser.py` (Line 137)
+
+**Function:** `_infer_dofd_from_payment_history()`
+
+### **The Problem**
+
+IdentityIQ HTML reports (and many bureau formats) **do not always explicitly report the Date of First Delinquency (DOFD)**. However, DOFD is critical for:
+- Determining the 7-year reporting period under FCRA §605(a)
+- Flagging obsolete accounts that should be removed
+- Calculating when negative items "fall off" the report
+
+### **The Solution: Payment History Inference**
+
+When DOFD is missing, the parser **infers it from the payment history** using this logic:
+
+```
+Payment History → Find oldest delinquent month → Use as DOFD
+```
+
+### **How It Works**
+
+1. **Parse Payment History**: Extract the 24-month payment history grid
+   ```
+   [{"month": "Jan", "year": 2024, "status": "OK"},
+    {"month": "Dec", "year": 2023, "status": "30"},
+    {"month": "Nov", "year": 2023, "status": "60"}, ...]
+   ```
+
+2. **Identify Delinquent Statuses**: Any status that is NOT "OK" is delinquent
+   - `30`, `60`, `90`, `120` = Days late
+   - `CO` = Charge-off
+   - Empty/dash = OK (current)
+
+3. **Find the Oldest Delinquency**: Sort all delinquent months and return the earliest date
+
+4. **Set as DOFD**: Use the 1st of that month as the inferred DOFD
+
+### **Priority Order**
+
+```python
+# Try explicit DOFD first, then infer from payment history
+explicit_dofd = _parse_date(bureau_data.get("dofd"))
+inferred_dofd = _infer_dofd_from_payment_history(payment_history) if not explicit_dofd else None
+final_dofd = explicit_dofd or inferred_dofd
+```
+
+**Priority:**
+1. **Explicit DOFD** (if bureau reports it) → Use as-is
+2. **Inferred DOFD** (from payment history) → Fallback when explicit is missing
+
+### **Example**
+
+Payment history shows:
+| Month | Year | Status |
+|-------|------|--------|
+| Jan | 2024 | OK |
+| Dec | 2023 | 30 |
+| Nov | 2023 | 60 |
+| Oct | 2023 | 30 |
+| Sep | 2023 | OK |
+
+**Result:** DOFD inferred as `2023-10-01` (October 2023 = first delinquency)
+
+### **Explicit DOFD Field Labels**
+
+The parser looks for these labels in the HTML:
+- `Date of First Delinquency:`
+- `Date of 1st Delinquency:`
+- `DOFD:`
+- `First Delinquency:`
 
 ---
 
