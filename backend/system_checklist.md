@@ -122,12 +122,13 @@
 - **ViolationType:** `BALANCE_EXCEEDS_CREDIT_LIMIT`
 - **Criteria:** Only fires for open accounts. Excludes charged-off, collection, and derogatory accounts (where balance > limit is expected due to fees/interest)
 
-### [ ] Invalid Status Codes (50% success)
+### [x] Invalid Status Codes (50% success) - ✅ IMPLEMENTED
 - **Category:** Metro 2 Format Violations
 - **Description:** Status inconsistent with payment history
-- **Current:** Rule #6 covers some, but not comprehensive
-- **Enhancement:** Expand status code validation matrix
-- **File:** `app/services/audit/rules.py`
+- **Status:** ✅ Fully implemented - detects chargeoff status with OK payment history
+- **Rule:** `check_status_payment_history_mismatch()` in `app/services/audit/rules.py:417`
+- **ViolationType:** `STATUS_PAYMENT_HISTORY_MISMATCH`
+- **Criteria:** Flags when Payment Status indicates chargeoff/collection but 80%+ of payment history shows "OK"
 
 ### [ ] Missing Tradelines (35% success)
 - **Category:** Cross-Bureau Inconsistencies

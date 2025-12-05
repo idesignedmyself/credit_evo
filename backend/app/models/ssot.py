@@ -61,6 +61,7 @@ class ViolationType(str, Enum):
     CLOSED_OC_REPORTING_BALANCE = "closed_oc_reporting_balance"
     CLOSED_OC_REPORTING_PAST_DUE = "closed_oc_reporting_past_due"  # NEW
     CHARGEOFF_MISSING_DOFD = "chargeoff_missing_dofd"  # NEW
+    STATUS_PAYMENT_HISTORY_MISMATCH = "status_payment_history_mismatch"  # NEW - Chargeoff status but OK payment history
 
     # Cross-bureau violations
     DOFD_MISMATCH = "dofd_mismatch"

@@ -15,9 +15,10 @@ from datetime import date, timedelta
 from typing import List
 
 from ...models.ssot import (
-    Account, NormalizedReport, Violation,
+    Account, NormalizedReport, Violation, BureauAccountData,
     ViolationType, Severity, FurnisherType, AccountStatus, Bureau
 )
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -409,6 +410,95 @@ class SingleBureauRules:
                 fcra_section="611(a)",
                 metro2_field=None,
                 evidence={}
+            ))
+
+        return violations
+
+    @staticmethod
+    def check_status_payment_history_mismatch(
+        account: Account,
+        bureau: Bureau,
+        bureau_data: Optional[BureauAccountData] = None
+    ) -> List[Violation]:
+        """
+        Check if Payment Status contradicts Payment History.
+
+        FCRA §623(a)(1) requires accurate reporting. A charged-off account
+        cannot have 24 consecutive months of "OK" (current) payment history.
+
+        Example violation:
+        - Payment Status = "Collection/Chargeoff"
+        - Payment History = OK, OK, OK, OK... (all current)
+
+        This is internally inconsistent - if the account is charged off,
+        the payment history should show delinquency markers (30, 60, 90, CO, etc.)
+        """
+        violations = []
+
+        # Get payment history from bureau_data if provided
+        payment_history = []
+        if bureau_data and hasattr(bureau_data, 'payment_history'):
+            payment_history = bureau_data.payment_history or []
+
+        # Skip if no payment history to analyze
+        if not payment_history:
+            return violations
+
+        # Check if payment_status indicates chargeoff/collection/derogatory
+        payment_status = account.payment_status or ""
+        payment_status_lower = payment_status.lower()
+
+        derogatory_indicators = [
+            'chargeoff', 'charge-off', 'charge off', 'charged off',
+            'collection', 'derogatory', 'unpaid', 'bad debt'
+        ]
+
+        is_derogatory_status = any(ind in payment_status_lower for ind in derogatory_indicators)
+
+        if not is_derogatory_status:
+            return violations
+
+        # Extract status codes from payment history
+        # Format: [{"month": "Jan", "year": 2024, "status": "OK"}, ...]
+        status_codes = []
+        for entry in payment_history:
+            if isinstance(entry, dict) and 'status' in entry:
+                status_codes.append(entry.get('status', '').upper())
+
+        if not status_codes:
+            return violations
+
+        # Count how many are "OK" (current/on-time)
+        ok_count = sum(1 for s in status_codes if s in ('OK', 'C', 'CURRENT', '0', '-'))
+        total_count = len(status_codes)
+
+        # If 80%+ of the payment history shows "OK" but status is chargeoff,
+        # that's a contradiction
+        if total_count >= 6 and ok_count >= (total_count * 0.8):
+            violations.append(Violation(
+                violation_type=ViolationType.STATUS_PAYMENT_HISTORY_MISMATCH,
+                severity=Severity.HIGH,
+                account_id=account.account_id,
+                creditor_name=account.creditor_name,
+                account_number_masked=account.account_number_masked,
+                furnisher_type=account.furnisher_type,
+                bureau=bureau,
+                description=(
+                    f"Payment Status shows \"{payment_status}\" but Payment History shows "
+                    f"{ok_count} out of {total_count} months as current/OK. This is internally "
+                    f"inconsistent - a charged-off account cannot have a mostly-current payment "
+                    f"history. Either the Payment Status is wrong, or the Payment History is wrong."
+                ),
+                expected_value="Payment history consistent with charged-off status",
+                actual_value=f"{ok_count}/{total_count} months showing 'OK' despite chargeoff status",
+                fcra_section="623(a)(1)",
+                metro2_field="17A/25",
+                evidence={
+                    "payment_status": payment_status,
+                    "ok_months": ok_count,
+                    "total_months": total_count,
+                    "history_sample": status_codes[:12]  # First 12 months
+                }
             ))
 
         return violations

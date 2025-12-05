@@ -224,7 +224,14 @@ class AuditEngine:
         )
 
         # Run all the same rules against the bureau-specific data
-        return self._audit_account(account_for_bureau, bureau)
+        violations = self._audit_account(account_for_bureau, bureau)
+
+        # Run rules that need bureau_data (payment_history, etc.)
+        violations.extend(self.single_bureau_rules.check_status_payment_history_mismatch(
+            account_for_bureau, bureau, bureau_data
+        ))
+
+        return violations
 
 
 # =============================================================================
