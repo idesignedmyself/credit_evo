@@ -296,6 +296,47 @@ class SingleBureauRules:
         return violations
 
     @staticmethod
+    def check_balance_exceeds_credit_limit(account: Account, bureau: Bureau) -> List[Violation]:
+        """
+        Check if balance exceeds credit limit without explanation.
+
+        For revolving accounts, balance should not exceed credit limit.
+        If it does, this suggests inaccurate reporting - either the balance
+        is wrong, the credit limit is wrong, or there should be an over-limit
+        indicator that explains the discrepancy.
+        """
+        violations = []
+
+        if account.balance is not None and account.credit_limit is not None:
+            if account.balance > account.credit_limit and account.credit_limit > 0:
+                violations.append(Violation(
+                    violation_type=ViolationType.BALANCE_EXCEEDS_CREDIT_LIMIT,
+                    severity=Severity.MEDIUM,
+                    account_id=account.account_id,
+                    creditor_name=account.creditor_name,
+                    account_number_masked=account.account_number_masked,
+                    furnisher_type=account.furnisher_type,
+                    bureau=bureau,
+                    description=(
+                        f"Current balance (${account.balance:,.2f}) exceeds the reported "
+                        f"credit limit (${account.credit_limit:,.2f}). This is contradictory - "
+                        f"the account cannot legitimately have a balance exceeding its limit "
+                        f"without explanation. This suggests inaccurate reporting."
+                    ),
+                    expected_value=f"Balance ≤ ${account.credit_limit:,.2f}",
+                    actual_value=f"${account.balance:,.2f}",
+                    fcra_section="623(a)(1)",
+                    metro2_field="17A/21",
+                    evidence={
+                        "balance": account.balance,
+                        "credit_limit": account.credit_limit,
+                        "over_limit_amount": account.balance - account.credit_limit
+                    }
+                ))
+
+        return violations
+
+    @staticmethod
     def check_negative_credit_limit(account: Account, bureau: Bureau) -> List[Violation]:
         """Check for negative credit limit (invalid)."""
         violations = []

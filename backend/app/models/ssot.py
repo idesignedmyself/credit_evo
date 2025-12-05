@@ -54,6 +54,7 @@ class ViolationType(str, Enum):
     NEGATIVE_CREDIT_LIMIT = "negative_credit_limit"  # NEW
     PAST_DUE_EXCEEDS_BALANCE = "past_due_exceeds_balance"
     BALANCE_EXCEEDS_HIGH_CREDIT = "balance_exceeds_high_credit"  # NEW
+    BALANCE_EXCEEDS_CREDIT_LIMIT = "balance_exceeds_credit_limit"  # NEW
     FUTURE_DATE = "future_date"
     DOFD_AFTER_DATE_OPENED = "dofd_after_date_opened"
     INVALID_METRO2_CODE = "invalid_metro2_code"

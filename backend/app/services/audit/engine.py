@@ -173,6 +173,7 @@ class AuditEngine:
         # NEW rules
         violations.extend(self.single_bureau_rules.check_missing_scheduled_payment(account, bureau))
         violations.extend(self.single_bureau_rules.check_balance_exceeds_high_credit(account, bureau))
+        violations.extend(self.single_bureau_rules.check_balance_exceeds_credit_limit(account, bureau))
         violations.extend(self.single_bureau_rules.check_negative_credit_limit(account, bureau))
         violations.extend(self.single_bureau_rules.check_missing_dla(account, bureau))
 
