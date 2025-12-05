@@ -300,15 +300,37 @@ class SingleBureauRules:
         """
         Check if balance exceeds credit limit without explanation.
 
-        For revolving accounts, balance should not exceed credit limit.
-        If it does, this suggests inaccurate reporting - either the balance
-        is wrong, the credit limit is wrong, or there should be an over-limit
-        indicator that explains the discrepancy.
+        For OPEN revolving accounts, balance should not exceed credit limit.
+        If it does, this suggests inaccurate reporting.
+
+        EXCLUSIONS (balance > limit is expected/normal for these):
+        - Charged-off accounts (fees/interest added push balance over limit)
+        - Collection accounts (transferred balances include fees)
+        - Accounts with OC_CHARGEOFF furnisher type
+        - Accounts with payment_status indicating chargeoff/collection
         """
         violations = []
 
         if account.balance is not None and account.credit_limit is not None:
             if account.balance > account.credit_limit and account.credit_limit > 0:
+                # EXCLUDE charged-off and collection accounts - balance > limit is expected
+                # because late fees, interest, and over-limit fees get added to the balance
+                excluded_statuses = {AccountStatus.CHARGEOFF, AccountStatus.COLLECTION, AccountStatus.DEROGATORY}
+                if account.account_status in excluded_statuses:
+                    return violations
+
+                # Also check furnisher type - OC chargeoffs are excluded
+                if account.furnisher_type == FurnisherType.OC_CHARGEOFF:
+                    return violations
+
+                # Also check payment_status string for chargeoff/collection indicators
+                if account.payment_status:
+                    payment_lower = account.payment_status.lower()
+                    chargeoff_indicators = ['chargeoff', 'charge-off', 'charge off', 'collection', 'charged off']
+                    if any(indicator in payment_lower for indicator in chargeoff_indicators):
+                        return violations
+
+                # Only flag OPEN accounts where balance > limit is actually problematic
                 violations.append(Violation(
                     violation_type=ViolationType.BALANCE_EXCEEDS_CREDIT_LIMIT,
                     severity=Severity.MEDIUM,
@@ -319,8 +341,8 @@ class SingleBureauRules:
                     bureau=bureau,
                     description=(
                         f"Current balance (${account.balance:,.2f}) exceeds the reported "
-                        f"credit limit (${account.credit_limit:,.2f}). This is contradictory - "
-                        f"the account cannot legitimately have a balance exceeding its limit "
+                        f"credit limit (${account.credit_limit:,.2f}). For an open account, "
+                        f"this is contradictory - the balance should not exceed the credit limit "
                         f"without explanation. This suggests inaccurate reporting."
                     ),
                     expected_value=f"Balance ≤ ${account.credit_limit:,.2f}",
@@ -330,7 +352,8 @@ class SingleBureauRules:
                     evidence={
                         "balance": account.balance,
                         "credit_limit": account.credit_limit,
-                        "over_limit_amount": account.balance - account.credit_limit
+                        "over_limit_amount": account.balance - account.credit_limit,
+                        "account_status": str(account.account_status)
                     }
                 ))
 

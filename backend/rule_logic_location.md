@@ -52,7 +52,7 @@ app/
 | Re-aged DOFD | `reaged_dofd` | Field 25 |
 | Charge-off contradictions | Various | Status codes |
 | Balance > High Credit | `balance_exceeds_high_credit` | Field 17A |
-| Balance > Credit Limit | `balance_exceeds_credit_limit` | Field 17A/21 |
+| Balance > Credit Limit (open accts only) | `balance_exceeds_credit_limit` | Field 17A/21 |
 | Negative Credit Limit | `negative_credit_limit` | Field 21 |
 
 **To add a new rule:** Create a new function in this file following the existing pattern.

@@ -116,10 +116,11 @@
 
 ### [x] Balance > Credit Limit (40% success) - ✅ IMPLEMENTED
 - **Category:** Metro 2 Format Violations
-- **Description:** Balance exceeds limit without explanation
-- **Status:** ✅ Fully implemented
+- **Description:** Balance exceeds limit without explanation (OPEN accounts only)
+- **Status:** ✅ Fully implemented with proper exclusions
 - **Rule:** `check_balance_exceeds_credit_limit()` in `app/services/audit/rules.py:299`
 - **ViolationType:** `BALANCE_EXCEEDS_CREDIT_LIMIT`
+- **Criteria:** Only fires for open accounts. Excludes charged-off, collection, and derogatory accounts (where balance > limit is expected due to fees/interest)
 
 ### [ ] Invalid Status Codes (50% success)
 - **Category:** Metro 2 Format Violations
