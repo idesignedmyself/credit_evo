@@ -769,9 +769,17 @@ These cases establish that your reinvestigation must include review of original 
 def _format_discrepancy_bullet(discrepancy: Dict[str, Any]) -> str:
     """Format a single cross-bureau discrepancy as a bullet point."""
     creditor = discrepancy.get("creditor_name", "Unknown")
+    account_num = discrepancy.get("account_number_masked", "")
     field_name = discrepancy.get("field_name", "Data")
     values_by_bureau = discrepancy.get("values_by_bureau", {})
-    violation_type = discrepancy.get("violation_type", "").replace("_", " ").title()
+    violation_type = discrepancy.get("violation_type", "")
+    description = discrepancy.get("description", "")
+
+    # Build account identifier
+    if account_num:
+        account_id = f"{creditor} (Account #{account_num})"
+    else:
+        account_id = creditor
 
     # Build the bureau comparison string
     bureau_values = []
@@ -781,8 +789,23 @@ def _format_discrepancy_bullet(discrepancy: Dict[str, Any]) -> str:
 
     comparison_str = ", ".join(bureau_values)
 
+    # Special handling for dispute flag mismatch
+    if violation_type == "dispute_flag_mismatch":
+        # Parse values to build a more descriptive message
+        bureaus_with_dispute = [b for b, v in values_by_bureau.items() if v == "DISPUTED"]
+        bureaus_without = [b for b, v in values_by_bureau.items() if v == "NO FLAG"]
+
+        if bureaus_with_dispute and bureaus_without:
+            dispute_bureaus = ", ".join([b.upper() if len(b) <= 3 else b.title() for b in bureaus_with_dispute])
+            no_flag_bureaus = ", ".join([b.upper() if len(b) <= 3 else b.title() for b in bureaus_without])
+            return (
+                f"• {account_id}: Dispute flag shows on {dispute_bureaus} but NOT on {no_flag_bureaus}. "
+                f"Under FCRA §623(a)(3), when a consumer disputes an account, the furnisher must report "
+                f"the dispute status to ALL bureaus - not selectively"
+            )
+
     # Format the bullet
-    return f"• {creditor}: {field_name} differs across bureaus ({comparison_str})"
+    return f"• {account_id}: {field_name} differs across bureaus ({comparison_str})"
 
 
 def _build_cross_bureau_section(section_num: int, discrepancies: List[Dict[str, Any]]) -> str:

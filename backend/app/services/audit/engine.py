@@ -119,6 +119,8 @@ class AuditEngine:
             all_discrepancies.extend(self.cross_bureau_rules.check_payment_history_mismatch(bureau_accounts))
             all_discrepancies.extend(self.cross_bureau_rules.check_past_due_mismatch(bureau_accounts))
             all_discrepancies.extend(self.cross_bureau_rules.check_closed_vs_open_conflict(bureau_accounts))
+            # Dispute flag mismatch (requires access to remarks from original account.bureaus)
+            all_discrepancies.extend(self.cross_bureau_rules.check_dispute_flag_mismatch(bureau_accounts))
 
         logger.info(f"Cross-bureau analysis found {len(all_discrepancies)} discrepancies")
         return all_discrepancies

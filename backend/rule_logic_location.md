@@ -101,6 +101,7 @@ NormalizedReport → audit_report() → runs rules.py → AuditResult
 | Payment history mismatch | Different payment patterns | FCRA §623(a)(1) |
 | Past due mismatch | Different amounts | FCRA §623(a)(1) |
 | Closed vs Open conflict | One bureau shows closed, another open | FCRA §623(a)(1) |
+| Dispute flag mismatch | One bureau shows dispute (XB/XC/XH), another doesn't | FCRA §623(a)(3) |
 
 **How it works:**
 - IdentityIQ reports contain all 3 bureaus in one file

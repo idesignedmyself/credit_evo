@@ -399,6 +399,127 @@ class CrossBureauRules:
 
         return discrepancies
 
+    @staticmethod
+    def check_dispute_flag_mismatch(accounts: Dict[Bureau, Account]) -> List[CrossBureauDiscrepancy]:
+        """
+        Check if dispute flags are inconsistent across bureaus.
+
+        Under FCRA §623(a)(3), furnishers must report dispute status to ALL bureaus.
+        If one bureau shows "Account disputed by consumer" (XB code) but another
+        bureau doesn't show this, the furnisher is failing to properly report
+        the dispute across all bureaus.
+
+        Detection Logic:
+        - Parse Comments/Remarks field for dispute-related phrases
+        - Active dispute indicators (XB): "disputed by consumer", "consumer disputes"
+        - Resolved dispute indicators (XH/XC): "dispute resolved", "was in dispute"
+        - If ANY bureau shows active dispute but another shows no dispute text,
+          flag as DISPUTE_FLAG_MISMATCH
+        """
+        discrepancies = []
+
+        # Dispute indicator phrases (from Comments field)
+        # Active dispute (XB code translated to text)
+        active_dispute_phrases = [
+            'disputed by consumer',
+            'consumer disputes',
+            'account information disputed',
+            'customer disputed',
+            'consumer disputes this account',
+            'account disputed',
+        ]
+
+        # Resolved dispute (XH/XC codes translated to text)
+        resolved_dispute_phrases = [
+            'dispute resolved',
+            'was in dispute',
+            'previously disputed',
+            'dispute has been resolved',
+            'now resolved',
+        ]
+
+        def has_dispute_text(remarks: Optional[str]) -> Tuple[bool, bool, str]:
+            """
+            Check if remarks contain dispute-related text.
+            Returns: (has_active_dispute, has_resolved_dispute, matched_phrase)
+            """
+            if not remarks:
+                return False, False, ""
+
+            remarks_lower = remarks.lower()
+
+            # Check for active dispute
+            for phrase in active_dispute_phrases:
+                if phrase in remarks_lower:
+                    return True, False, phrase
+
+            # Check for resolved dispute
+            for phrase in resolved_dispute_phrases:
+                if phrase in remarks_lower:
+                    return False, True, phrase
+
+            return False, False, ""
+
+        # Get dispute status for each bureau
+        dispute_status: Dict[Bureau, Dict] = {}
+
+        for bureau, account in accounts.items():
+            # Get remarks from bureau-specific data if available
+            remarks = None
+            if hasattr(account, 'bureaus') and account.bureaus and bureau in account.bureaus:
+                bureau_data = account.bureaus[bureau]
+                remarks = getattr(bureau_data, 'remarks', None)
+
+            has_active, has_resolved, phrase = has_dispute_text(remarks)
+
+            dispute_status[bureau] = {
+                'has_active_dispute': has_active,
+                'has_resolved_dispute': has_resolved,
+                'has_any_dispute': has_active or has_resolved,
+                'phrase': phrase,
+                'remarks': remarks or "(no comments)"
+            }
+
+        # Check for inconsistency: some bureaus show dispute, others don't
+        bureaus_with_dispute = [b for b, s in dispute_status.items() if s['has_any_dispute']]
+        bureaus_without_dispute = [b for b, s in dispute_status.items() if not s['has_any_dispute']]
+
+        # Only flag if at least one bureau shows dispute AND at least one doesn't
+        if len(bureaus_with_dispute) >= 1 and len(bureaus_without_dispute) >= 1:
+            ref_account = list(accounts.values())[0]
+
+            # Build description showing what each bureau has
+            bureau_details = []
+            for bureau, status in dispute_status.items():
+                if status['has_active_dispute']:
+                    bureau_details.append(f"{bureau.value}: DISPUTED ('{status['phrase']}')")
+                elif status['has_resolved_dispute']:
+                    bureau_details.append(f"{bureau.value}: Dispute Resolved ('{status['phrase']}')")
+                else:
+                    # Truncate long remarks
+                    remarks_preview = status['remarks'][:50] + "..." if len(status['remarks']) > 50 else status['remarks']
+                    bureau_details.append(f"{bureau.value}: NO DISPUTE FLAG ({remarks_preview})")
+
+            discrepancies.append(CrossBureauDiscrepancy(
+                violation_type=ViolationType.DISPUTE_FLAG_MISMATCH,
+                creditor_name=ref_account.creditor_name,
+                account_number_masked=ref_account.account_number_masked or "",
+                account_fingerprint=create_account_fingerprint(ref_account),
+                field_name="Dispute Status (Compliance Condition Code)",
+                values_by_bureau={
+                    b: "DISPUTED" if s['has_active_dispute'] else ("RESOLVED" if s['has_resolved_dispute'] else "NO FLAG")
+                    for b, s in dispute_status.items()
+                },
+                description=(
+                    f"Dispute flag inconsistent across bureaus for {ref_account.creditor_name}: "
+                    f"{'; '.join(bureau_details)}. "
+                    f"Under FCRA §623(a)(3), furnishers must report dispute status to ALL bureaus."
+                ),
+                severity=Severity.HIGH
+            ))
+
+        return discrepancies
+
 
 # =============================================================================
 # MAIN CROSS-BUREAU AUDIT FUNCTION

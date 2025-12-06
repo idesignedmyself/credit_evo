@@ -102,12 +102,19 @@
 - **Implementation:** Requires state-specific SOL logic database
 - **File:** `app/services/audit/rules.py` + new SOL config
 
-### [ ] Missing Compliance Condition Codes (35% success)
-- **Category:** Metro 2 Format Violations
-- **Description:** XA, XB, XC codes for disputed accounts
-- **Legal Basis:** Metro 2 Special Comments
-- **Implementation:** Check disputed accounts for missing compliance codes
-- **File:** `app/services/audit/rules.py`
+### [x] Missing Compliance Condition Codes / Dispute Flag Mismatch (35% success) - ✅ IMPLEMENTED
+- **Category:** Metro 2 Format Violations / Cross-Bureau Discrepancy
+- **Description:** XB, XC, XH codes for disputed accounts - detects when one bureau shows dispute but another doesn't
+- **Legal Basis:** FCRA §623(a)(3) - furnisher must report dispute status to ALL bureaus
+- **Status:** ✅ Fully implemented as cross-bureau discrepancy check
+- **Rule:** `check_dispute_flag_mismatch()` in `app/services/audit/cross_bureau_rules.py`
+- **ViolationType:** `DISPUTE_FLAG_MISMATCH`
+- **Criteria:**
+  - Parses Comments/Remarks field for dispute indicator phrases
+  - Active dispute (XB code): "disputed by consumer", "consumer disputes", etc.
+  - Resolved dispute (XH/XC): "dispute resolved", "was in dispute", etc.
+  - Flags when one bureau shows dispute text but another bureau has no dispute flag
+- **Letter Support:** Cross-bureau discrepancies section with FCRA §623(a)(3) citation
 
 ### [ ] Duplicate Inquiries (30% success)
 - **Category:** Inquiry Violations

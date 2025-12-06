@@ -76,6 +76,7 @@ class ViolationType(str, Enum):
     CLOSED_VS_OPEN_CONFLICT = "closed_vs_open_conflict"
     CREDITOR_NAME_MISMATCH = "creditor_name_mismatch"
     ACCOUNT_NUMBER_MISMATCH = "account_number_mismatch"
+    DISPUTE_FLAG_MISMATCH = "dispute_flag_mismatch"  # One bureau shows dispute, another doesn't (missing XA/XB/XC)
 
     # Temporal violations
     STALE_REPORTING = "stale_reporting"
