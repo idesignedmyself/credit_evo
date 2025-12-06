@@ -102,6 +102,8 @@ NormalizedReport → audit_report() → runs rules.py → AuditResult
 | Past due mismatch | Different amounts | FCRA §623(a)(1) |
 | Closed vs Open conflict | One bureau shows closed, another open | FCRA §623(a)(1) |
 | Dispute flag mismatch | One bureau shows dispute (XB/XC/XH), another doesn't | FCRA §623(a)(3) |
+| ECOA code mismatch | Different liability designation (Individual vs Joint) | FCRA §623(a)(1) |
+| Authorized User derogatory | AU account with negative marks (AU not liable) | FCRA §623(a)(1) / ECOA |
 
 **How it works:**
 - IdentityIQ reports contain all 3 bureaus in one file

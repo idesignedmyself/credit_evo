@@ -520,6 +520,200 @@ class CrossBureauRules:
 
         return discrepancies
 
+    @staticmethod
+    def check_ecoa_code_mismatch(accounts: Dict[Bureau, Account]) -> List[CrossBureauDiscrepancy]:
+        """
+        Check if ECOA code (liability designation) differs across bureaus.
+
+        The ECOA Code (Metro 2 Field 6) defines the consumer's legal liability:
+        - Individual (Code 1): Consumer is solely responsible
+        - Joint (Code 2): Consumer shares liability with another party
+        - Authorized User (Code 3): Consumer is NOT liable for the debt
+
+        It is factually impossible to be both "Individual" and "Joint" liable for
+        the same account simultaneously. If bureaus differ, one must be wrong.
+
+        Legal Basis: FCRA §623(a)(1) - furnishers must report accurate information
+        """
+        discrepancies = []
+
+        # Normalize ECOA codes for comparison
+        # Common variations: "Individual", "Joint", "Authorized User", "Auth User", etc.
+        def normalize_ecoa(code: Optional[str]) -> Optional[str]:
+            if not code:
+                return None
+            code_lower = code.lower().strip()
+
+            # Map to canonical values
+            if 'individual' in code_lower:
+                return 'Individual'
+            elif 'joint' in code_lower:
+                return 'Joint'
+            elif 'authorized' in code_lower or 'auth user' in code_lower or code_lower == 'au':
+                return 'Authorized User'
+            elif 'co-signer' in code_lower or 'cosigner' in code_lower:
+                return 'Co-Signer'
+            elif 'maker' in code_lower:
+                return 'Maker'
+            else:
+                return code.strip()  # Return as-is if unknown
+
+        # Get ECOA code from each bureau
+        ecoa_codes: Dict[Bureau, str] = {}
+        raw_codes: Dict[Bureau, str] = {}
+
+        for bureau, account in accounts.items():
+            # Get bureau_code from bureau-specific data
+            bureau_code = None
+            if hasattr(account, 'bureaus') and account.bureaus and bureau in account.bureaus:
+                bureau_data = account.bureaus[bureau]
+                bureau_code = getattr(bureau_data, 'bureau_code', None)
+
+            if bureau_code:
+                normalized = normalize_ecoa(bureau_code)
+                if normalized:
+                    ecoa_codes[bureau] = normalized
+                    raw_codes[bureau] = bureau_code
+
+        # Need at least 2 bureaus reporting ECOA to compare
+        if len(ecoa_codes) < 2:
+            return discrepancies
+
+        # Check for inconsistency
+        unique_codes = set(ecoa_codes.values())
+        if len(unique_codes) > 1:
+            ref_account = list(accounts.values())[0]
+
+            # Build description showing the conflict
+            code_details = [f"{b.value}: {c}" for b, c in ecoa_codes.items()]
+
+            discrepancies.append(CrossBureauDiscrepancy(
+                violation_type=ViolationType.ECOA_CODE_MISMATCH,
+                creditor_name=ref_account.creditor_name,
+                account_number_masked=ref_account.account_number_masked or "",
+                account_fingerprint=create_account_fingerprint(ref_account),
+                field_name="ECOA Code / Liability Designation",
+                values_by_bureau={b: c for b, c in ecoa_codes.items()},
+                description=(
+                    f"Inconsistent liability designation across bureaus for {ref_account.creditor_name}: "
+                    f"{', '.join(code_details)}. "
+                    f"A consumer cannot be both '{list(unique_codes)[0]}' and '{list(unique_codes)[1]}' "
+                    f"liable for the same account simultaneously. "
+                    f"Under FCRA §623(a)(1), furnishers must report accurate information to all bureaus."
+                ),
+                severity=Severity.HIGH
+            ))
+
+        return discrepancies
+
+    @staticmethod
+    def check_authorized_user_derogatory(accounts: Dict[Bureau, Account]) -> List[CrossBureauDiscrepancy]:
+        """
+        Check if Authorized User accounts have derogatory marks.
+
+        Authorized Users (ECOA Code 3) are NOT contractually liable for the debt.
+        Reporting late payments or derogatory status on an AU's file is improper
+        because they cannot be legally delinquent on debt they don't owe.
+
+        This is a single-bureau check but runs during cross-bureau analysis
+        because we have access to bureau_code there.
+
+        Legal Basis: FCRA §623(a)(1), Equal Credit Opportunity Act (ECOA)
+        """
+        discrepancies = []
+
+        # Derogatory indicators in payment status
+        derogatory_statuses = [
+            'collection', 'chargeoff', 'charge-off', 'charged off',
+            'delinquent', 'past due', 'late', '30 days', '60 days',
+            '90 days', '120 days', 'foreclosure', 'repossession',
+        ]
+
+        # Late payment markers in payment history
+        late_markers = ['30', '60', '90', '120', '150', '180', 'CO', 'FC', 'RP']
+
+        for bureau, account in accounts.items():
+            # Get bureau_code from bureau-specific data
+            bureau_code = None
+            payment_status = None
+            payment_history = []
+
+            if hasattr(account, 'bureaus') and account.bureaus and bureau in account.bureaus:
+                bureau_data = account.bureaus[bureau]
+                bureau_code = getattr(bureau_data, 'bureau_code', None)
+                payment_status = getattr(bureau_data, 'payment_status', None)
+                payment_history = getattr(bureau_data, 'payment_history', []) or []
+
+            if not bureau_code:
+                continue
+
+            # Check if this is an Authorized User
+            code_lower = bureau_code.lower()
+            is_auth_user = (
+                'authorized' in code_lower or
+                'auth user' in code_lower or
+                code_lower == 'au'
+            )
+
+            if not is_auth_user:
+                continue
+
+            # Check for derogatory indicators
+            has_derogatory = False
+            derog_reason = []
+
+            # Check payment status
+            if payment_status:
+                status_lower = payment_status.lower()
+                for derog in derogatory_statuses:
+                    if derog in status_lower:
+                        has_derogatory = True
+                        derog_reason.append(f"Payment Status: '{payment_status}'")
+                        break
+
+            # Check payment history for late markers
+            late_months = []
+            for entry in payment_history:
+                status = str(entry.get('status', '')).upper()
+                for marker in late_markers:
+                    if marker in status and status != 'OK':
+                        late_months.append(f"{entry.get('month', '')} {entry.get('year', '')}: {status}")
+                        has_derogatory = True
+                        break
+
+            if late_months:
+                derog_reason.append(f"Late markers in payment history: {', '.join(late_months[:3])}")
+                if len(late_months) > 3:
+                    derog_reason.append(f"(+{len(late_months) - 3} more)")
+
+            # Check account status
+            if hasattr(account, 'account_status'):
+                from ...models.ssot import AccountStatus
+                if account.account_status in [AccountStatus.COLLECTION, AccountStatus.CHARGEOFF]:
+                    has_derogatory = True
+                    derog_reason.append(f"Account Status: {account.account_status.value}")
+
+            if has_derogatory:
+                ref_account = account
+                discrepancies.append(CrossBureauDiscrepancy(
+                    violation_type=ViolationType.AUTHORIZED_USER_DEROGATORY,
+                    creditor_name=ref_account.creditor_name,
+                    account_number_masked=ref_account.account_number_masked or "",
+                    account_fingerprint=create_account_fingerprint(ref_account),
+                    field_name="Authorized User with Derogatory Marks",
+                    values_by_bureau={bureau: f"AU with derogatory: {'; '.join(derog_reason)}"},
+                    description=(
+                        f"Authorized User account with derogatory marks on {bureau.value} for "
+                        f"{ref_account.creditor_name}: {'; '.join(derog_reason)}. "
+                        f"As an Authorized User (ECOA Code 3), the consumer is NOT contractually liable "
+                        f"for this debt. Reporting delinquency or negative marks on a non-liable party's "
+                        f"credit file violates FCRA §623(a)(1) accuracy requirements and the ECOA."
+                    ),
+                    severity=Severity.HIGH
+                ))
+
+        return discrepancies
+
 
 # =============================================================================
 # MAIN CROSS-BUREAU AUDIT FUNCTION

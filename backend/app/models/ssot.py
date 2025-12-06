@@ -77,6 +77,8 @@ class ViolationType(str, Enum):
     CREDITOR_NAME_MISMATCH = "creditor_name_mismatch"
     ACCOUNT_NUMBER_MISMATCH = "account_number_mismatch"
     DISPUTE_FLAG_MISMATCH = "dispute_flag_mismatch"  # One bureau shows dispute, another doesn't (missing XA/XB/XC)
+    ECOA_CODE_MISMATCH = "ecoa_code_mismatch"  # Different liability designation across bureaus (Individual vs Joint)
+    AUTHORIZED_USER_DEROGATORY = "authorized_user_derogatory"  # AU (not liable) with negative marks affecting score
 
     # Temporal violations
     STALE_REPORTING = "stale_reporting"

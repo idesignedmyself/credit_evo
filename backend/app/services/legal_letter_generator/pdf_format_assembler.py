@@ -804,6 +804,28 @@ def _format_discrepancy_bullet(discrepancy: Dict[str, Any]) -> str:
                 f"the dispute status to ALL bureaus - not selectively"
             )
 
+    # Special handling for ECOA code mismatch
+    if violation_type == "ecoa_code_mismatch":
+        # Show what each bureau reports
+        code_details = [f"{b.upper() if len(b) <= 3 else b.title()}: {v}" for b, v in values_by_bureau.items()]
+        unique_codes = list(set(values_by_bureau.values()))
+        return (
+            f"• {account_id}: Inconsistent liability designation ({', '.join(code_details)}). "
+            f"The same consumer cannot be both '{unique_codes[0]}' and '{unique_codes[1] if len(unique_codes) > 1 else 'different'}' "
+            f"liable for the same account. Under FCRA §623(a)(1), furnishers must report accurate "
+            f"information - one bureau's ECOA code is necessarily wrong"
+        )
+
+    # Special handling for Authorized User with derogatory marks
+    if violation_type == "authorized_user_derogatory":
+        # The description already contains the derogatory details
+        return (
+            f"• {account_id}: As an Authorized User (ECOA Code 3), I am NOT contractually liable for "
+            f"this debt. Reporting negative marks on a non-liable party's credit file violates both "
+            f"FCRA §623(a)(1) accuracy requirements and the Equal Credit Opportunity Act (ECOA). "
+            f"These derogatory marks must be removed or the account removed from my file entirely"
+        )
+
     # Format the bullet
     return f"• {account_id}: {field_name} differs across bureaus ({comparison_str})"
 

@@ -1,9 +1,9 @@
 # Credit Engine System Checklist
 
 ## Current Status Overview
-- **Full Coverage:** 19 violation types
+- **Full Coverage:** 21 violation types
 - **Partial Coverage:** 11 violation types
-- **Not Detected:** 12 violation types
+- **Not Detected:** 10 violation types
 
 ---
 
@@ -48,12 +48,14 @@
 - **Implementation:** Analyze payment history for duplicate late markers
 - **File:** `app/services/audit/rules.py`
 
-### [ ] Authorized User Misreporting (50% success)
+### [x] Authorized User Misreporting (50% success) - ✅ IMPLEMENTED
 - **Category:** Identity & Account Ownership
-- **Description:** AU accounts reported as primary liability
-- **Legal Basis:** Metro 2 ECOA / FCRA §623
-- **Implementation:** Check ECOA code for AU designation vs. liability reporting
-- **File:** `app/services/audit/rules.py`
+- **Description:** AU accounts reported with derogatory marks (AU is not liable for the debt)
+- **Legal Basis:** Metro 2 ECOA / FCRA §623(a)(1) / Equal Credit Opportunity Act
+- **Status:** ✅ Implemented via `check_authorized_user_derogatory()` in cross-bureau rules
+- **ViolationType:** `AUTHORIZED_USER_DEROGATORY`
+- **File:** `app/services/audit/cross_bureau_rules.py`
+- **Note:** Combined with ECOA Code Errors implementation above
 
 ### [x] Phantom Late Payments - Forbearance (50% success) - ✅ IMPLEMENTED
 - **Category:** Payment History Errors
@@ -81,12 +83,17 @@
 
 ## Priority 3: Lower-Value Missing Violations (30-45% Success Rate)
 
-### [ ] ECOA Code Errors (45% success)
-- **Category:** Metro 2 Format Violations
-- **Description:** Wrong designation for joint/individual accounts
-- **Legal Basis:** Metro 2 ECOA Codes
-- **Implementation:** Parse and validate ECOA designator field
-- **File:** `app/services/audit/rules.py`
+### [x] ECOA Code Errors (45% success) - ✅ IMPLEMENTED
+- **Category:** Metro 2 Format Violations / Cross-Bureau Discrepancy
+- **Description:** Wrong or inconsistent designation for joint/individual/authorized user accounts
+- **Legal Basis:** FCRA §623(a)(1), Equal Credit Opportunity Act (ECOA)
+- **Status:** ✅ Fully implemented as two cross-bureau checks
+- **Rules:**
+  1. `check_ecoa_code_mismatch()` - Detects when bureaus report different liability codes (Individual vs Joint, etc.)
+  2. `check_authorized_user_derogatory()` - Detects when AU accounts have derogatory marks (AU is not liable)
+- **ViolationTypes:** `ECOA_CODE_MISMATCH`, `AUTHORIZED_USER_DEROGATORY`
+- **File:** `app/services/audit/cross_bureau_rules.py`
+- **Letter Support:** Cross-bureau discrepancies section with FCRA §623(a)(1) and ECOA citations
 
 ### [ ] Soft as Hard Inquiry Misclassification (45% success)
 - **Category:** Inquiry Violations
@@ -224,6 +231,9 @@
 | Date Opened Discrepancies | 40% | ✅ Full |
 | Duplicate Collections | 60% | ✅ Full |
 | Balance > Credit Limit | 40% | ✅ Full |
+| ECOA Code Mismatch (cross-bureau) | 45% | ✅ Full |
+| Authorized User Derogatory | 50% | ✅ Full |
+| Dispute Flag Mismatch (cross-bureau) | 35% | ✅ Full |
 
 ---
 
@@ -236,13 +246,13 @@
 4. [x] Balance > Credit Limit rule ✅ DONE
 
 ### Phase 2: Metro 2 Enhancements
-5. [ ] ECOA Code Errors
-6. [ ] Missing Compliance Condition Codes (XA/XB/XC)
+5. [x] ECOA Code Errors ✅ DONE
+6. [x] Missing Compliance Condition Codes (XA/XB/XC) ✅ DONE (Dispute Flag Mismatch)
 7. [ ] Invalid Status Codes expansion
 
 ### Phase 3: Payment History Deep Dive
 8. [ ] Duplicate Delinquencies
-9. [ ] Phantom Late Payments (forbearance)
+9. [x] Phantom Late Payments (forbearance) ✅ DONE
 10. [ ] Post-Settlement Negative Reporting
 
 ### Phase 4: Inquiry System
@@ -253,7 +263,7 @@
 ### Phase 5: Complex Implementations
 14. [ ] Time-Barred Debt (requires SOL database)
 15. [ ] Public Records parsing (judgments, bankruptcy)
-16. [ ] Authorized User Misreporting
+16. [x] Authorized User Misreporting ✅ DONE
 
 ---
 

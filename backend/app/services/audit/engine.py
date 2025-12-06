@@ -121,6 +121,10 @@ class AuditEngine:
             all_discrepancies.extend(self.cross_bureau_rules.check_closed_vs_open_conflict(bureau_accounts))
             # Dispute flag mismatch (requires access to remarks from original account.bureaus)
             all_discrepancies.extend(self.cross_bureau_rules.check_dispute_flag_mismatch(bureau_accounts))
+            # ECOA code mismatch (liability designation: Individual vs Joint vs Authorized User)
+            all_discrepancies.extend(self.cross_bureau_rules.check_ecoa_code_mismatch(bureau_accounts))
+            # Authorized User with derogatory marks (AU is not liable, shouldn't have negative marks)
+            all_discrepancies.extend(self.cross_bureau_rules.check_authorized_user_derogatory(bureau_accounts))
 
         logger.info(f"Cross-bureau analysis found {len(all_discrepancies)} discrepancies")
         return all_discrepancies
