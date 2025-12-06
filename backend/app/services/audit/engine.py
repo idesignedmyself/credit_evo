@@ -233,6 +233,9 @@ class AuditEngine:
         violations.extend(self.single_bureau_rules.check_phantom_late_payment(
             account_for_bureau, bureau, bureau_data
         ))
+        violations.extend(self.furnisher_rules.check_paid_collection_contradiction(
+            account_for_bureau, bureau, bureau_data
+        ))
 
         return violations
 

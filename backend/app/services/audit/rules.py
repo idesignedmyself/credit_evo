@@ -854,6 +854,139 @@ class FurnisherRules:
 
         return violations
 
+    @staticmethod
+    def check_paid_collection_contradiction(
+        account: Account,
+        bureau: Bureau,
+        bureau_data: Optional[BureauAccountData] = None
+    ) -> List[Violation]:
+        """
+        Check for contradictions between 'Paid' status and Balance/Past Due amounts.
+
+        This is a "State Consistency" rule - two mutually exclusive states cannot exist:
+        - State A: "The Debt is Settled/Paid" (Status = Paid)
+        - State B: "Money is Still Owed" (Balance > $0)
+
+        SCENARIO 1: Status says "Paid" but balance > $0 or past_due > $0
+        - Clear contradiction: if paid, balance must be $0
+
+        SCENARIO 2: Balance = $0 but Status doesn't say "Paid" (collection accounts only)
+        - If a collection has $0 balance, it should be marked "Paid Collection"
+        - EXCEPTION: Sold/Transferred accounts have $0 balance but aren't "Paid"
+
+        Legal Basis: FCRA §623(a)(1) requires accurate reporting.
+        Metro 2: Balance field must match account status.
+        """
+        violations = []
+
+        # Get remarks from bureau_data if available
+        remarks = ""
+        if bureau_data and hasattr(bureau_data, 'remarks'):
+            remarks = bureau_data.remarks or ""
+
+        # Normalize for comparison
+        status_lower = (account.payment_status or "").lower()
+        remarks_lower = remarks.lower()
+
+        # Check for "paid" or "settled" indicators
+        paid_indicators = ['paid', 'settled', 'satisfied', 'paid in full', 'paid collection']
+        is_marked_paid = any(ind in status_lower for ind in paid_indicators)
+
+        # Check for sold/transferred indicators (to avoid false positives in Scenario 2)
+        sold_indicators = ['sold', 'transferred', 'purchased by', 'assigned to']
+        is_sold = any(ind in status_lower for ind in sold_indicators) or \
+                  any(ind in remarks_lower for ind in sold_indicators)
+
+        # Identify if this is a collection account
+        account_type_lower = (account.account_type or "").lower()
+        creditor_lower = (account.creditor_name or "").lower()
+        is_collection = (
+            account.furnisher_type == FurnisherType.COLLECTOR or
+            account.account_status == AccountStatus.COLLECTION or
+            'collection' in status_lower or
+            'collection' in account_type_lower or
+            'collection' in creditor_lower
+        )
+
+        # Get balance and past_due values
+        balance = account.balance if account.balance is not None else 0
+        past_due = account.past_due_amount if account.past_due_amount is not None else 0
+
+        # ================================================================
+        # SCENARIO 1: Status says "Paid" but balance > $0 or past_due > $0
+        # ================================================================
+        if is_marked_paid:
+            has_balance = balance > 0
+            has_past_due = past_due > 0
+
+            if has_balance or has_past_due:
+                # Build description based on what's wrong
+                issues = []
+                if has_balance:
+                    issues.append(f"Balance: ${balance:,.2f}")
+                if has_past_due:
+                    issues.append(f"Past Due: ${past_due:,.2f}")
+
+                violations.append(Violation(
+                    violation_type=ViolationType.PAID_STATUS_WITH_BALANCE,
+                    severity=Severity.HIGH,
+                    account_id=account.account_id,
+                    creditor_name=account.creditor_name,
+                    account_number_masked=account.account_number_masked,
+                    furnisher_type=account.furnisher_type,
+                    bureau=bureau,
+                    description=(
+                        f"This account is marked as \"{account.payment_status}\" but still reports "
+                        f"{' and '.join(issues)}. A paid account must reflect $0.00 owed. "
+                        f"This is an internal contradiction - the status and balance fields are mutually exclusive."
+                    ),
+                    expected_value="Balance: $0.00, Past Due: $0.00 (for paid account)",
+                    actual_value=f"Balance: ${balance:,.2f}, Past Due: ${past_due:,.2f}, Status: {account.payment_status}",
+                    fcra_section="623(a)(1)",
+                    metro2_field="17A/10",
+                    evidence={
+                        "payment_status": account.payment_status,
+                        "balance": balance,
+                        "past_due": past_due,
+                        "is_collection": is_collection
+                    }
+                ))
+
+        # ================================================================
+        # SCENARIO 2: Balance = $0 on collection but Status not "Paid"
+        # ================================================================
+        # Only check collections - open credit cards can have $0 balance and be "Current"
+        elif is_collection and balance == 0 and past_due == 0:
+            # Skip if sold/transferred (explains $0 balance without "Paid" status)
+            if not is_sold and not is_marked_paid:
+                violations.append(Violation(
+                    violation_type=ViolationType.ZERO_BALANCE_NOT_PAID,
+                    severity=Severity.MEDIUM,
+                    account_id=account.account_id,
+                    creditor_name=account.creditor_name,
+                    account_number_masked=account.account_number_masked,
+                    furnisher_type=account.furnisher_type,
+                    bureau=bureau,
+                    description=(
+                        f"This collection account reports a $0.00 balance but Payment Status is "
+                        f"\"{account.payment_status}\". If the debt has been satisfied (balance = $0), "
+                        f"the status should be updated to \"Paid Collection\" to accurately reflect "
+                        f"the account state."
+                    ),
+                    expected_value="Status: Paid Collection (for $0 balance)",
+                    actual_value=f"Status: {account.payment_status}, Balance: $0.00",
+                    fcra_section="623(a)(2)",
+                    metro2_field="17A",
+                    evidence={
+                        "payment_status": account.payment_status,
+                        "balance": balance,
+                        "past_due": past_due,
+                        "is_sold": is_sold
+                    }
+                ))
+
+        return violations
+
 
 # =============================================================================
 # TEMPORAL RULES

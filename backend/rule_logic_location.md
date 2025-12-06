@@ -56,6 +56,8 @@ app/
 | Negative Credit Limit | `negative_credit_limit` | Field 21 |
 | Status/Payment History Mismatch | `status_payment_history_mismatch` | Field 17A/25 (requires explicit derogatory status) |
 | Phantom Late Payment | `phantom_late_payment` | Field 15/25 (late markers during $0 due or forbearance) |
+| Paid Status with Balance | `paid_status_with_balance` | Field 17A/10 (status=Paid but balance>$0) |
+| Zero Balance Not Paid | `zero_balance_not_paid` | Field 17A/10 (collection with $0 but not marked Paid) |
 
 **To add a new rule:** Create a new function in this file following the existing pattern.
 

@@ -44,6 +44,7 @@ class ViolationCategory(str, Enum):
     BALANCE_ERROR = "balance_error"
     PAYMENT_STATUS_ERROR = "payment_status_error"
     PHANTOM_LATE_PAYMENT = "phantom_late_payment"  # Late markers during $0 due or forbearance
+    PAID_COLLECTION_CONTRADICTION = "paid_collection_contradiction"  # Paid status vs balance contradictions
     MISSING_PAYMENT_HISTORY = "missing_payment_history"
     STUDENT_LOAN_VERIFICATION = "student_loan_verification"
     COLLECTION_VERIFICATION = "collection_verification"
@@ -173,6 +174,24 @@ CATEGORY_CONFIGS: Dict[ViolationCategory, CategoryConfig] = {
             "as delinquent for failing to pay $0. Under the CARES Act and FCRA Section 623(c), if a consumer "
             "was in forbearance or had no payment due, any delinquency markers during that period are inaccurate "
             "by definition and must be deleted."
+        ),
+        fcra_section="623(a)(1)"
+    ),
+    ViolationCategory.PAID_COLLECTION_CONTRADICTION: CategoryConfig(
+        title="Collection Accounts with Status/Balance Contradictions",
+        metro2_fields="Metro 2 Fields 17A (Account Status), 10 (Current Balance), and 17B (Payment Rating)",
+        explanation=(
+            "Under FCRA Section 623(a)(1), furnishers must report accurate, internally consistent information. "
+            "The Account Status (Field 17A) and Current Balance (Field 10) must logically align. An account "
+            "cannot simultaneously show 'Paid' status while reporting a balance owed, nor can a collection "
+            "with zero balance remain in 'Open' or 'Collection' status without being marked as Paid or Settled. "
+            "The following accounts have contradictions between their status and balance fields:"
+        ),
+        resolution=(
+            "These internal contradictions must be investigated and corrected. If the account is truly paid, "
+            "the balance must be $0 and the status must reflect 'Paid' or 'Settled'. If a balance remains, "
+            "the status cannot claim payment. Under FCRA Section 623(a)(1), furnishers are prohibited from "
+            "reporting contradictory information - one of these fields is necessarily inaccurate and must be corrected."
         ),
         fcra_section="623(a)(1)"
     ),
@@ -326,6 +345,10 @@ def _classify_violation(violation: Dict[str, Any]) -> ViolationCategory:
     # Check for phantom late payments (late markers during $0 due or forbearance)
     if v_type == "phantom_late_payment":
         return ViolationCategory.PHANTOM_LATE_PAYMENT
+
+    # Check for paid collection contradictions (status/balance mismatch)
+    if v_type in ["paid_status_with_balance", "zero_balance_not_paid"]:
+        return ViolationCategory.PAID_COLLECTION_CONTRADICTION
 
     # Check for missing payment history
     if v_type in ["missing_payment_history", "missing_payment_field"]:
@@ -596,6 +619,39 @@ def _format_account_bullet(violation: Dict[str, Any]) -> str:
         details.append("Cannot be late on a $0 payment or during forbearance")
 
         if details:
+            return f"• {account_id}: {'; '.join(details)}"
+
+    # Handle Paid Collection Contradiction violations with structured evidence
+    if violation_type in ["paid_status_with_balance", "zero_balance_not_paid"] and isinstance(evidence, dict):
+        payment_status = evidence.get("payment_status", "")
+        balance = evidence.get("balance", 0)
+        past_due = evidence.get("past_due", 0)
+        account_type = evidence.get("account_type", "")
+        scenario = evidence.get("scenario", "")
+
+        # Build the contradiction description
+        contradiction_parts = []
+
+        if scenario == "paid_but_balance":
+            # Scenario 1: Marked paid but still has balance
+            if payment_status:
+                contradiction_parts.append(f'Payment Status shows "{payment_status}" indicating account is paid')
+            if balance > 0:
+                contradiction_parts.append(f"Yet Current Balance reports ${balance:,.2f}")
+            if past_due > 0:
+                contradiction_parts.append(f"Past Due Amount shows ${past_due:,.2f}")
+            contradiction_parts.append("An account cannot be 'Paid' while reporting a balance owed")
+        elif scenario == "zero_balance_not_paid":
+            # Scenario 2: Collection with $0 but not marked paid
+            if account_type:
+                contradiction_parts.append(f"Account Type: {account_type}")
+            contradiction_parts.append("Balance: $0.00 and Past Due: $0.00")
+            if payment_status:
+                contradiction_parts.append(f'Yet Payment Status shows "{payment_status}" instead of "Paid"')
+            contradiction_parts.append("A collection with $0 owed must be marked as Paid/Settled")
+
+        if contradiction_parts:
+            details.extend(contradiction_parts)
             return f"• {account_id}: {'; '.join(details)}"
 
     # Handle obsolete accounts (>2555 days / 7 years from DOFD per FCRA 605(a))
@@ -870,6 +926,7 @@ class PDFFormatAssembler:
             ViolationCategory.MISSING_DOFD,
             ViolationCategory.STALE_REPORTING,
             ViolationCategory.PHANTOM_LATE_PAYMENT,
+            ViolationCategory.PAID_COLLECTION_CONTRADICTION,
             ViolationCategory.AMOUNT_PAST_DUE_ERROR,
             ViolationCategory.BALANCE_ERROR,
             ViolationCategory.PAYMENT_STATUS_ERROR,

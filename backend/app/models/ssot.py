@@ -63,6 +63,8 @@ class ViolationType(str, Enum):
     CHARGEOFF_MISSING_DOFD = "chargeoff_missing_dofd"  # NEW
     STATUS_PAYMENT_HISTORY_MISMATCH = "status_payment_history_mismatch"  # NEW - Chargeoff status but OK payment history
     PHANTOM_LATE_PAYMENT = "phantom_late_payment"  # Late markers during $0 due or forbearance periods
+    PAID_STATUS_WITH_BALANCE = "paid_status_with_balance"  # Status says "Paid" but balance > $0
+    ZERO_BALANCE_NOT_PAID = "zero_balance_not_paid"  # Collection has $0 balance but not marked "Paid"
 
     # Cross-bureau violations
     DOFD_MISMATCH = "dofd_mismatch"

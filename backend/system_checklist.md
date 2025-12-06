@@ -148,12 +148,18 @@
 - **Enhancement:** Add cross-bureau presence check
 - **File:** `app/services/audit/rules.py`
 
-### [ ] Paid Collection with Balance (65% success)
+### [x] Paid Collection Contradictions (65% success) - ✅ IMPLEMENTED
 - **Category:** Collection-Specific Violations
-- **Description:** Paid collection still showing balance > $0
-- **Current:** Rule variation of paid+balance exists
-- **Enhancement:** Ensure specific paid collection logic
-- **File:** `app/services/audit/rules.py`
+- **Description:** Status/Balance contradictions in paid or zero-balance collections
+- **Status:** ✅ Fully implemented with two violation types
+- **Rule:** `check_paid_collection_contradiction()` in `app/services/audit/rules.py:857`
+- **ViolationTypes:** `PAID_STATUS_WITH_BALANCE`, `ZERO_BALANCE_NOT_PAID`
+- **Criteria:**
+  - **Scenario 1:** Status says "Paid" but balance > $0 or past_due > $0 (fires PAID_STATUS_WITH_BALANCE)
+  - **Scenario 2:** Collection has $0 balance but not marked "Paid" (fires ZERO_BALANCE_NOT_PAID)
+  - **Exception:** Sold/Transferred accounts exempt from Scenario 2 (correct to show $0 but not "Paid")
+- **Paid Indicators Detected:** paid, settled, satisfied, paid in full, paid collection
+- **Sold Indicators (exemption):** sold, transferred, purchased by, assigned to
 
 ### [ ] Post-Settlement Negative Reporting (50% success)
 - **Category:** Payment History Errors
