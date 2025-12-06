@@ -480,12 +480,25 @@ class CrossBureauRules:
                 'remarks': remarks or "(no comments)"
             }
 
-        # Check for inconsistency: some bureaus show dispute, others don't
-        bureaus_with_dispute = [b for b, s in dispute_status.items() if s['has_any_dispute']]
+        # CRITICAL FIX: Only check for inconsistency when there's an ACTIVE dispute
+        # "Resolved" vs "None" is NOT a violation - when investigation ends, bureaus may
+        # either leave a "Dispute Resolved" note or simply remove the flag entirely.
+        # Both are acceptable outcomes. We only care when an ACTIVE dispute exists
+        # and other bureaus don't show it.
+
+        # Check if ANY bureau has an ACTIVE dispute (XB code)
+        has_active_dispute = any(s['has_active_dispute'] for s in dispute_status.values())
+
+        # If no active disputes, don't flag anything (Resolved vs None is fine)
+        if not has_active_dispute:
+            return discrepancies
+
+        # Now check: which bureaus are missing the active dispute flag?
+        bureaus_with_active_dispute = [b for b, s in dispute_status.items() if s['has_active_dispute']]
         bureaus_without_dispute = [b for b, s in dispute_status.items() if not s['has_any_dispute']]
 
-        # Only flag if at least one bureau shows dispute AND at least one doesn't
-        if len(bureaus_with_dispute) >= 1 and len(bureaus_without_dispute) >= 1:
+        # Only flag if at least one bureau shows ACTIVE dispute AND at least one shows nothing
+        if len(bureaus_with_active_dispute) >= 1 and len(bureaus_without_dispute) >= 1:
             ref_account = list(accounts.values())[0]
 
             # Build description showing what each bureau has
