@@ -60,6 +60,7 @@ app/
 | Zero Balance Not Paid | `zero_balance_not_paid` | Field 17A/10 (collection with $0 but not marked Paid) |
 | Delinquency Jump | `delinquency_jump` | Field 18 (payment history jumps levels, e.g., 0→60) |
 | Stagnant Delinquency | `stagnant_delinquency` | Field 18 (same late status for consecutive months) |
+| Missing Original Creditor | `missing_original_creditor` | K1 Segment (Chain of Title - collection without OC) |
 
 **To add a new rule:** Create a new function in this file following the existing pattern.
 

@@ -932,32 +932,45 @@ class FurnisherRules:
     @staticmethod
     def check_collector_missing_original_creditor(account: Account, bureau: Bureau) -> List[Violation]:
         """
-        Check if a collection account is missing original creditor info.
+        Check if a collection account identifies the Original Creditor (K1 Segment).
 
-        Collectors MUST report who the original creditor was.
+        Without this, the 'Chain of Title' is broken, making the debt unverifiable.
+        Under Metro 2 standards, the K1 Segment (Original Creditor Name) is mandatory
+        for Account Type 48 (Collection) or 0C (Debt Purchaser) to establish lineage.
         """
         violations = []
 
+        # Target: Collections & Debt Buyers ONLY
         if account.furnisher_type != FurnisherType.COLLECTOR:
             return violations
 
-        if not account.original_creditor:
+        # The Check: Is the Original Creditor Name missing?
+        # Clean the string to ensure it's not just whitespace
+        oc_name = (account.original_creditor or "").strip()
+
+        if not oc_name:
             violations.append(Violation(
-                violation_type=ViolationType.MISSING_ORIGINAL_CREDITOR,  # FIXED: correct type
-                severity=Severity.MEDIUM,
+                violation_type=ViolationType.MISSING_ORIGINAL_CREDITOR,
+                # HIGH severity: Chain of Title violation is a deletion candidate
+                severity=Severity.HIGH,
                 account_id=account.account_id,
                 creditor_name=account.creditor_name,
                 account_number_masked=account.account_number_masked,
                 furnisher_type=account.furnisher_type,
                 bureau=bureau,
+                # Chain of Title description for legal weight
                 description=(
-                    f"This collection account does not identify the original creditor. "
-                    f"Without this information, the debt cannot be properly verified."
+                    "Collection account fails to identify the Original Creditor. "
+                    "For Account Type 48 (Collection) or 0C (Debt Purchaser), the K1 Segment "
+                    "(Original Creditor Name) is mandatory to establish the 'Chain of Title'. "
+                    "Without this link, the debt ownership is legally unverifiable."
                 ),
-                expected_value="Original creditor name",
-                actual_value="Not Reported",
-                fcra_section="611(a)",
-                metro2_field=None,
+                expected_value="Original Creditor Name (K1 Segment) populated",
+                actual_value="Missing/Blank",
+                # Specific FCRA citation for furnisher accuracy duty
+                fcra_section="623(a)(7)",
+                # Metro 2 field reference
+                metro2_field="K1 Segment",
                 evidence={"furnisher_type": account.furnisher_type.value}
             ))
 

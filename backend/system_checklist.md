@@ -1,9 +1,9 @@
 # Credit Engine System Checklist
 
 ## Current Status Overview
-- **Full Coverage:** 23 violation types
+- **Full Coverage:** 24 violation types
 - **Partial Coverage:** 11 violation types
-- **Not Detected:** 9 violation types
+- **Not Detected:** 8 violation types
 
 ---
 
@@ -34,12 +34,19 @@
 
 ## Priority 2: Medium-Value Missing Violations (50-60% Success Rate)
 
-### [ ] Missing Original Creditor (55% success)
+### [x] Missing Original Creditor / Chain of Title (55% success) - ✅ IMPLEMENTED
 - **Category:** Collection-Specific Violations
-- **Description:** Collections without original creditor identification
-- **Legal Basis:** FCRA §623(a)(6)
-- **Implementation:** Check collection accounts for missing OC name field
-- **File:** `app/services/audit/rules.py`
+- **Description:** Collections without original creditor identification (K1 Segment)
+- **Legal Basis:** FCRA §623(a)(7) - furnisher accuracy duty for debt ownership
+- **Status:** ✅ Fully implemented with Chain of Title legal language
+- **Rule:** `check_collector_missing_original_creditor()` in `app/services/audit/rules.py:933`
+- **ViolationType:** `MISSING_ORIGINAL_CREDITOR`
+- **Severity:** HIGH (deletion candidate - debt ownership is unverifiable)
+- **Metro 2 Field:** K1 Segment (Original Creditor Name)
+- **Criteria:**
+  - Fires when `furnisher_type == COLLECTOR` and `original_creditor` is missing or whitespace-only
+  - Uses "Chain of Title" legal terminology in dispute letters
+  - Compliant accounts (like your Midland examples with OC listed) correctly pass
 
 ### [x] Duplicate Delinquencies / Illogical Progression (55% success) - ✅ IMPLEMENTED
 - **Category:** Payment History Errors
