@@ -46,6 +46,7 @@ class ViolationCategory(str, Enum):
     PHANTOM_LATE_PAYMENT = "phantom_late_payment"  # Late markers during $0 due or forbearance
     PAID_COLLECTION_CONTRADICTION = "paid_collection_contradiction"  # Paid status vs balance contradictions
     ILLOGICAL_DELINQUENCY = "illogical_delinquency"  # Impossible delinquency progression (0->60) or stagnant lates
+    DOUBLE_JEOPARDY = "double_jeopardy"  # OC and Collector BOTH report balance for same debt
     MISSING_PAYMENT_HISTORY = "missing_payment_history"
     STUDENT_LOAN_VERIFICATION = "student_loan_verification"
     COLLECTION_VERIFICATION = "collection_verification"
@@ -283,6 +284,24 @@ CATEGORY_CONFIGS: Dict[ViolationCategory, CategoryConfig] = {
         ),
         fcra_section="623(a)(1)"
     ),
+    ViolationCategory.DOUBLE_JEOPARDY: CategoryConfig(
+        title="Accounts with Duplicate Debt Reporting (Double Jeopardy)",
+        metro2_fields="Metro 2 Field 21 (Current Balance)",
+        explanation=(
+            "Under Metro 2 transfer logic, when a debt is sold or transferred to a collection agency, "
+            "the Original Creditor must update their balance to $0 and mark the account as "
+            "'Transferred/Sold'. The accounts below show both the Original Creditor AND the "
+            "Collection Agency reporting an active balance for the same debt, artificially doubling "
+            "the consumer's debt load and destroying Debt-to-Income ratios."
+        ),
+        resolution=(
+            "The Original Creditor entry must be updated to reflect a $0 balance or deleted entirely. "
+            "An account cannot be simultaneously 'owed' to two different entities. This duplicate "
+            "reporting violates FCRA Section 607(b) which requires maximum possible accuracy. "
+            "The Original Creditor no longer holds the debt and cannot report a balance."
+        ),
+        fcra_section="607(b)"
+    ),
 }
 
 
@@ -371,6 +390,10 @@ def _classify_violation(violation: Dict[str, Any]) -> ViolationCategory:
     # Check for illogical delinquency progression (skipped rungs, stagnant lates)
     if v_type in ["delinquency_jump", "stagnant_delinquency"]:
         return ViolationCategory.ILLOGICAL_DELINQUENCY
+
+    # Check for double jeopardy (OC and Collector BOTH report balance for same debt)
+    if v_type == "double_jeopardy":
+        return ViolationCategory.DOUBLE_JEOPARDY
 
     # Check for missing payment history
     if v_type in ["missing_payment_history", "missing_payment_field"]:

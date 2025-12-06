@@ -11,7 +11,7 @@ from typing import List, Dict, Optional
 
 from ...models.ssot import (
     NormalizedReport, AuditResult, Violation, Bureau, CrossBureauDiscrepancy,
-    Account, BureauAccountData
+    Account, BureauAccountData, FurnisherType, ViolationType, Severity
 )
 from .rules import SingleBureauRules, FurnisherRules, TemporalRules
 from .cross_bureau_rules import CrossBureauRules
@@ -70,6 +70,10 @@ class AuditEngine:
 
         # Run cross-bureau analysis on accounts with 2+ bureaus
         all_discrepancies = self._audit_cross_bureau(report.accounts)
+
+        # Run cross-tradeline checks (Double Jeopardy - OC + Collector both with balance)
+        double_jeopardy_violations = self._check_double_jeopardy(report.accounts)
+        all_violations.extend(double_jeopardy_violations)
 
         # Build AuditResult (SSOT #2)
         result = AuditResult(
@@ -246,6 +250,113 @@ class AuditEngine:
             account_for_bureau, bureau, bureau_data
         ))
 
+        return violations
+
+    def _check_double_jeopardy(self, accounts: List[Account]) -> List[Violation]:
+        """
+        Check for 'Double Jeopardy': When an Original Creditor (OC) and a Debt Collector
+        BOTH report a balance for the same debt.
+
+        This artificially doubles the consumer's debt load, destroying DTI ratios.
+        Under Metro 2 transfer logic, when an OC sells a debt, they MUST update
+        their balance to $0 and status to "Transferred/Sold".
+
+        This check runs per-bureau since the matching needs to happen within
+        the same bureau's data.
+        """
+        from ..audit.cross_bureau_rules import normalize_creditor_name
+
+        violations: List[Violation] = []
+
+        # We need to check per-bureau to find OC-Collector pairs
+        # Group accounts by bureau for per-bureau analysis
+        for account in accounts:
+            if not hasattr(account, 'bureaus') or not account.bureaus:
+                continue
+
+            for bureau, bureau_data in account.bureaus.items():
+                # Only process collection accounts with original_creditor info
+                if account.furnisher_type != FurnisherType.COLLECTOR:
+                    continue
+
+                oc_name_ref = (account.original_creditor or "").strip()
+                if not oc_name_ref:
+                    continue  # No OC to match against (caught by MISSING_ORIGINAL_CREDITOR)
+
+                coll_balance = bureau_data.balance if bureau_data.balance is not None else 0
+
+                # Skip if collector has $0 balance (already paid/settled)
+                if coll_balance <= 0:
+                    continue
+
+                # Normalize the OC name from the collection for matching
+                oc_name_normalized = normalize_creditor_name(oc_name_ref)
+
+                # Now search all OTHER accounts for a matching OC with balance
+                for other_account in accounts:
+                    if other_account.account_id == account.account_id:
+                        continue  # Skip self
+
+                    # Only match against non-collector accounts
+                    if other_account.furnisher_type == FurnisherType.COLLECTOR:
+                        continue
+
+                    # Check if this account's creditor name matches the OC reference
+                    other_creditor = (other_account.creditor_name or "").strip()
+                    other_creditor_normalized = normalize_creditor_name(other_creditor)
+
+                    # Match check: substring or exact normalized match
+                    is_match = (
+                        oc_name_normalized and other_creditor_normalized and
+                        (oc_name_normalized in other_creditor_normalized or
+                         other_creditor_normalized in oc_name_normalized or
+                         oc_name_normalized == other_creditor_normalized)
+                    )
+
+                    if not is_match:
+                        continue
+
+                    # Check if the OC account has bureau data for this same bureau
+                    if not hasattr(other_account, 'bureaus') or bureau not in other_account.bureaus:
+                        continue
+
+                    other_bureau_data = other_account.bureaus[bureau]
+                    oc_balance = other_bureau_data.balance if other_bureau_data.balance is not None else 0
+
+                    # DOUBLE JEOPARDY: Both have balance > $0
+                    if oc_balance > 0:
+                        violations.append(Violation(
+                            violation_type=ViolationType.DOUBLE_JEOPARDY,
+                            severity=Severity.HIGH,
+                            # Flag the OC account (usually easier to get deleted/updated)
+                            account_id=other_account.account_id,
+                            creditor_name=other_account.creditor_name,
+                            account_number_masked=other_account.account_number_masked,
+                            furnisher_type=other_account.furnisher_type,
+                            bureau=bureau,
+                            description=(
+                                f"Double Jeopardy: This debt is being reported twice with active balances. "
+                                f"Collection Agency '{account.creditor_name}' reports a balance of ${coll_balance:,.2f}, "
+                                f"but the Original Creditor '{other_account.creditor_name}' ALSO reports a balance of ${oc_balance:,.2f}. "
+                                f"When a debt is sold/transferred to collections, the Original Creditor must update "
+                                f"their balance to $0. Reporting it twice artificially doubles the consumer's debt load."
+                            ),
+                            expected_value=f"OC Balance: $0.00 (debt was sold to {account.creditor_name})",
+                            actual_value=f"OC Balance: ${oc_balance:,.2f} + Collector Balance: ${coll_balance:,.2f}",
+                            fcra_section="607(b)",
+                            metro2_field="21 (Balance)",
+                            evidence={
+                                "collector_name": account.creditor_name,
+                                "collector_account_id": account.account_id,
+                                "collector_balance": coll_balance,
+                                "original_creditor_name": other_account.creditor_name,
+                                "oc_account_id": other_account.account_id,
+                                "oc_balance": oc_balance,
+                                "bureau": bureau.value
+                            }
+                        ))
+
+        logger.info(f"Double Jeopardy check found {len(violations)} duplicate debt violations")
         return violations
 
 

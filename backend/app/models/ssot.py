@@ -67,6 +67,7 @@ class ViolationType(str, Enum):
     ZERO_BALANCE_NOT_PAID = "zero_balance_not_paid"  # Collection has $0 balance but not marked "Paid"
     DELINQUENCY_JUMP = "delinquency_jump"  # Payment history jumps levels (0->60, skipping 30) - impossible
     STAGNANT_DELINQUENCY = "stagnant_delinquency"  # Same late level (30->30) for consecutive months - suspicious
+    DOUBLE_JEOPARDY = "double_jeopardy"  # OC and Collector BOTH report balance for same debt (duplicate reporting)
 
     # Cross-bureau violations
     DOFD_MISMATCH = "dofd_mismatch"

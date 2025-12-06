@@ -75,11 +75,17 @@ app/
 - Rule execution loop
 - Violation aggregation
 - Clean account tracking
+- Cross-tradeline checks (Double Jeopardy)
 
 **Flow:**
 ```
 NormalizedReport → audit_report() → runs rules.py → AuditResult
 ```
+
+**Cross-Tradeline Checks (run in engine.py):**
+| Check | Description | Legal Basis |
+|-------|-------------|-------------|
+| Double Jeopardy | OC and Collector BOTH report balance for same debt | FCRA §607(b) |
 
 ---
 

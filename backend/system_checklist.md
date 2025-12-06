@@ -86,6 +86,23 @@
   - Late markers detected: 30, 60, 90, 120, 150, 180, CO, FC, RP
 - **Forbearance Indicators Detected:** forbearance, deferment, hardship, COVID, CARES Act, pandemic, payment pause, in-school, grace period, military/SCRA, unemployment deferment
 
+### [x] Double Jeopardy / Duplicate Debt Reporting (60% success) - ✅ IMPLEMENTED
+- **Category:** Collection-Specific Violations / Cross-Tradeline
+- **Description:** Original Creditor AND Debt Collector BOTH report balance for same debt
+- **Legal Basis:** FCRA §607(b) - Maximum Possible Accuracy / Metro 2 Transfer Logic
+- **Status:** ✅ Fully implemented as cross-tradeline check in engine.py
+- **Rule:** `_check_double_jeopardy()` in `app/services/audit/engine.py:255`
+- **ViolationType:** `DOUBLE_JEOPARDY`
+- **Severity:** HIGH (deletion candidate - artificially doubles consumer's debt load)
+- **Metro 2 Field:** Field 21 (Current Balance)
+- **Criteria:**
+  - Fires when: Collection account has original_creditor info AND balance > $0
+  - AND: A matching OC account exists in same bureau with balance > $0
+  - Uses `normalize_creditor_name()` for fuzzy matching OC names
+  - Under Metro 2 transfer logic, OC must update balance to $0 when selling debt
+  - Flags the OC account (usually easier to get deleted/updated)
+- **Impact:** Artificially doubles consumer's debt load, destroys DTI ratios
+
 ### [ ] Unauthorized Hard Inquiries (50% success)
 - **Category:** Inquiry Violations
 - **Description:** Pulls without permissible purpose
@@ -251,6 +268,7 @@
 | Dispute Flag Mismatch (cross-bureau) | 35% | ✅ Full |
 | Delinquency Jump (impossible progression) | 55% | ✅ Full |
 | Stagnant Delinquency (rolling lates) | 55% | ✅ Full |
+| Double Jeopardy (OC + Collector both with balance) | 60% | ✅ Full |
 
 ---
 
