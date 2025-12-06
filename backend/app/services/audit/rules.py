@@ -692,6 +692,188 @@ class SingleBureauRules:
 
         return violations
 
+    @staticmethod
+    def check_illogical_delinquency_progression(
+        account: Account,
+        bureau: Bureau,
+        bureau_data: Optional[BureauAccountData] = None
+    ) -> List[Violation]:
+        """
+        Check for illogical delinquency progression in payment history.
+
+        Metro 2 delinquency is a PROGRESSION, not a static state:
+        - If you miss a payment, you are 30 days late
+        - If you miss the next, you MUST become 60 days late
+        - You cannot skip levels (0→60 is impossible without first being 30)
+
+        Two violation types:
+        1. DELINQUENCY_JUMP (HIGH): History jumps levels (0→60, 1→90) - physically impossible
+        2. STAGNANT_DELINQUENCY (MEDIUM): Same late level for consecutive months (30→30)
+           - "Rolling lates" are rare; if balance didn't decrease, it's logically impossible
+
+        Legal Basis: FCRA §623(a)(1) - accurate reporting requirement
+        Metro 2: Field 18 (Payment History Profile) must reflect logical progression
+        """
+        violations = []
+
+        # Get payment history from bureau_data
+        payment_history = []
+        if bureau_data and hasattr(bureau_data, 'payment_history'):
+            payment_history = bureau_data.payment_history or []
+
+        if not payment_history or len(payment_history) < 2:
+            return violations  # Need at least 2 months to check progression
+
+        # Define delinquency severity levels
+        # 0 = Current, 1 = 30 days, 2 = 60 days, etc.
+        severity_map = {
+            '0': 0, 'C': 0, 'OK': 0, 'CURRENT': 0, '': 0, '-': 0,
+            '1': 1, '30': 1,
+            '2': 2, '60': 2,
+            '3': 3, '90': 3,
+            '4': 4, '120': 4,
+            '5': 5, '150': 5,
+            '6': 6, '180': 6,
+        }
+
+        # Human-readable level names
+        level_names = {
+            0: 'Current',
+            1: '30 Days Late',
+            2: '60 Days Late',
+            3: '90 Days Late',
+            4: '120 Days Late',
+            5: '150 Days Late',
+            6: '180+ Days Late'
+        }
+
+        # Track found issues for combining into single violations
+        jumps_found = []
+        stagnant_runs = []
+
+        # Process history (newest to oldest typically, but we compare consecutive pairs)
+        # Payment history format: [{"month": "Jan", "year": 2024, "status": "OK"}, ...]
+        for i in range(len(payment_history) - 1):
+            current_entry = payment_history[i]
+            prior_entry = payment_history[i + 1]  # Older month
+
+            if not isinstance(current_entry, dict) or not isinstance(prior_entry, dict):
+                continue
+
+            current_status = str(current_entry.get('status', '')).upper().strip()
+            prior_status = str(prior_entry.get('status', '')).upper().strip()
+
+            # Skip non-standard statuses (CO, FC, RP handled differently)
+            if current_status not in severity_map or prior_status not in severity_map:
+                continue
+
+            curr_level = severity_map[current_status]
+            prev_level = severity_map[prior_status]
+
+            # Get month/year for reporting
+            curr_month = current_entry.get('month', '')
+            curr_year = current_entry.get('year', '')
+            prev_month = prior_entry.get('month', '')
+            prev_year = prior_entry.get('year', '')
+
+            # ================================================================
+            # SCENARIO 1: "Skipped Rung" - Jumping levels (HIGH SEVERITY)
+            # You can only increase by 1 level per month maximum
+            # Example: 0→60 (skipped 30), 30→90 (skipped 60)
+            # ================================================================
+            if curr_level > (prev_level + 1):
+                jumps_found.append({
+                    'from_level': prev_level,
+                    'to_level': curr_level,
+                    'from_name': level_names.get(prev_level, f'Level {prev_level}'),
+                    'to_name': level_names.get(curr_level, f'Level {curr_level}'),
+                    'from_period': f"{prev_month} {prev_year}",
+                    'to_period': f"{curr_month} {curr_year}"
+                })
+
+            # ================================================================
+            # SCENARIO 2: "Stagnant Late" - Same delinquency level (MEDIUM SEVERITY)
+            # Reporting same late status for consecutive months is suspicious
+            # Example: 30→30, 60→60 (staying at same late level)
+            # ================================================================
+            elif curr_level > 0 and curr_level == prev_level:
+                stagnant_runs.append({
+                    'level': curr_level,
+                    'level_name': level_names.get(curr_level, f'Level {curr_level}'),
+                    'from_period': f"{prev_month} {prev_year}",
+                    'to_period': f"{curr_month} {curr_year}"
+                })
+
+        # Create DELINQUENCY_JUMP violation if any jumps found
+        if jumps_found:
+            jump_details = "; ".join([
+                f"{j['from_name']} ({j['from_period']}) → {j['to_name']} ({j['to_period']})"
+                for j in jumps_found[:3]  # Limit to first 3 for readability
+            ])
+            if len(jumps_found) > 3:
+                jump_details += f" (and {len(jumps_found) - 3} more)"
+
+            violations.append(Violation(
+                violation_type=ViolationType.DELINQUENCY_JUMP,
+                severity=Severity.HIGH,
+                account_id=account.account_id,
+                creditor_name=account.creditor_name,
+                account_number_masked=account.account_number_masked,
+                furnisher_type=account.furnisher_type,
+                bureau=bureau,
+                description=(
+                    f"Payment History shows impossible delinquency progression: {jump_details}. "
+                    f"A consumer cannot jump from Current to 60 days late without first being 30 days late. "
+                    f"Metro 2 requires reporting the full delinquency ladder. This gap indicates "
+                    f"corrupted or incomplete data."
+                ),
+                expected_value="Sequential delinquency progression (Current→30→60→90)",
+                actual_value=f"Jumped levels: {jump_details}",
+                fcra_section="623(a)(1)",
+                metro2_field="18",  # Payment History Profile
+                evidence={
+                    "jumps": jumps_found,
+                    "jump_count": len(jumps_found)
+                }
+            ))
+
+        # Create STAGNANT_DELINQUENCY violation if stagnant runs found
+        # Only flag if there are multiple consecutive same-level entries (indicates pattern)
+        if len(stagnant_runs) >= 2:
+            stagnant_details = "; ".join([
+                f"{s['level_name']} for {s['from_period']} → {s['to_period']}"
+                for s in stagnant_runs[:3]
+            ])
+            if len(stagnant_runs) > 3:
+                stagnant_details += f" (and {len(stagnant_runs) - 3} more)"
+
+            violations.append(Violation(
+                violation_type=ViolationType.STAGNANT_DELINQUENCY,
+                severity=Severity.MEDIUM,
+                account_id=account.account_id,
+                creditor_name=account.creditor_name,
+                account_number_masked=account.account_number_masked,
+                furnisher_type=account.furnisher_type,
+                bureau=bureau,
+                description=(
+                    f"Payment History shows duplicate delinquency levels for consecutive months: {stagnant_details}. "
+                    f"To maintain the same 'days late' status, the consumer must make a payment equal to "
+                    f"exactly one month's installment. If no payment was made (balance unchanged), "
+                    f"the status should have progressed to the next delinquency level. "
+                    f"This pattern suggests a data mapping error."
+                ),
+                expected_value="Delinquency should progress (30→60→90) if no payment made",
+                actual_value=f"Stagnant at same level: {stagnant_details}",
+                fcra_section="623(a)(1)",
+                metro2_field="18",
+                evidence={
+                    "stagnant_runs": stagnant_runs,
+                    "run_count": len(stagnant_runs)
+                }
+            ))
+
+        return violations
+
 
 # =============================================================================
 # FURNISHER RULES

@@ -1,9 +1,9 @@
 # Credit Engine System Checklist
 
 ## Current Status Overview
-- **Full Coverage:** 21 violation types
+- **Full Coverage:** 23 violation types
 - **Partial Coverage:** 11 violation types
-- **Not Detected:** 10 violation types
+- **Not Detected:** 9 violation types
 
 ---
 
@@ -41,12 +41,20 @@
 - **Implementation:** Check collection accounts for missing OC name field
 - **File:** `app/services/audit/rules.py`
 
-### [ ] Duplicate Delinquencies (55% success)
+### [x] Duplicate Delinquencies / Illogical Progression (55% success) - ✅ IMPLEMENTED
 - **Category:** Payment History Errors
-- **Description:** Same late payment reported across multiple months
-- **Legal Basis:** FCRA §623(a)(1)
-- **Implementation:** Analyze payment history for duplicate late markers
+- **Description:** Impossible delinquency progression (skipped levels) or stagnant lates
+- **Legal Basis:** FCRA §623(a)(1) - accurate reporting requirement
+- **Status:** ✅ Fully implemented with two violation types
+- **Rules:**
+  1. `check_illogical_delinquency_progression()` - Detects two patterns:
+     - DELINQUENCY_JUMP (HIGH): History jumps levels (0→60, 30→90) - impossible
+     - STAGNANT_DELINQUENCY (MEDIUM): Same late level for consecutive months (30→30)
+- **ViolationTypes:** `DELINQUENCY_JUMP`, `STAGNANT_DELINQUENCY`
 - **File:** `app/services/audit/rules.py`
+- **Criteria:**
+  - "Skipped Rung": Delinquency cannot jump levels (must go 0→30→60→90 sequentially)
+  - "Stagnant Late": Same late status for 2+ consecutive months is suspicious (requires payment to maintain)
 
 ### [x] Authorized User Misreporting (50% success) - ✅ IMPLEMENTED
 - **Category:** Identity & Account Ownership
@@ -234,6 +242,8 @@
 | ECOA Code Mismatch (cross-bureau) | 45% | ✅ Full |
 | Authorized User Derogatory | 50% | ✅ Full |
 | Dispute Flag Mismatch (cross-bureau) | 35% | ✅ Full |
+| Delinquency Jump (impossible progression) | 55% | ✅ Full |
+| Stagnant Delinquency (rolling lates) | 55% | ✅ Full |
 
 ---
 

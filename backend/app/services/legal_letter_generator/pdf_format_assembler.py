@@ -45,6 +45,7 @@ class ViolationCategory(str, Enum):
     PAYMENT_STATUS_ERROR = "payment_status_error"
     PHANTOM_LATE_PAYMENT = "phantom_late_payment"  # Late markers during $0 due or forbearance
     PAID_COLLECTION_CONTRADICTION = "paid_collection_contradiction"  # Paid status vs balance contradictions
+    ILLOGICAL_DELINQUENCY = "illogical_delinquency"  # Impossible delinquency progression (0->60) or stagnant lates
     MISSING_PAYMENT_HISTORY = "missing_payment_history"
     STUDENT_LOAN_VERIFICATION = "student_loan_verification"
     COLLECTION_VERIFICATION = "collection_verification"
@@ -265,6 +266,23 @@ CATEGORY_CONFIGS: Dict[ViolationCategory, CategoryConfig] = {
         ),
         fcra_section="611"
     ),
+    ViolationCategory.ILLOGICAL_DELINQUENCY: CategoryConfig(
+        title="Accounts with Illogical Delinquency Progression",
+        metro2_fields="Metro 2 Field 18 (Payment History Profile)",
+        explanation=(
+            "Under Metro 2 reporting standards, delinquency must progress sequentially. A consumer "
+            "cannot be 60 days late without first being 30 days late, and the status cannot jump "
+            "from Current to 60 Days directly. The following accounts contain payment history "
+            "patterns that are mathematically impossible or indicate data corruption:"
+        ),
+        resolution=(
+            "These payment history errors must be corrected to reflect accurate, sequential "
+            "delinquency progression. Under FCRA Section 623(a)(1), furnishers must report "
+            "accurate information. Payment history data that defies basic logic cannot be considered "
+            "accurate and must be verified with source documentation or deleted."
+        ),
+        fcra_section="623(a)(1)"
+    ),
 }
 
 
@@ -349,6 +367,10 @@ def _classify_violation(violation: Dict[str, Any]) -> ViolationCategory:
     # Check for paid collection contradictions (status/balance mismatch)
     if v_type in ["paid_status_with_balance", "zero_balance_not_paid"]:
         return ViolationCategory.PAID_COLLECTION_CONTRADICTION
+
+    # Check for illogical delinquency progression (skipped rungs, stagnant lates)
+    if v_type in ["delinquency_jump", "stagnant_delinquency"]:
+        return ViolationCategory.ILLOGICAL_DELINQUENCY
 
     # Check for missing payment history
     if v_type in ["missing_payment_history", "missing_payment_field"]:

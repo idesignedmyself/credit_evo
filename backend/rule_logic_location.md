@@ -58,6 +58,8 @@ app/
 | Phantom Late Payment | `phantom_late_payment` | Field 15/25 (late markers during $0 due or forbearance) |
 | Paid Status with Balance | `paid_status_with_balance` | Field 17A/10 (status=Paid but balance>$0) |
 | Zero Balance Not Paid | `zero_balance_not_paid` | Field 17A/10 (collection with $0 but not marked Paid) |
+| Delinquency Jump | `delinquency_jump` | Field 18 (payment history jumps levels, e.g., 0→60) |
+| Stagnant Delinquency | `stagnant_delinquency` | Field 18 (same late status for consecutive months) |
 
 **To add a new rule:** Create a new function in this file following the existing pattern.
 

@@ -65,6 +65,8 @@ class ViolationType(str, Enum):
     PHANTOM_LATE_PAYMENT = "phantom_late_payment"  # Late markers during $0 due or forbearance periods
     PAID_STATUS_WITH_BALANCE = "paid_status_with_balance"  # Status says "Paid" but balance > $0
     ZERO_BALANCE_NOT_PAID = "zero_balance_not_paid"  # Collection has $0 balance but not marked "Paid"
+    DELINQUENCY_JUMP = "delinquency_jump"  # Payment history jumps levels (0->60, skipping 30) - impossible
+    STAGNANT_DELINQUENCY = "stagnant_delinquency"  # Same late level (30->30) for consecutive months - suspicious
 
     # Cross-bureau violations
     DOFD_MISMATCH = "dofd_mismatch"
