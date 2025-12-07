@@ -1022,9 +1022,140 @@ class SingleBureauRules:
         return "written"
 
     @staticmethod
+    def is_sol_tolled_by_bankruptcy(account: Account) -> bool:
+        """
+        Checks if SOL is paused (tolled) due to active Bankruptcy.
+
+        During bankruptcy proceedings, the SOL clock is typically paused.
+        This prevents false "time-barred" findings on accounts in BK.
+
+        Metro 2 Bankruptcy Compliance Condition Codes:
+        - D/A = Petition Filed
+        - E/H = Discharged
+        - L/I = Dismissed
+        - Q/Z = BK Flag
+        """
+        # Check compliance condition codes across bureaus
+        bk_codes = {'A', 'D', 'E', 'H', 'I', 'L', 'Q', 'Z'}
+
+        for bureau_data in account.bureaus.values():
+            # Check compliance_condition_code if available
+            ccc = getattr(bureau_data, 'compliance_condition_code', None)
+            if ccc and str(ccc).upper() in bk_codes:
+                return True
+
+            # Check remarks for bankruptcy language
+            remarks = (getattr(bureau_data, 'remarks', '') or '').lower()
+            if any(term in remarks for term in ['bankruptcy', 'chapter 7', 'chapter 13', 'chapter 11', 'bk filed']):
+                return True
+
+        return False
+
+    @staticmethod
+    def check_governing_law_opportunity(account: Account) -> Dict[str, Any]:
+        """
+        Checks if the debt might be governed by a state with a different SOL.
+
+        Many national banks are headquartered in states with different SOL:
+        - Delaware (DE): 3 years for most debt
+        - South Dakota (SD): 6 years
+        - Virginia (VA): 5 years written, 3 years oral
+        - Utah (UT): 6 years
+
+        If cardholder agreement has Choice of Law clause, the bank's
+        home state SOL may apply instead of the consumer's state.
+        """
+        # Bank → Headquarters State mapping
+        bank_matrix = {
+            "chase": "DE",
+            "jp morgan": "DE",
+            "jpmorgan": "DE",
+            "discover": "DE",
+            "barclays": "DE",
+            "american express": "UT",
+            "amex": "UT",
+            "capital one": "VA",
+            "citi": "SD",
+            "citibank": "SD",
+            "wells fargo": "SD",
+            "synchrony": "UT",
+            "goldman sachs": "UT",  # Apple Card
+        }
+
+        # Check creditor name and original creditor
+        creditor = (account.creditor_name or '').lower()
+        oc = (account.original_creditor or '').lower()
+        combined = f"{creditor} {oc}"
+
+        for bank, state in bank_matrix.items():
+            if bank in combined:
+                return {
+                    "detected": True,
+                    "bank": bank.title(),
+                    "governing_state": state,
+                    "strategy": f"Check Cardholder Agreement for {state} Choice of Law clause. "
+                               f"If applicable, {state} SOL may govern instead of your state."
+                }
+
+        return {"detected": False}
+
+    @staticmethod
+    def check_zombie_revival_risk(
+        account: Account,
+        anchor_date: date,
+        sol_years: int
+    ) -> Optional[Dict[str, str]]:
+        """
+        Detects if a recent payment might have accidentally 'revived' a Time-Barred Debt.
+
+        In many states, making ANY payment on a time-barred debt can restart
+        the SOL clock (called "zombie debt revival"). This is a trap many
+        consumers fall into.
+
+        Returns a warning if payment was made AFTER the SOL would have expired.
+        """
+        # Check for date_last_payment across bureaus
+        date_last_payment = None
+
+        for bureau_data in account.bureaus.values():
+            dlp = getattr(bureau_data, 'date_last_payment', None)
+            if dlp:
+                # Take the most recent payment date
+                if date_last_payment is None or dlp > date_last_payment:
+                    date_last_payment = dlp
+
+        if not date_last_payment or not anchor_date:
+            return None
+
+        # Calculate: How old was the debt when the last payment was made?
+        years_at_payment = (date_last_payment - anchor_date).days / 365.25
+
+        # If payment was made AFTER the SOL had already expired...
+        if years_at_payment > sol_years:
+            return {
+                "risk": "HIGH",
+                "warning": (
+                    f"ZOMBIE DEBT RISK: A payment was recorded on {date_last_payment.strftime('%B %d, %Y')}, "
+                    f"which was {years_at_payment:.1f} years after the anchor date. "
+                    f"The {sol_years}-year SOL had already expired. Depending on your state laws, "
+                    f"this payment may have RESTARTED the limitation period."
+                ),
+                "payment_date": str(date_last_payment),
+                "years_at_payment": round(years_at_payment, 2)
+            }
+
+        return None
+
+    @staticmethod
     def check_time_barred_debt(account: Account, user_state: str = "NY") -> List[Violation]:
         """
-        Detects Time-Barred Debt.
+        MASTER FUNCTION: Detects Time-Barred Debt Risks.
+
+        Integrates:
+        - Bankruptcy tolling checks (SOL paused during BK)
+        - Zombie debt revival risk detection
+        - Choice of Law / Governing Law opportunities
+        - Re-aging trap detection for debt buyers
 
         FUTURE PROOFING: 'user_state' defaults to "NY" (Source of Truth for now),
         but can be passed dynamically later from the User Profile page.
@@ -1034,12 +1165,6 @@ class SingleBureauRules:
 
         IMPORTANT: Under FDCPA, threatening legal action on time-barred debt is
         a per se violation. This makes time-barred debt a CRITICAL finding.
-
-        Detection Logic:
-        1. Only applies to derogatory accounts (collections, chargeoffs)
-        2. Calculate time since DOFD (or date_last_activity as fallback)
-        3. Compare against state-specific SOL for the debt category
-        4. Flag if SOL has expired
 
         Legal Basis:
         - FDCPA §1692e(2)(A) - False representation of legal status of debt
@@ -1058,10 +1183,21 @@ class SingleBureauRules:
         if account.account_status not in [AccountStatus.COLLECTION, AccountStatus.CHARGEOFF, AccountStatus.DEROGATORY]:
             return violations
 
-        # Get the anchor date for SOL calculation
-        # Priority: DOFD > inferred DOFD from payment history > date_last_activity > date_last_payment
+        # =====================================================================
+        # BANKRUPTCY CHECK (The Stop Sign)
+        # If active bankruptcy, SOL is tolled (paused). Do not flag as Time-Barred.
+        # =====================================================================
+        if SingleBureauRules.is_sol_tolled_by_bankruptcy(account):
+            return violations
+
+        # =====================================================================
+        # ANCHOR DATE SELECTION
+        # For Debt Buyers: MUST use DOFD (they can't re-age with their Date Opened)
+        # For OCs: Can use DOFD or Date Opened as fallback
+        # =====================================================================
         anchor_date = None
         anchor_source = ""
+        is_debt_buyer = account.furnisher_type == FurnisherType.COLLECTOR
 
         if account.date_of_first_delinquency:
             anchor_date = account.date_of_first_delinquency
@@ -1072,6 +1208,10 @@ class SingleBureauRules:
             if inferred_dofd:
                 anchor_date = inferred_dofd
                 anchor_source = "Date of First Delinquency (inferred from payment history)"
+            elif not is_debt_buyer and account.date_opened:
+                # OC can use date_opened as fallback, but debt buyers CANNOT
+                anchor_date = account.date_opened
+                anchor_source = "Date Opened (OC fallback)"
             elif account.date_last_activity:
                 anchor_date = account.date_last_activity
                 anchor_source = "Date Last Activity"
@@ -1082,7 +1222,9 @@ class SingleBureauRules:
                 # No date to calculate from - can't determine SOL
                 return violations
 
-        # Get state SOL data
+        # =====================================================================
+        # STATE & CATEGORY LOOKUP
+        # =====================================================================
         state_upper = user_state.upper()
         if state_upper not in SOL_DATA["states"]:
             logger.warning(f"Unknown state '{user_state}' for SOL lookup, defaulting to NY")
@@ -1099,18 +1241,22 @@ class SingleBureauRules:
         sol_years = sol_info["years"]
         sol_citation = sol_info["citation"]
 
-        # Calculate if SOL has expired
+        # =====================================================================
+        # CALCULATE AGE & CHECK IF TIME-BARRED
+        # =====================================================================
         years_since_anchor = (today - anchor_date).days / 365.25
 
         if years_since_anchor >= sol_years:
             # SOL has expired - this is time-barred debt
             months_past_sol = int((years_since_anchor - sol_years) * 12)
 
+            # -----------------------------------------------------------------
             # Check for legal threat indicators in remarks
+            # -----------------------------------------------------------------
             has_legal_threats = False
             threat_text = ""
             for bureau_data in account.bureaus.values():
-                remarks = (bureau_data.remarks or "").lower()
+                remarks = (getattr(bureau_data, 'remarks', '') or "").lower()
                 legal_threat_indicators = [
                     'legal action', 'lawsuit', 'court', 'judgment', 'attorney',
                     'litigation', 'sue', 'summons', 'complaint', 'garnish'
@@ -1120,11 +1266,25 @@ class SingleBureauRules:
                     threat_text = bureau_data.remarks[:100] if bureau_data.remarks else ""
                     break
 
+            # -----------------------------------------------------------------
+            # Check for Governing Law Opportunity (Bank Loophole)
+            # -----------------------------------------------------------------
+            gov_law = SingleBureauRules.check_governing_law_opportunity(account)
+
+            # -----------------------------------------------------------------
+            # Check for Zombie Revival Risk
+            # -----------------------------------------------------------------
+            zombie_risk = SingleBureauRules.check_zombie_revival_risk(account, anchor_date, sol_years)
+
+            # -----------------------------------------------------------------
             # Severity: CRITICAL if legal threats detected (FDCPA violation)
             # HIGH if just time-barred without threats
+            # -----------------------------------------------------------------
             severity = Severity.CRITICAL if has_legal_threats else Severity.HIGH
 
+            # -----------------------------------------------------------------
             # Build description
+            # -----------------------------------------------------------------
             description = (
                 f"This {debt_category} debt has exceeded the {state_name} Statute of Limitations. "
                 f"The {anchor_source} of {anchor_date.strftime('%B %d, %Y')} was {years_since_anchor:.1f} years ago. "
@@ -1134,7 +1294,7 @@ class SingleBureauRules:
 
             if has_legal_threats:
                 description += (
-                    f"WARNING: Account remarks indicate potential legal threats ('{threat_text}'). "
+                    f"\n\nWARNING: Account remarks indicate potential legal threats ('{threat_text}'). "
                     f"Under FDCPA §1692e(5), threatening to sue on time-barred debt is a per se violation."
                 )
             else:
@@ -1142,6 +1302,17 @@ class SingleBureauRules:
                     f"While the debt may still be reported, the collector has lost the legal right to sue. "
                     f"Any threat of legal action on this debt would violate FDCPA §1692e(5)."
                 )
+
+            # Append Governing Law strategy if detected
+            if gov_law.get("detected"):
+                description += (
+                    f"\n\nSTRATEGY: Original Creditor is {gov_law['bank']}. "
+                    f"{gov_law['strategy']}"
+                )
+
+            # Append Zombie Risk warning if detected
+            if zombie_risk:
+                description += f"\n\n{zombie_risk['warning']}"
 
             violations.append(Violation(
                 violation_type=ViolationType.TIME_BARRED_DEBT_RISK,
@@ -1167,7 +1338,10 @@ class SingleBureauRules:
                     "state_name": state_name,
                     "months_past_sol": months_past_sol,
                     "has_legal_threats": has_legal_threats,
-                    "threat_text": threat_text if has_legal_threats else None
+                    "threat_text": threat_text if has_legal_threats else None,
+                    "is_debt_buyer": is_debt_buyer,
+                    "governing_law": gov_law if gov_law.get("detected") else None,
+                    "zombie_risk": zombie_risk
                 }
             ))
 

@@ -67,6 +67,9 @@ app/
 - `check_time_barred_debt()` - Main detection logic comparing anchor date vs state SOL
 - `get_sol_category()` - Infers debt category (open/written/promissory) from account fields
 - `_infer_dofd_from_payment_history()` - DOFD inference using "Reverse Contiguous Chain" algorithm
+- `is_sol_tolled_by_bankruptcy()` - Checks if SOL is paused due to active bankruptcy
+- `check_governing_law_opportunity()` - Maps bank creditors to HQ state for Choice of Law strategy
+- `check_zombie_revival_risk()` - Detects payment made after SOL expired (zombie debt trap)
 
 **DOFD Inference Algorithm ("Reverse Contiguous Chain"):**
 Under FCRA/Metro 2®, DOFD is the "commencement of the delinquency which IMMEDIATELY PRECEDED the collection/charge-off." This means cured delinquencies are ignored.
@@ -80,6 +83,21 @@ Algorithm:
 Example: Late 2018 → Cured 2019 → Default 2021
 - Old (wrong): Returns 2018 (7 years = "time-barred")
 - New (correct): Returns 2021 (4 years = NOT time-barred)
+
+**Bankruptcy Tolling:**
+- Checks Metro 2 Compliance Condition Codes: A, D, E, H, I, L, Q, Z
+- Scans remarks for keywords: bankruptcy, chapter 7, chapter 13, chapter 11, bk filed
+- If detected, SOL is tolled (paused) - violation not flagged until BK discharged
+
+**Governing Law / Choice of Law:**
+- Bank headquarters state may apply under card agreement choice-of-law clause
+- Bank mapping: Chase/JPM→DE, Discover→DE, Barclays→DE, Capital One→VA, Citi→SD, etc.
+- Strategy: Consumer state SOL vs bank state SOL - shorter one may apply
+
+**Zombie Revival Risk:**
+- Detects when date_last_payment occurred AFTER SOL would have expired
+- Making any payment on time-barred debt can restart the SOL clock in many states
+- HIGH risk warning added to violation description to alert consumer
 
 **To add a new rule:** Create a new function in this file following the existing pattern.
 
@@ -237,6 +255,9 @@ File: `app/routers/letters.py`
 | Update field name display | `app/routers/letters.py` |
 | Add new ViolationType | `app/models/ssot.py` or `app/models/__init__.py` |
 | Modify state SOL data | `app/services/audit/sol_data.py` |
+| Bankruptcy tolling logic | `app/services/audit/rules.py` (`is_sol_tolled_by_bankruptcy`) |
+| Bank choice-of-law mapping | `app/services/audit/rules.py` (`check_governing_law_opportunity`) |
+| Zombie debt detection | `app/services/audit/rules.py` (`check_zombie_revival_risk`) |
 
 ---
 

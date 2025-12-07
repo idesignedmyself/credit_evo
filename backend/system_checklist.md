@@ -138,15 +138,18 @@
 - **Category:** Collection-Specific Violations
 - **Description:** Collections past statute of limitations still reporting active
 - **Legal Basis:** FDCPA §1692e(5) - Threat to take action that cannot legally be taken / State SOL Laws
-- **Status:** ✅ Fully implemented with 50-state SOL database
+- **Status:** ✅ Fully implemented with 50-state SOL database + advanced features
 - **Rules:**
-  - `check_time_barred_debt()` in `app/services/audit/rules.py`
+  - `check_time_barred_debt()` in `app/services/audit/rules.py` - Main detection
   - `get_sol_category()` - Infers debt category (open/written/promissory) from account fields
   - `_infer_dofd_from_payment_history()` - DOFD inference using "Reverse Contiguous Chain" algorithm
+  - `is_sol_tolled_by_bankruptcy()` - Bankruptcy tolling detection (SOL paused during BK)
+  - `check_governing_law_opportunity()` - Bank headquarters state mapping for Choice of Law
+  - `check_zombie_revival_risk()` - Detects payments after SOL expired (zombie debt trap)
 - **ViolationType:** `TIME_BARRED_DEBT_RISK`
-- **Severity:** CRITICAL (if legal threats detected) / HIGH (otherwise)
+- **Severity:** CRITICAL (if legal threats detected or zombie risk) / HIGH (otherwise)
 - **Files:**
-  - `app/services/audit/rules.py` - Detection logic + DOFD inference
+  - `app/services/audit/rules.py` - Detection logic + DOFD inference + helper methods
   - `app/services/audit/sol_data.py` - 50-state SOL database with citations
   - `app/services/audit/engine.py` - Wired into audit pipeline
   - `app/services/legal_letter_generator/pdf_format_assembler.py` - Letter category
@@ -162,6 +165,22 @@
   - STOPS at the first "OK/Current" status (the cure point)
   - Returns oldest date in the UNBROKEN delinquency chain
   - This prevents false "time-barred" findings when old delinquencies were cured
+- **Advanced Features:**
+  - **Bankruptcy Tolling:** Detects active BK via Metro 2 Compliance Condition Codes (D/A/E/H/I/L/Q/Z) or remarks containing bankruptcy keywords. SOL is tolled (paused) during BK proceedings.
+  - **Governing Law / Choice of Law:** Maps major bank creditors to their headquarters state (Chase→DE, Citi→SD, Capital One→VA, etc.). Contract choice-of-law clauses may apply shorter SOL.
+  - **Zombie Revival Risk:** Detects when date_last_payment occurred AFTER the SOL would have expired. Making a payment on time-barred debt can restart the SOL clock in many states - a common debt buyer trap.
+- **Bank Headquarters Mapping:**
+  | Bank | State | SOL Impact |
+  |------|-------|------------|
+  | Chase / JP Morgan | DE | 3 years |
+  | Discover | DE | 3 years |
+  | Barclays | DE | 3 years |
+  | Capital One | VA | 5 years |
+  | Citi / Citibank | SD | 6 years |
+  | Wells Fargo | SD | 6 years |
+  | American Express | UT | 6 years |
+  | Synchrony | UT | 6 years |
+  | Goldman Sachs (Apple Card) | UT | 6 years |
 
 ### [x] Missing Compliance Condition Codes / Dispute Flag Mismatch (35% success) - ✅ IMPLEMENTED
 - **Category:** Metro 2 Format Violations / Cross-Bureau Discrepancy
