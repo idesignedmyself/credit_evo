@@ -62,6 +62,9 @@ app/
 | Stagnant Delinquency | `stagnant_delinquency` | Field 18 (same late status for consecutive months) |
 | Missing Original Creditor | `missing_original_creditor` | K1 Segment (Chain of Title - collection without OC) |
 | Time-Barred Debt Risk | `time_barred_debt_risk` | State SOL / FDCPA §1692e(5) |
+| Inquiry Misclassification | `inquiry_misclassification` | FCRA §604(a)(3) (soft-pull as hard) |
+| Collection Fishing Inquiry | `collection_fishing_inquiry` | FCRA §604(a)(3)(A) (collector without tradeline) |
+| Duplicate Inquiry | `duplicate_inquiry` | FCRA §604 (same creditor <14 days) |
 
 **Time-Barred Debt Detection:**
 - `check_time_barred_debt()` - Main detection logic comparing anchor date vs state SOL
@@ -99,6 +102,43 @@ Example: Late 2018 → Cured 2019 → Default 2021
 - Making any payment on time-barred debt can restart the SOL clock in many states
 - HIGH risk warning added to violation description to alert consumer
 
+**Inquiry Violation Detection (FCRA §604):**
+- `InquiryRules` class - Static methods for inquiry-specific violations
+- `SOFT_PULL_INDUSTRIES` - Set of keywords for soft-pull-only industries (insurance, staffing, screening, rental, utility, telecom)
+- `COLLECTOR_KEYWORDS` - Set of keywords for debt collection agencies (recovery, collection, receivables, portfolio, midland, etc.)
+- `_normalize_creditor_name()` - Maps creditor aliases to root entity (COAF → CAPITAL ONE, AMERICREDIT → ALLY FINANCIAL)
+- `check_inquiry_misclassification()` - Detects hard pulls from soft-pull industries
+- `check_collection_fishing_inquiry()` - Detects collectors who pulled credit without owning a tradeline
+- `check_duplicate_inquiries()` - Two-phase detection: same-day "Double Tap" + within-window duplicates
+- `audit_inquiries()` - Main entry point that runs all inquiry checks
+
+**Creditor Normalizer Mappings:**
+| Aliases | Normalized To |
+|---------|---------------|
+| COAF, CAP ONE, CAPITAL ONE, CAPITAL 1, CAPONE | CAPITAL ONE |
+| ALLY, AMERICREDIT, AMCR | ALLY FINANCIAL |
+| JPM, CHASE, JP MORGAN, JPMCB | JPMORGAN CHASE |
+| SYNCB, SYNCHRONY, AMAZON/SYNC | SYNCHRONY BANK |
+| DEPT OF ED, NELNET, NAVIENT, MOHELA, FEDLOAN, GREAT LAKES | DEPT OF EDUCATION |
+| DISCOVER, DFS, DISCOVERBANK | DISCOVER |
+| BANK OF AMERICA, BOA, BOFA, B OF A | BANK OF AMERICA |
+| WELLS FARGO, WELLSFARGO, WF | WELLS FARGO |
+| CITI, CITIBANK, CITICORP | CITIBANK |
+| AMEX, AMERICAN EXPRESS | AMERICAN EXPRESS |
+| TOYOTA, TFS, LEXUS | TOYOTA FINANCIAL |
+| HONDA, AHFC, ACURA | HONDA FINANCIAL |
+| FORD, FMC, LINCOLN | FORD CREDIT |
+| GM FINANCIAL, GMAC, GENERAL MOTORS | GM FINANCIAL |
+| SANTANDER, SCUSA | SANTANDER |
+
+**Inquiry Detection Logic:**
+| Check | Detection Method | Legal Basis |
+|-------|-----------------|-------------|
+| Misclassification | Creditor name contains SOFT_PULL_INDUSTRIES keywords | FCRA §604(a)(3) |
+| Fishing Expedition | Creditor matches COLLECTOR_KEYWORDS but has no matching tradeline | FCRA §604(a)(3)(A) |
+| Double Tap | Same bureau + same normalized creditor + same DATE | FCRA §604 |
+| Within-Window | Same bureau + same normalized creditor within 14 days | FCRA §604 / Scoring |
+
 **To add a new rule:** Create a new function in this file following the existing pattern.
 
 ---
@@ -124,6 +164,7 @@ NormalizedReport → audit_report() → runs rules.py → AuditResult
 |-------|-------------|-------------|
 | Double Jeopardy | OC and Collector BOTH report balance for same debt | FCRA §607(b) |
 | Time-Barred Debt | Collections past state SOL still reporting | FDCPA §1692e(5) |
+| Inquiry Audits | Runs InquiryRules.audit_inquiries() on all inquiries | FCRA §604 |
 
 ---
 
@@ -258,6 +299,10 @@ File: `app/routers/letters.py`
 | Bankruptcy tolling logic | `app/services/audit/rules.py` (`is_sol_tolled_by_bankruptcy`) |
 | Bank choice-of-law mapping | `app/services/audit/rules.py` (`check_governing_law_opportunity`) |
 | Zombie debt detection | `app/services/audit/rules.py` (`check_zombie_revival_risk`) |
+| Add inquiry violation | `app/services/audit/rules.py` (`InquiryRules` class) |
+| Inquiry misclassification | `app/services/audit/rules.py` (`InquiryRules.check_inquiry_misclassification`) |
+| Collection fishing inquiry | `app/services/audit/rules.py` (`InquiryRules.check_collection_fishing_inquiry`) |
+| Duplicate inquiry detection | `app/services/audit/rules.py` (`InquiryRules.check_duplicate_inquiries`) |
 
 ---
 

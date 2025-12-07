@@ -13,7 +13,7 @@ from ...models.ssot import (
     NormalizedReport, AuditResult, Violation, Bureau, CrossBureauDiscrepancy,
     Account, BureauAccountData, FurnisherType, ViolationType, Severity
 )
-from .rules import SingleBureauRules, FurnisherRules, TemporalRules
+from .rules import SingleBureauRules, FurnisherRules, TemporalRules, InquiryRules
 from .cross_bureau_rules import CrossBureauRules
 
 logger = logging.getLogger(__name__)
@@ -79,6 +79,10 @@ class AuditEngine:
         time_barred_violations = self._check_time_barred_debts(report.accounts)
         all_violations.extend(time_barred_violations)
 
+        # Run inquiry audits (FCRA §604 - Permissible Purpose)
+        inquiry_violations = InquiryRules.audit_inquiries(report.inquiries, report.accounts)
+        all_violations.extend(inquiry_violations)
+
         # Build AuditResult (SSOT #2)
         result = AuditResult(
             report_id=report.report_id,
@@ -92,9 +96,11 @@ class AuditEngine:
 
         logger.info(
             f"Audit complete: {len(report.accounts)} accounts, "
+            f"{len(report.inquiries)} inquiries, "
             f"{len(all_violations)} violations, "
             f"{len(all_discrepancies)} cross-bureau discrepancies, "
-            f"{len(clean_accounts)} clean accounts"
+            f"{len(clean_accounts)} clean accounts, "
+            f"{len(inquiry_violations)} inquiry violations"
         )
 
         return result

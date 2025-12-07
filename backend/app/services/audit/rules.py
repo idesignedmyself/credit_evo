@@ -15,9 +15,10 @@ from datetime import date, timedelta
 from typing import List
 
 from ...models.ssot import (
-    Account, NormalizedReport, Violation, BureauAccountData,
+    Account, NormalizedReport, Violation, BureauAccountData, Inquiry,
     ViolationType, Severity, FurnisherType, AccountStatus, Bureau
 )
+from typing import Dict, Any
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -1915,5 +1916,456 @@ class TemporalRules:
                         "date_closed": str(account.date_closed)
                     }
                 ))
+
+        return violations
+
+
+# =============================================================================
+# INQUIRY RULES (FCRA §604 - Permissible Purposes)
+# =============================================================================
+
+class InquiryRules:
+    """
+    Rules that analyze credit inquiries for permissible purpose violations.
+
+    Under FCRA §604, a credit report can only be pulled for specific permissible purposes:
+    - Credit transaction (applying for credit)
+    - Employment purposes (with consumer consent)
+    - Insurance underwriting
+    - Account review by existing creditor
+    - Court order / subpoena
+    - Legitimate business need
+
+    Hard vs Soft Inquiries:
+    - HARD: Counts against credit score, requires consumer-initiated action
+    - SOFT: Does not affect score, can be done without consumer initiation
+    """
+
+    # Industries that should typically do SOFT pulls (not hard)
+    SOFT_PULL_INDUSTRIES = {
+        "insurance", "assurance", "mutual", "underwriter",
+        "staffing", "screening", "background", "employ", "hiring", "recruit",
+        "rental", "leasing", "property management", "apartment",
+        "utility", "utilities", "electric", "gas", "water", "power",
+        "telecom", "wireless", "phone", "mobile", "cellular"
+    }
+
+    # Collection agency indicators (for fishing expedition detection)
+    COLLECTOR_KEYWORDS = {
+        "recovery", "collection", "receivables", "asset", "portfolio",
+        "financial", "credit management", "debt", "mdg", "lvnv", "midland",
+        "cavalry", "portfolio recovery", "convergent", "enhanced recovery"
+    }
+
+    @staticmethod
+    def _normalize_creditor_name(name: str) -> str:
+        """
+        Normalizes creditor aliases to a single root entity.
+
+        Solves the "Alias Problem" where the same lender appears with different
+        names across bureaus (e.g., 'COAF', 'CAP ONE AF', 'CAPITAL ONE AUTO FIN'
+        are all Capital One Auto Finance).
+
+        Example: 'COAF' -> 'CAPITAL ONE', 'JPMCB' -> 'JPMORGAN CHASE'
+        """
+        if not name:
+            return ""
+
+        n = name.upper().replace(".", "").replace(",", "").strip()
+
+        # 1. Capital One Variations (auto, bank, etc.)
+        if any(x in n for x in ["CAP ONE", "COAF", "CAPITAL ONE", "CAPITAL 1", "CAPONE"]):
+            return "CAPITAL ONE"
+
+        # 2. JPMorgan Chase Variations
+        if any(x in n for x in ["JPM", "CHASE", "JP MORGAN", "JPMCB"]):
+            return "JPMORGAN CHASE"
+
+        # 3. Synchrony Variations (store cards)
+        if any(x in n for x in ["SYNCB", "SYNCHRONY", "AMAZON/SYNC"]):
+            return "SYNCHRONY BANK"
+
+        # 4. Ally Financial / Americredit (same company)
+        if any(x in n for x in ["ALLY", "AMERICREDIT", "AMCR"]):
+            return "ALLY FINANCIAL"
+
+        # 5. Department of Education / Student Loan Servicers
+        if any(x in n for x in ["DEPT OF ED", "DEPT ED", "NELNET", "NAVIENT", "MOHELA", "FEDLOAN", "GREAT LAKES", "EDFINANCIAL"]):
+            return "DEPT OF EDUCATION"
+
+        # 6. Discover Variations
+        if any(x in n for x in ["DISCOVER", "DFS", "DISCOVERBANK"]):
+            return "DISCOVER"
+
+        # 7. Bank of America
+        if any(x in n for x in ["BANK OF AMERICA", "BOA", "BOFA", "B OF A"]):
+            return "BANK OF AMERICA"
+
+        # 8. Wells Fargo
+        if any(x in n for x in ["WELLS FARGO", "WELLSFARGO", "WF"]):
+            return "WELLS FARGO"
+
+        # 9. Citibank
+        if any(x in n for x in ["CITI", "CITIBANK", "CITICORP"]):
+            return "CITIBANK"
+
+        # 10. American Express
+        if any(x in n for x in ["AMEX", "AMERICAN EXPRESS", "AMERICANEXP"]):
+            return "AMERICAN EXPRESS"
+
+        # 11. Toyota Financial
+        if any(x in n for x in ["TOYOTA", "TFS", "LEXUS"]):
+            return "TOYOTA FINANCIAL"
+
+        # 12. Honda Financial
+        if any(x in n for x in ["HONDA", "AHFC", "ACURA"]):
+            return "HONDA FINANCIAL"
+
+        # 13. Ford Credit
+        if any(x in n for x in ["FORD", "FMC", "LINCOLN"]):
+            return "FORD CREDIT"
+
+        # 14. GM Financial
+        if any(x in n for x in ["GM FINANCIAL", "GMAC", "GENERAL MOTORS"]):
+            return "GM FINANCIAL"
+
+        # 15. Santander
+        if any(x in n for x in ["SANTANDER", "SCUSA"]):
+            return "SANTANDER"
+
+        # Default: clean up common suffixes
+        for suffix in [" BANK", " CREDIT", " FINANCIAL", " CORP", " INC", " LLC", " NA", " FSB", " AUTO"]:
+            n = n.replace(suffix, "")
+
+        return n.strip()
+
+    @staticmethod
+    def check_inquiry_misclassification(inquiries: List[Inquiry]) -> List[Violation]:
+        """
+        Detect hard inquiries from industries that typically should do soft pulls.
+
+        Insurance, employment screening, and utilities generally should NOT
+        do hard pulls unless specifically applying for credit.
+
+        Args:
+            inquiries: List of parsed credit inquiries
+
+        Returns:
+            List of INQUIRY_MISCLASSIFICATION violations
+        """
+        violations = []
+
+        for inq in inquiries:
+            # Only check hard inquiries
+            if inq.inquiry_type != "hard":
+                continue
+
+            creditor_lower = (inq.creditor_name or "").lower()
+            business_lower = (inq.type_of_business or "").lower()
+
+            # Check against soft-pull industries
+            matched_industry = None
+            for keyword in InquiryRules.SOFT_PULL_INDUSTRIES:
+                if keyword in creditor_lower or keyword in business_lower:
+                    matched_industry = keyword
+                    break
+
+            if matched_industry:
+                # Determine the industry type for the description
+                if matched_industry in {"insurance", "assurance", "mutual", "underwriter"}:
+                    industry_type = "Insurance"
+                    expected_purpose = "insurance underwriting (soft inquiry)"
+                elif matched_industry in {"staffing", "screening", "background", "employ", "hiring", "recruit"}:
+                    industry_type = "Employment/Background Check"
+                    expected_purpose = "employment verification (soft inquiry)"
+                elif matched_industry in {"rental", "leasing", "property management", "apartment"}:
+                    industry_type = "Rental/Leasing"
+                    expected_purpose = "rental application (soft or hard with consent)"
+                elif matched_industry in {"utility", "utilities", "electric", "gas", "water", "power"}:
+                    industry_type = "Utilities"
+                    expected_purpose = "service application (soft inquiry)"
+                elif matched_industry in {"telecom", "wireless", "phone", "mobile", "cellular"}:
+                    industry_type = "Telecommunications"
+                    expected_purpose = "service application (soft inquiry)"
+                else:
+                    industry_type = "Non-Credit"
+                    expected_purpose = "soft inquiry"
+
+                violations.append(Violation(
+                    violation_type=ViolationType.INQUIRY_MISCLASSIFICATION,
+                    severity=Severity.MEDIUM,
+                    account_id=inq.inquiry_id,
+                    creditor_name=inq.creditor_name,
+                    bureau=inq.bureau,
+                    description=(
+                        f"Hard Inquiry by {industry_type} company '{inq.creditor_name}' "
+                        f"(Date: {inq.inquiry_date}). Industry standards for {industry_type.lower()} "
+                        f"typically require Soft Inquiries unless a specific application for credit "
+                        f"was submitted. This may be a coding error or lack of permissible purpose "
+                        f"under FCRA §604(a)(3)."
+                    ),
+                    expected_value=f"Soft Inquiry ({expected_purpose})",
+                    actual_value="Hard Inquiry",
+                    fcra_section="604(a)(3)",
+                    metro2_field="Inquiry Section",
+                    evidence={
+                        "inquiry_date": str(inq.inquiry_date) if inq.inquiry_date else None,
+                        "type_of_business": inq.type_of_business,
+                        "matched_industry": matched_industry,
+                        "industry_type": industry_type,
+                        "bureau": inq.bureau.value if inq.bureau else None
+                    }
+                ))
+
+        return violations
+
+    @staticmethod
+    def check_collection_fishing_inquiry(
+        inquiries: List[Inquiry],
+        accounts: List[Account]
+    ) -> List[Violation]:
+        """
+        Detect collection agencies that pulled credit but have no tradeline.
+
+        This is known as a "fishing expedition" - collectors pulling credit
+        to look for assets without owning a debt from the consumer.
+
+        Under FCRA §604(a)(3)(A), a permissible purpose requires a legitimate
+        business transaction initiated by the consumer.
+
+        Args:
+            inquiries: List of parsed credit inquiries
+            accounts: List of parsed accounts (to check for matching tradelines)
+
+        Returns:
+            List of COLLECTION_FISHING_INQUIRY violations
+        """
+        violations = []
+
+        # Build list of active collector names from tradelines
+        active_collectors = set()
+        for account in accounts:
+            if account.furnisher_type == FurnisherType.COLLECTOR:
+                active_collectors.add((account.creditor_name or "").lower().strip())
+
+        for inq in inquiries:
+            # Only check hard inquiries
+            if inq.inquiry_type != "hard":
+                continue
+
+            creditor_lower = (inq.creditor_name or "").lower()
+
+            # Check if this looks like a collection agency
+            is_collector = any(
+                keyword in creditor_lower
+                for keyword in InquiryRules.COLLECTOR_KEYWORDS
+            )
+
+            if not is_collector:
+                continue
+
+            # Check if this collector is reporting a tradeline
+            has_tradeline = any(
+                creditor_lower in ac or ac in creditor_lower
+                for ac in active_collectors
+            )
+
+            if not has_tradeline:
+                violations.append(Violation(
+                    violation_type=ViolationType.COLLECTION_FISHING_INQUIRY,
+                    severity=Severity.HIGH,
+                    account_id=inq.inquiry_id,
+                    creditor_name=inq.creditor_name,
+                    bureau=inq.bureau,
+                    description=(
+                        f"Collection Agency '{inq.creditor_name}' performed a Hard Inquiry "
+                        f"(Date: {inq.inquiry_date}) but is NOT reporting any associated debt "
+                        f"on this credit file. Without an active account, judgment, or legitimate "
+                        f"business transaction, they may lack Permissible Purpose to access "
+                        f"your consumer report. This appears to be a 'fishing expedition' for assets."
+                    ),
+                    expected_value="No Inquiry (or Soft Inquiry)",
+                    actual_value="Hard Inquiry without tradeline",
+                    fcra_section="604(a)(3)(A)",
+                    metro2_field="Inquiry Section",
+                    evidence={
+                        "inquiry_date": str(inq.inquiry_date) if inq.inquiry_date else None,
+                        "type_of_business": inq.type_of_business,
+                        "has_matching_tradeline": False,
+                        "bureau": inq.bureau.value if inq.bureau else None
+                    }
+                ))
+
+        return violations
+
+    @staticmethod
+    def check_duplicate_inquiries(
+        inquiries: List[Inquiry],
+        window_days: int = 14
+    ) -> List[Violation]:
+        """
+        Detect duplicate inquiries from the same creditor.
+
+        Two types of duplicates:
+        1. "Double Tap" - Same creditor, same bureau, same DAY (technical glitch)
+        2. Rate-shopping window - Same creditor within 14 days (should be merged)
+
+        Uses _normalize_creditor_name to handle alias variations like:
+        - COAF, CAP ONE AF, CAPITAL ONE AUTO FIN -> CAPITAL ONE
+
+        Args:
+            inquiries: List of parsed credit inquiries
+            window_days: Days within which duplicates are flagged (default 14)
+
+        Returns:
+            List of DUPLICATE_INQUIRY violations
+        """
+        violations = []
+
+        # ========================================
+        # PHASE 1: Same-Day "Double Tap" Detection
+        # ========================================
+        # Key = (Bureau, Normalized_Name, Date) -> catches true duplicates
+        same_day_seen: Dict[tuple, Inquiry] = {}
+
+        for inq in inquiries:
+            if inq.inquiry_type != "hard":
+                continue
+            if not inq.creditor_name or not inq.inquiry_date:
+                continue
+
+            # Use robust normalizer for alias matching
+            norm_name = InquiryRules._normalize_creditor_name(inq.creditor_name)
+            bureau_val = inq.bureau.value if inq.bureau else "unknown"
+
+            # Create signature: same bureau + same normalized name + same date
+            sig = (bureau_val, norm_name, inq.inquiry_date)
+
+            if sig in same_day_seen:
+                prev_inq = same_day_seen[sig]
+                violations.append(Violation(
+                    violation_type=ViolationType.DUPLICATE_INQUIRY,
+                    severity=Severity.MEDIUM,  # Higher severity for same-day
+                    account_id=inq.inquiry_id,
+                    creditor_name=inq.creditor_name,
+                    bureau=inq.bureau,
+                    description=(
+                        f"DOUBLE TAP: '{inq.creditor_name}' pulled your {bureau_val} report "
+                        f"multiple times on {inq.inquiry_date}. Even for rate shopping, a single "
+                        f"lender should only access your file once per application per bureau. "
+                        f"Multiple same-day pulls indicate a technical error or duplicate submission "
+                        f"by the dealer/creditor."
+                    ),
+                    expected_value="Single Inquiry per Application per Bureau",
+                    actual_value=f"Multiple Inquiries on {inq.inquiry_date}",
+                    fcra_section="604(a)(3)",
+                    metro2_field="Inquiry Section",
+                    evidence={
+                        "inquiry_date": str(inq.inquiry_date),
+                        "normalized_creditor": norm_name,
+                        "duplicate_type": "same_day_double_tap",
+                        "bureau": bureau_val
+                    }
+                ))
+            else:
+                same_day_seen[sig] = inq
+
+        # ========================================
+        # PHASE 2: Within-Window Duplicate Detection
+        # ========================================
+        # Group by (Normalized_Name, Bureau) to find close-together pulls
+        creditor_bureau_inquiries: Dict[tuple, List[Inquiry]] = {}
+
+        for inq in inquiries:
+            if inq.inquiry_type != "hard":
+                continue
+            if not inq.creditor_name or not inq.inquiry_date:
+                continue
+
+            norm_name = InquiryRules._normalize_creditor_name(inq.creditor_name)
+            bureau_val = inq.bureau.value if inq.bureau else "unknown"
+            key = (norm_name, bureau_val)
+
+            if key not in creditor_bureau_inquiries:
+                creditor_bureau_inquiries[key] = []
+            creditor_bureau_inquiries[key].append(inq)
+
+        seen_pairs = set()  # Avoid double-reporting
+
+        for (norm_name, bureau_val), inq_list in creditor_bureau_inquiries.items():
+            if len(inq_list) < 2:
+                continue
+
+            # Sort by date
+            inq_list.sort(key=lambda x: x.inquiry_date)
+
+            # Check for within-window duplicates (but not same-day, already caught)
+            for i, inq1 in enumerate(inq_list):
+                for inq2 in inq_list[i+1:]:
+                    days_apart = (inq2.inquiry_date - inq1.inquiry_date).days
+
+                    # Skip same-day (already caught in Phase 1)
+                    if days_apart == 0:
+                        continue
+
+                    if days_apart <= window_days:
+                        pair_key = f"{inq1.inquiry_id}-{inq2.inquiry_id}"
+                        if pair_key in seen_pairs:
+                            continue
+                        seen_pairs.add(pair_key)
+
+                        violations.append(Violation(
+                            violation_type=ViolationType.DUPLICATE_INQUIRY,
+                            severity=Severity.LOW,
+                            account_id=inq2.inquiry_id,
+                            creditor_name=inq2.creditor_name,
+                            bureau=inq2.bureau,
+                            description=(
+                                f"Duplicate Hard Inquiry: '{inq2.creditor_name}' (normalized: {norm_name}) "
+                                f"pulled {bureau_val} on {inq2.inquiry_date}, only {days_apart} days after "
+                                f"a previous pull on {inq1.inquiry_date}. Under most credit scoring models, "
+                                f"rate-shopping inquiries within 14-45 days should be merged into one."
+                            ),
+                            expected_value="Single inquiry (or merged for scoring)",
+                            actual_value=f"2 inquiries {days_apart} days apart",
+                            fcra_section="604(a)(3)",
+                            metro2_field="Inquiry Section",
+                            evidence={
+                                "first_inquiry_date": str(inq1.inquiry_date),
+                                "second_inquiry_date": str(inq2.inquiry_date),
+                                "days_apart": days_apart,
+                                "normalized_creditor": norm_name,
+                                "duplicate_type": "within_window",
+                                "bureau": bureau_val
+                            }
+                        ))
+
+        return violations
+
+    @staticmethod
+    def audit_inquiries(
+        inquiries: List[Inquiry],
+        accounts: List[Account]
+    ) -> List[Violation]:
+        """
+        Run all inquiry audits and return combined violations.
+
+        Args:
+            inquiries: List of parsed credit inquiries
+            accounts: List of parsed accounts (for fishing expedition check)
+
+        Returns:
+            Combined list of all inquiry-related violations
+        """
+        violations = []
+
+        # Check for soft-pull industries doing hard pulls
+        violations.extend(InquiryRules.check_inquiry_misclassification(inquiries))
+
+        # Check for collection fishing expeditions
+        violations.extend(InquiryRules.check_collection_fishing_inquiry(inquiries, accounts))
+
+        # Check for duplicate inquiries
+        violations.extend(InquiryRules.check_duplicate_inquiries(inquiries))
 
         return violations

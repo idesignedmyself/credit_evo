@@ -91,6 +91,12 @@ class ViolationType(str, Enum):
     OBSOLETE_ACCOUNT = "obsolete_account"
     TIME_BARRED_DEBT_RISK = "time_barred_debt_risk"  # Collections past SOL still reporting
 
+    # Inquiry violations (FCRA §604)
+    UNAUTHORIZED_HARD_INQUIRY = "unauthorized_hard_inquiry"  # No permissible purpose
+    INQUIRY_MISCLASSIFICATION = "inquiry_misclassification"  # Soft pull coded as Hard (insurance/employment/etc.)
+    COLLECTION_FISHING_INQUIRY = "collection_fishing_inquiry"  # Collector pulled credit but has no tradeline
+    DUPLICATE_INQUIRY = "duplicate_inquiry"  # Same creditor pulled multiple times in short window
+
 
 class Severity(str, Enum):
     CRITICAL = "critical"  # Highest severity - potential legal violations

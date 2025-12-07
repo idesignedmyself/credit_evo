@@ -1,9 +1,9 @@
 # Credit Engine System Checklist
 
 ## Current Status Overview
-- **Full Coverage:** 25 violation types
+- **Full Coverage:** 28 violation types
 - **Partial Coverage:** 11 violation types
-- **Not Detected:** 7 violation types
+- **Not Detected:** 4 violation types
 
 ---
 
@@ -103,13 +103,19 @@
   - Flags the OC account (usually easier to get deleted/updated)
 - **Impact:** Artificially doubles consumer's debt load, destroys DTI ratios
 
-### [ ] Unauthorized Hard Inquiries (50% success)
+### [x] Unauthorized Hard Inquiries / Inquiry Misclassification (50% success) - ✅ IMPLEMENTED
 - **Category:** Inquiry Violations
-- **Description:** Pulls without permissible purpose
-- **Legal Basis:** FCRA §604(a)(3) / §1681b
-- **Current:** In roadmap (§604 disputes)
-- **Implementation:** Inquiry parsing and dispute generation
-- **File:** `app/services/audit/rules.py`, `app/services/parsing/html_parser.py`
+- **Description:** Soft-pull industries (insurance, employment, utilities) coded as hard inquiries
+- **Legal Basis:** FCRA §604(a)(3) - Permissible Purpose / §1681b
+- **Status:** ✅ Fully implemented via InquiryRules class
+- **Rule:** `check_inquiry_misclassification()` in `app/services/audit/rules.py`
+- **ViolationType:** `INQUIRY_MISCLASSIFICATION`
+- **Severity:** MEDIUM
+- **Criteria:**
+  - Detects hard pulls from industries that should only do soft pulls
+  - SOFT_PULL_INDUSTRIES: insurance, staffing, screening, rental, property management, utility, electric, gas, water, telecom
+  - Suggests disputing as "unauthorized hard inquiry - should be soft pull"
+- **File:** `app/services/audit/rules.py`
 
 ---
 
@@ -127,11 +133,19 @@
 - **File:** `app/services/audit/cross_bureau_rules.py`
 - **Letter Support:** Cross-bureau discrepancies section with FCRA §623(a)(1) and ECOA citations
 
-### [ ] Soft as Hard Inquiry Misclassification (45% success)
+### [x] Collection Fishing Inquiries (45% success) - ✅ IMPLEMENTED
 - **Category:** Inquiry Violations
-- **Description:** Promotional/review inquiries classified as hard pulls
-- **Legal Basis:** FCRA §604
-- **Implementation:** Classify inquiry types and flag mismatches
+- **Description:** Debt collectors pulling credit without owning a tradeline (fishing expedition)
+- **Legal Basis:** FCRA §604(a)(3)(A) - No permissible purpose without existing debt relationship
+- **Status:** ✅ Fully implemented via InquiryRules class
+- **Rule:** `check_collection_fishing_inquiry()` in `app/services/audit/rules.py`
+- **ViolationType:** `COLLECTION_FISHING_INQUIRY`
+- **Severity:** HIGH (deletion candidate - no permissible purpose)
+- **Criteria:**
+  - Detects collectors who pulled credit but have NO matching tradeline
+  - COLLECTOR_KEYWORDS: recovery, collection, receivables, portfolio, midland, encore, cavalry, lvnv, etc.
+  - Cross-references inquiry creditor names against all account creditor names
+  - If no match found → collector had no permissible purpose to pull
 - **File:** `app/services/audit/rules.py`
 
 ### [x] Time-Barred Debt (40% success) - ✅ IMPLEMENTED
@@ -196,11 +210,27 @@
   - Flags when one bureau shows dispute text but another bureau has no dispute flag
 - **Letter Support:** Cross-bureau discrepancies section with FCRA §623(a)(3) citation
 
-### [ ] Duplicate Inquiries (30% success)
+### [x] Duplicate Inquiries / Double Tap (30% success) - ✅ IMPLEMENTED
 - **Category:** Inquiry Violations
-- **Description:** Same creditor multiple pulls in short window
+- **Description:** Same creditor pulling same bureau multiple times (same-day or within 14-day window)
 - **Legal Basis:** FCRA §604 / Scoring Logic
-- **Implementation:** Group inquiries by creditor and flag duplicates within 14-45 days
+- **Status:** ✅ Fully implemented via InquiryRules class with Creditor Normalizer
+- **Rule:** `check_duplicate_inquiries()` in `app/services/audit/rules.py`
+- **ViolationType:** `DUPLICATE_INQUIRY`
+- **Severity:** MEDIUM (same-day "Double Tap") / LOW (within-window)
+- **Criteria:**
+  - **Phase 1 - Double Tap:** Same bureau + same normalized creditor + same DATE = technical glitch
+  - **Phase 2 - Within Window:** Same bureau + same normalized creditor within 14 days = should merge
+  - Uses `_normalize_creditor_name()` to handle aliases (COAF, CAP ONE AF, CAPITAL ONE AUTO FIN → CAPITAL ONE)
+  - Cross-bureau same-day pulls are NOT flagged (normal for auto/mortgage applications)
+- **Creditor Normalizer Mappings:**
+  | Alias | Normalized To |
+  |-------|---------------|
+  | COAF, CAP ONE, CAPITAL ONE, CAPITAL 1 | CAPITAL ONE |
+  | ALLY, AMERICREDIT, AMCR | ALLY FINANCIAL |
+  | JPM, CHASE, JPMCB | JPMORGAN CHASE |
+  | SYNCB, SYNCHRONY | SYNCHRONY BANK |
+  | DEPT OF ED, NELNET, NAVIENT, MOHELA | DEPT OF EDUCATION |
 - **File:** `app/services/audit/rules.py`
 
 ---
@@ -311,6 +341,9 @@
 | Stagnant Delinquency (rolling lates) | 55% | ✅ Full |
 | Double Jeopardy (OC + Collector both with balance) | 60% | ✅ Full |
 | Time-Barred Debt (SOL expired collections) | 40% | ✅ Full |
+| Inquiry Misclassification (soft-pull as hard) | 50% | ✅ Full |
+| Collection Fishing Inquiries (no tradeline) | 45% | ✅ Full |
+| Duplicate Inquiries (same creditor <14 days) | 30% | ✅ Full |
 
 ---
 
@@ -333,9 +366,9 @@
 10. [ ] Post-Settlement Negative Reporting
 
 ### Phase 4: Inquiry System
-11. [ ] Unauthorized Hard Inquiries
-12. [ ] Duplicate Inquiries
-13. [ ] Soft as Hard Misclassification
+11. [x] Unauthorized Hard Inquiries / Inquiry Misclassification ✅ DONE
+12. [x] Duplicate Inquiries ✅ DONE
+13. [x] Collection Fishing Inquiries ✅ DONE
 
 ### Phase 5: Complex Implementations
 14. [x] Time-Barred Debt (requires SOL database) ✅ DONE
