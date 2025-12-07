@@ -252,8 +252,21 @@ async def upload_report(
         )
         db.add(db_report)
 
-        # Audit → AuditResult
-        audit_result = audit_report(report)
+        # Build user profile dict for identity checks and SOL calculations
+        user_profile = {
+            "first_name": current_user.first_name,
+            "middle_name": current_user.middle_name,
+            "last_name": current_user.last_name,
+            "suffix": current_user.suffix,
+            "ssn_last_4": current_user.ssn_last_4,
+            "state": current_user.state,
+            "street_address": current_user.street_address,
+            "city": current_user.city,
+            "zip_code": current_user.zip_code,
+        }
+
+        # Audit → AuditResult (with user profile for identity checks)
+        audit_result = audit_report(report, user_profile)
 
         # Serialize discrepancies for storage
         serialized_audit = serialize_audit(audit_result)

@@ -35,8 +35,41 @@ export async function getMe() {
   return response.data;
 }
 
+/**
+ * Get full user profile
+ */
+export async function getProfile() {
+  const response = await apiClient.get('/auth/profile');
+  return response.data;
+}
+
+/**
+ * Update user profile
+ */
+export async function updateProfile(profileData) {
+  console.log('[authApi] updateProfile called with:', profileData);
+  const response = await apiClient.put('/auth/profile', profileData);
+  console.log('[authApi] updateProfile response:', response.data);
+  return response.data;
+}
+
+/**
+ * Change user password
+ */
+export async function changePassword(currentPassword, newPassword, confirmPassword) {
+  const response = await apiClient.put('/auth/password', {
+    current_password: currentPassword,
+    new_password: newPassword,
+    confirm_password: confirmPassword,
+  });
+  return response.data;
+}
+
 export default {
   register,
   login,
   getMe,
+  getProfile,
+  updateProfile,
+  changePassword,
 };

@@ -148,6 +148,31 @@ Example: Late 2018 → Cured 2019 → Default 2021
 - Checks both `account_type_detail` and `creditor_name` for student loan indicators
 - Flags when `account_type` contains "open" or "revolving" instead of "installment"
 
+**Identity Integrity Rules (FCRA §607(b) - Maximum Possible Accuracy):**
+- `IdentityRules` class - Static methods for identity validation against user profile
+- `check_identity_integrity(report, user_profile)` - Main entry point, runs all identity checks
+- `check_suffix_mismatch(report_name, user_profile)` - Detects Jr/Sr mixed file indicators
+- `check_ssn_mismatch(report_ssn, user_profile)` - Validates SSN last 4 digits match
+- `check_state_mismatch(report_state, report_address, user_profile)` - Validates state consistency
+- `check_name_mismatch(report_name, user_profile)` - Validates name (first, middle initial, last)
+
+**Identity Check Data Flow:**
+```
+HTML Report → Parser (html_parser.py) → NormalizedReport.consumer → IdentityRules
+                                              ↓
+                                        Contains: full_name, date_of_birth, state, address, ssn_last4
+                                              ↓
+User Profile (PostgreSQL users table) → IdentityRules → Violations
+```
+
+**Identity Violation Types:**
+| Check | Detection Method | Legal Basis |
+|-------|-----------------|-------------|
+| Suffix Mismatch | Jr vs Sr/II/III/IV conflicts | FCRA §607(b) - Mixed File |
+| SSN Mismatch | Last 4 digits don't match | FCRA §607(b) - Wrong File |
+| State Mismatch | Report state vs user profile state | FCRA §607(b) - Mixed File |
+| Name Mismatch | First/Middle/Last comparison | FCRA §607(b) - Mixed File |
+
 **To add a new rule:** Create a new function in this file following the existing pattern.
 
 ---
@@ -313,6 +338,11 @@ File: `app/routers/letters.py`
 | Collection fishing inquiry | `app/services/audit/rules.py` (`InquiryRules.check_collection_fishing_inquiry`) |
 | Duplicate inquiry detection | `app/services/audit/rules.py` (`InquiryRules.check_duplicate_inquiries`) |
 | Student loan portfolio mismatch | `app/services/audit/rules.py` (`SingleBureauRules.check_student_loan_portfolio_mismatch`) |
+| Identity integrity checks | `app/services/audit/rules.py` (`IdentityRules.check_identity_integrity`) |
+| Suffix/Jr/Sr mismatch | `app/services/audit/rules.py` (`IdentityRules.check_suffix_mismatch`) |
+| SSN last 4 mismatch | `app/services/audit/rules.py` (`IdentityRules.check_ssn_mismatch`) |
+| State mismatch | `app/services/audit/rules.py` (`IdentityRules.check_state_mismatch`) |
+| Name mismatch | `app/services/audit/rules.py` (`IdentityRules.check_name_mismatch`) |
 
 ---
 

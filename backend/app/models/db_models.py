@@ -9,7 +9,7 @@ from ..database import Base
 
 
 class UserDB(Base):
-    """User account model."""
+    """User account model with full profile for audit engine integration."""
     __tablename__ = "users"
 
     id = Column(String(36), primary_key=True)  # UUID
@@ -17,6 +17,38 @@ class UserDB(Base):
     username = Column(String(100), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # ==========================================================================
+    # IDENTITY INFORMATION - Fuels "Mixed File" detection
+    # ==========================================================================
+    first_name = Column(String(100), nullable=True)
+    middle_name = Column(String(100), nullable=True)  # Critical for mixed file detection
+    last_name = Column(String(100), nullable=True)
+    suffix = Column(String(10), nullable=True)  # Jr, Sr, II, III, IV - Critical for Jr/Sr mixed files
+    date_of_birth = Column(DateTime, nullable=True)  # Distinguishes common names
+    ssn_last_4 = Column(String(4), nullable=True)  # Last 4 digits only for matching
+    phone = Column(String(20), nullable=True)
+
+    # ==========================================================================
+    # LOCATION INFORMATION - Fuels Statute of Limitations (SOL) engine
+    # ==========================================================================
+    # Current Address
+    street_address = Column(String(255), nullable=True)
+    unit = Column(String(50), nullable=True)  # Apt, Suite, etc.
+    city = Column(String(100), nullable=True)
+    state = Column(String(2), nullable=True)  # 2-letter code - FEEDS THE SOL ENGINE
+    zip_code = Column(String(10), nullable=True)
+    move_in_date = Column(DateTime, nullable=True)  # When they moved to current address
+
+    # Previous Addresses (stored as JSON array for flexibility)
+    # Format: [{"street": "...", "city": "...", "state": "XX", "zip": "..."}]
+    previous_addresses = Column(JSON, nullable=True, default=list)
+
+    # ==========================================================================
+    # PROFILE COMPLETENESS
+    # ==========================================================================
+    profile_complete = Column(Integer, default=0)  # Percentage 0-100
 
     # Relationships
     reports = relationship("ReportDB", back_populates="user", cascade="all, delete-orphan")

@@ -13,7 +13,7 @@ from ...models.ssot import (
     NormalizedReport, AuditResult, Violation, Bureau, CrossBureauDiscrepancy,
     Account, BureauAccountData, FurnisherType, ViolationType, Severity
 )
-from .rules import SingleBureauRules, FurnisherRules, TemporalRules, InquiryRules
+from .rules import SingleBureauRules, FurnisherRules, TemporalRules, InquiryRules, IdentityRules
 from .cross_bureau_rules import CrossBureauRules
 
 logger = logging.getLogger(__name__)
@@ -34,12 +34,14 @@ class AuditEngine:
         self.temporal_rules = TemporalRules()
         self.cross_bureau_rules = CrossBureauRules()
 
-    def audit(self, report: NormalizedReport) -> AuditResult:
+    def audit(self, report: NormalizedReport, user_profile: Optional[Dict] = None) -> AuditResult:
         """
         Run all audit rules against a NormalizedReport.
 
         Args:
             report: NormalizedReport (SSOT #1) from parsing layer
+            user_profile: Optional dict with user's profile data (first_name, last_name,
+                         suffix, ssn_last_4, state, etc.) for identity checks
 
         Returns:
             AuditResult (SSOT #2) - immutable, cannot be re-audited downstream
@@ -76,12 +78,20 @@ class AuditEngine:
         all_violations.extend(double_jeopardy_violations)
 
         # Run time-barred debt checks (SOL expired)
-        time_barred_violations = self._check_time_barred_debts(report.accounts)
+        # Use user profile state for SOL calculations if available
+        user_state = user_profile.get("state", "NY") if user_profile else "NY"
+        time_barred_violations = self._check_time_barred_debts(report.accounts, user_state)
         all_violations.extend(time_barred_violations)
 
         # Run inquiry audits (FCRA §604 - Permissible Purpose)
         inquiry_violations = InquiryRules.audit_inquiries(report.inquiries, report.accounts)
         all_violations.extend(inquiry_violations)
+
+        # Run identity integrity checks (User Profile vs Credit Report Header)
+        if user_profile:
+            identity_violations = IdentityRules.check_identity_integrity(report, user_profile)
+            all_violations.extend(identity_violations)
+            logger.info(f"Identity integrity check found {len(identity_violations)} violations")
 
         # Build AuditResult (SSOT #2)
         result = AuditResult(
@@ -400,15 +410,17 @@ class AuditEngine:
 # FACTORY FUNCTION
 # =============================================================================
 
-def audit_report(report: NormalizedReport) -> AuditResult:
+def audit_report(report: NormalizedReport, user_profile: Optional[Dict] = None) -> AuditResult:
     """
     Factory function to audit a NormalizedReport.
 
     Args:
         report: NormalizedReport (SSOT #1)
+        user_profile: Optional dict with user's profile data for identity checks
+                     and SOL calculations (state, suffix, ssn_last_4, etc.)
 
     Returns:
         AuditResult (SSOT #2) - the single source of truth for violations
     """
     engine = AuditEngine()
-    return engine.audit(report)
+    return engine.audit(report, user_profile)

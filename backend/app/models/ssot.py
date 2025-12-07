@@ -100,6 +100,13 @@ class ViolationType(str, Enum):
     # Metro 2 Portfolio Type violations
     METRO2_PORTFOLIO_MISMATCH = "metro2_portfolio_mismatch"  # Student loan reported as Open instead of Installment
 
+    # Identity Integrity violations (User Profile vs Credit Report)
+    IDENTITY_SUFFIX_MISMATCH = "identity_suffix_mismatch"  # Jr vs Sr - Mixed File indicator
+    IDENTITY_NAME_MISMATCH = "identity_name_mismatch"  # Robert vs Richard - potential identity issue
+    IDENTITY_SSN_MISMATCH = "identity_ssn_mismatch"  # Last 4 don't match - CRITICAL error
+    IDENTITY_ADDRESS_MISMATCH = "identity_address_mismatch"  # Wrong State - affects SOL, may indicate mixed file
+    MIXED_FILE_INDICATOR = "mixed_file_indicator"  # General mixed file flag
+
 
 class Severity(str, Enum):
     CRITICAL = "critical"  # Highest severity - potential legal violations

@@ -2442,3 +2442,288 @@ class InquiryRules:
         violations.extend(InquiryRules.check_duplicate_inquiries(inquiries))
 
         return violations
+
+
+# =============================================================================
+# IDENTITY INTEGRITY RULES
+# =============================================================================
+
+class IdentityRules:
+    """
+    Compares parsed Credit Report Header data against the User Profile (Source of Truth).
+    Detects Mixed Files, Identity Theft indicators, and Formatting errors.
+
+    This is the "optic nerve" connecting the Frontend profile to the Audit engine.
+    """
+
+    @staticmethod
+    def check_identity_integrity(
+        report: 'NormalizedReport',
+        user_profile: Dict[str, Any]
+    ) -> List[Violation]:
+        """
+        Run all identity integrity checks comparing report header vs user profile.
+
+        Args:
+            report: NormalizedReport with consumer/personal info
+            user_profile: Dict with user's profile data (first_name, last_name, suffix,
+                         ssn_last_4, state, street_address, etc.)
+
+        Returns:
+            List of identity-related violations
+        """
+        violations = []
+
+        if not user_profile:
+            return violations
+
+        # Get consumer data from report
+        consumer = report.consumer
+        report_name = consumer.full_name if consumer else ""
+        report_state = consumer.state if consumer else ""
+        report_address = consumer.address if consumer else ""
+        report_ssn = consumer.ssn_last4 if consumer else ""
+
+        # Run all identity checks
+        violations.extend(IdentityRules.check_suffix_mismatch(report_name, user_profile))
+        violations.extend(IdentityRules.check_ssn_mismatch(report_ssn, user_profile))
+        violations.extend(IdentityRules.check_state_mismatch(report_state, report_address, user_profile))
+        violations.extend(IdentityRules.check_name_mismatch(report_name, user_profile))
+
+        return violations
+
+    @staticmethod
+    def check_suffix_mismatch(report_name: str, user_profile: Dict[str, Any]) -> List[Violation]:
+        """
+        Check for Jr/Sr suffix conflicts - the classic "Mixed File" trap.
+
+        If the user is "Junior" but the report shows "Senior", this is a CRITICAL
+        indicator that the credit file has been merged with a relative (usually parent).
+        """
+        violations = []
+
+        profile_suffix = (user_profile.get("suffix") or "").lower().replace(".", "").strip()
+        report_name_lower = (report_name or "").lower()
+
+        if not profile_suffix:
+            return violations
+
+        # Define conflict pairs - these suffixes CANNOT coexist
+        conflicts = {
+            "jr": ["sr", "senior", " ii", " iii", " iv", " v"],
+            "junior": ["sr", "senior", " ii", " iii", " iv", " v"],
+            "sr": ["jr", "junior", " ii", " iii", " iv"],
+            "senior": ["jr", "junior", " ii", " iii", " iv"],
+            "ii": ["jr", "junior", "sr", "senior", " iii", " iv", " v"],
+            "iii": ["jr", "junior", "sr", "senior", " ii", " iv", " v"],
+            "iv": ["jr", "junior", "sr", "senior", " ii", " iii", " v"],
+            "v": ["jr", "junior", "sr", "senior", " ii", " iii", " iv"]
+        }
+
+        conflicting = conflicts.get(profile_suffix, [])
+
+        for bad_suffix in conflicting:
+            # Check if conflicting suffix appears in report name
+            # Using word boundary check to avoid false positives
+            if bad_suffix in report_name_lower:
+                violations.append(Violation(
+                    violation_type=ViolationType.IDENTITY_SUFFIX_MISMATCH,
+                    severity=Severity.CRITICAL,
+                    description=(
+                        f"CRITICAL MIXED FILE INDICATOR: Your profile identifies you as "
+                        f"'{profile_suffix.upper()}', but the Credit Report lists your name as "
+                        f"'{report_name}' (containing '{bad_suffix.strip().upper()}'). "
+                        f"It is factually impossible to be both. This strongly suggests your credit file "
+                        f"has been merged with a relative who shares your name."
+                    ),
+                    expected_value=f"Name with suffix: {profile_suffix.upper()}",
+                    actual_value=report_name,
+                    fcra_section="607(b) Maximum Possible Accuracy",
+                    metro2_field="Consumer Name",
+                    evidence={
+                        "profile_suffix": profile_suffix,
+                        "report_name": report_name,
+                        "conflicting_suffix_found": bad_suffix.strip()
+                    }
+                ))
+                break  # One violation is enough
+
+        # Also check if user has suffix but report doesn't show ANY suffix
+        # This is a MEDIUM severity issue - missing suffix can lead to mixed file confusion
+        if not violations and profile_suffix:
+            suffix_indicators = [' jr', ' sr', 'junior', 'senior', ' ii', ' iii', ' iv', ' v']
+            has_any_suffix = any(ind in report_name_lower for ind in suffix_indicators)
+
+            if not has_any_suffix:
+                violations.append(Violation(
+                    violation_type=ViolationType.IDENTITY_SUFFIX_MISMATCH,
+                    severity=Severity.MEDIUM,
+                    description=(
+                        f"MISSING SUFFIX: You are '{profile_suffix.upper()}', but the Credit Report shows "
+                        f"'{report_name}' with NO suffix. This omission makes it impossible to distinguish "
+                        f"your credit file from a relative with the same name. Without your suffix, accounts "
+                        f"could be mixed between you and a parent, child, or other family member."
+                    ),
+                    expected_value=f"Name with suffix: {profile_suffix.upper()}",
+                    actual_value=report_name,
+                    fcra_section="607(b) Maximum Possible Accuracy",
+                    metro2_field="Consumer Name",
+                    evidence={
+                        "profile_suffix": profile_suffix,
+                        "report_name": report_name,
+                        "issue": "suffix_missing"
+                    }
+                ))
+
+        return violations
+
+    @staticmethod
+    def check_ssn_mismatch(report_ssn: str, user_profile: Dict[str, Any]) -> List[Violation]:
+        """
+        Check if SSN last 4 digits match between profile and report.
+
+        This is the "fatal" error - if SSNs don't match, either:
+        1. The report belongs to someone else (Mixed File)
+        2. There's a potential identity theft situation
+        3. The bureau has merged files incorrectly
+        """
+        violations = []
+
+        profile_ssn = str(user_profile.get("ssn_last_4") or "").strip()
+        report_ssn_clean = str(report_ssn or "")[-4:].strip()  # Extract last 4
+
+        # Only check if both have valid 4-digit values
+        if len(profile_ssn) != 4 or len(report_ssn_clean) != 4:
+            return violations
+
+        if profile_ssn != report_ssn_clean:
+            violations.append(Violation(
+                violation_type=ViolationType.IDENTITY_SSN_MISMATCH,
+                severity=Severity.CRITICAL,
+                description=(
+                    f"SSN MISMATCH: Your profile SSN ends in '{profile_ssn}', but the Credit Report "
+                    f"shows SSN ending in '{report_ssn_clean}'. This is a severe indicator of either "
+                    f"a Mixed File (your report merged with someone else's) or potential Identity Theft. "
+                    f"This file may not belong to you."
+                ),
+                expected_value=f"xxx-xx-{profile_ssn}",
+                actual_value=f"xxx-xx-{report_ssn_clean}",
+                fcra_section="607(b) Maximum Possible Accuracy",
+                metro2_field="Social Security Number",
+                evidence={
+                    "profile_ssn_last4": profile_ssn,
+                    "report_ssn_last4": report_ssn_clean
+                }
+            ))
+
+        return violations
+
+    @staticmethod
+    def check_state_mismatch(
+        report_state: str,
+        report_address: str,
+        user_profile: Dict[str, Any]
+    ) -> List[Violation]:
+        """
+        Check if user's state of residence matches the report.
+
+        This affects:
+        1. Statute of Limitations calculations (wrong SOL applied)
+        2. May indicate a Mixed File with a stranger from another state
+        """
+        violations = []
+
+        profile_state = (user_profile.get("state") or "").upper().strip()
+        report_state_clean = (report_state or "").upper().strip()
+        report_address_upper = (report_address or "").upper()
+
+        if not profile_state or len(profile_state) != 2:
+            return violations
+
+        # Check if profile state matches report state
+        state_matches = False
+
+        if report_state_clean and len(report_state_clean) == 2:
+            state_matches = (profile_state == report_state_clean)
+        else:
+            # Fallback: check if state code appears in the address
+            state_matches = (f" {profile_state} " in report_address_upper or
+                           f", {profile_state} " in report_address_upper or
+                           report_address_upper.endswith(f" {profile_state}"))
+
+        if not state_matches and report_state_clean:
+            violations.append(Violation(
+                violation_type=ViolationType.IDENTITY_ADDRESS_MISMATCH,
+                severity=Severity.MEDIUM,
+                description=(
+                    f"Residency Mismatch: Your profile shows you reside in '{profile_state}', "
+                    f"but the Credit Report lists current address in '{report_state_clean}'. "
+                    f"If you have not lived at this address, this may indicate a Mixed File "
+                    f"with a stranger who has a similar name. Additionally, this affects which "
+                    f"state's Statute of Limitations applies to your debts."
+                ),
+                expected_value=f"State: {profile_state}",
+                actual_value=f"State: {report_state_clean}",
+                fcra_section="607(b) Maximum Possible Accuracy",
+                metro2_field="Address Indicator",
+                evidence={
+                    "profile_state": profile_state,
+                    "report_state": report_state_clean,
+                    "report_address": report_address
+                }
+            ))
+
+        return violations
+
+    @staticmethod
+    def check_name_mismatch(report_name: str, user_profile: Dict[str, Any]) -> List[Violation]:
+        """
+        Check if the consumer's first/last name matches the profile.
+
+        Catches cases like "Robert" vs "Richard" or completely different last names
+        that might indicate a mixed file or identity issue.
+        """
+        violations = []
+
+        profile_first = (user_profile.get("first_name") or "").lower().strip()
+        profile_last = (user_profile.get("last_name") or "").lower().strip()
+        report_name_lower = (report_name or "").lower()
+
+        # Skip if profile doesn't have name
+        if not profile_first and not profile_last:
+            return violations
+
+        # Check if first name appears in report name
+        first_name_matches = True
+        if profile_first and len(profile_first) >= 2:
+            # Allow for common nickname variations
+            first_name_matches = profile_first in report_name_lower
+
+        # Check if last name appears in report name
+        last_name_matches = True
+        if profile_last and len(profile_last) >= 2:
+            last_name_matches = profile_last in report_name_lower
+
+        # Only flag if BOTH don't match (to avoid false positives)
+        if profile_first and profile_last and not first_name_matches and not last_name_matches:
+            violations.append(Violation(
+                violation_type=ViolationType.IDENTITY_NAME_MISMATCH,
+                severity=Severity.HIGH,
+                description=(
+                    f"Name Mismatch: Your profile shows '{profile_first.title()} {profile_last.title()}', "
+                    f"but the Credit Report shows '{report_name}'. Neither your first nor last name "
+                    f"appears in the report. This may indicate a Mixed File or that this report "
+                    f"belongs to someone else entirely."
+                ),
+                expected_value=f"{profile_first.title()} {profile_last.title()}",
+                actual_value=report_name,
+                fcra_section="607(b) Maximum Possible Accuracy",
+                metro2_field="Consumer Name",
+                evidence={
+                    "profile_first_name": profile_first,
+                    "profile_last_name": profile_last,
+                    "report_name": report_name
+                }
+            ))
+
+        return violations

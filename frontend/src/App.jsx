@@ -8,7 +8,8 @@ import { ThemeProvider, createTheme, CssBaseline, AppBar, Toolbar, Typography, B
 import HistoryIcon from '@mui/icons-material/History';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import LogoutIcon from '@mui/icons-material/Logout';
-import { UploadPage, AuditPage, LetterPage, ReportHistoryPage, LoginPage, RegisterPage } from './pages';
+import { UploadPage, AuditPage, LetterPage, ReportHistoryPage, LoginPage, RegisterPage, ProfilePage } from './pages';
+import PersonIcon from '@mui/icons-material/Person';
 import useAuthStore from './state/authStore';
 
 // Create a clean, modern theme
@@ -104,9 +105,16 @@ const NavBar = () => {
           </Button>
           {isAuthenticated && (
             <>
-              <Typography variant="body2" sx={{ mx: 1, color: 'text.secondary' }}>
+              <Button
+                component={Link}
+                to="/profile"
+                startIcon={<PersonIcon />}
+                size="small"
+                color="inherit"
+                sx={{ textTransform: 'none' }}
+              >
                 {user?.username || user?.email}
-              </Typography>
+              </Button>
               <Button
                 onClick={handleLogout}
                 startIcon={<LogoutIcon />}
@@ -157,6 +165,12 @@ const AppLayout = () => {
           <ProtectedRoute>
             <NavBar />
             <LetterPage />
+          </ProtectedRoute>
+        } />
+        <Route path="/profile" element={
+          <ProtectedRoute>
+            <NavBar />
+            <ProfilePage />
           </ProtectedRoute>
         } />
 
