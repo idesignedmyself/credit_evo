@@ -65,6 +65,7 @@ app/
 | Inquiry Misclassification | `inquiry_misclassification` | FCRA §604(a)(3) (soft-pull as hard) |
 | Collection Fishing Inquiry | `collection_fishing_inquiry` | FCRA §604(a)(3)(A) (collector without tradeline) |
 | Duplicate Inquiry | `duplicate_inquiry` | FCRA §604 (same creditor <14 days) |
+| Student Loan Portfolio Mismatch | `metro2_portfolio_mismatch` | Field 8 (student loan as Open/Revolving instead of Installment) |
 
 **Time-Barred Debt Detection:**
 - `check_time_barred_debt()` - Main detection logic comparing anchor date vs state SOL
@@ -138,6 +139,14 @@ Example: Late 2018 → Cured 2019 → Default 2021
 | Fishing Expedition | Creditor matches COLLECTOR_KEYWORDS but has no matching tradeline | FCRA §604(a)(3)(A) |
 | Double Tap | Same bureau + same normalized creditor + same DATE | FCRA §604 |
 | Within-Window | Same bureau + same normalized creditor within 14 days | FCRA §604 / Scoring |
+
+**Student Loan Portfolio Mismatch Detection:**
+- `check_student_loan_portfolio_mismatch()` - Detects student loans misclassified as Open/Revolving
+- Under Metro 2 standards, Educational Loans MUST be Portfolio Type I (Installment)
+- Incorrect classification damages Credit Mix scoring factor (10% of FICO)
+- Student loan keywords: educational, student loan, dept of ed, nelnet, navient, mohela, fedloan, sallie mae, great lakes, acs education, edfinancial, pheaa, ecmc
+- Checks both `account_type_detail` and `creditor_name` for student loan indicators
+- Flags when `account_type` contains "open" or "revolving" instead of "installment"
 
 **To add a new rule:** Create a new function in this file following the existing pattern.
 
@@ -303,6 +312,7 @@ File: `app/routers/letters.py`
 | Inquiry misclassification | `app/services/audit/rules.py` (`InquiryRules.check_inquiry_misclassification`) |
 | Collection fishing inquiry | `app/services/audit/rules.py` (`InquiryRules.check_collection_fishing_inquiry`) |
 | Duplicate inquiry detection | `app/services/audit/rules.py` (`InquiryRules.check_duplicate_inquiries`) |
+| Student loan portfolio mismatch | `app/services/audit/rules.py` (`SingleBureauRules.check_student_loan_portfolio_mismatch`) |
 
 ---
 

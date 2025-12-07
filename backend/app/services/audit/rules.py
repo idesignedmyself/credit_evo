@@ -267,6 +267,79 @@ class SingleBureauRules:
         return violations
 
     @staticmethod
+    def check_student_loan_portfolio_mismatch(account: Account, bureau: Bureau) -> List[Violation]:
+        """
+        Detects Student Loans reported as 'Open' or 'Revolving' instead of 'Installment'.
+
+        Under Metro 2 standards, Educational Loans are Installment contracts (Portfolio Type I)
+        with fixed terms and amortization schedules. Reporting them as 'Open Account' (Type O)
+        or 'Revolving' is factually incorrect and damages the Credit Mix scoring factor (10% of FICO).
+
+        Example from screenshot: US DEPT ED reported as "Open Account" but Detail shows "Educational"
+        This is a violation - student loans should be "Installment".
+        """
+        violations = []
+
+        # 1. Identify if this is a Student Loan
+        # Check account_type, account_type_detail from bureau data, and creditor name
+        account_type = (account.account_type or "").lower()
+        creditor_text = (account.creditor_name or "").lower()
+
+        # Get account_type_detail from bureau data if available
+        account_type_detail = ""
+        bureau_data = account.get_bureau_data(bureau)
+        if bureau_data:
+            if hasattr(bureau_data, 'account_type_detail') and bureau_data.account_type_detail:
+                account_type_detail = bureau_data.account_type_detail.lower()
+
+        # Student loan identifiers
+        student_loan_keywords = [
+            "educational", "student loan", "student", "dept of ed", "dept ed",
+            "nelnet", "navient", "mohela", "fedloan", "sallie mae", "great lakes",
+            "acs education", "edfinancial", "pheaa", "ecmc"
+        ]
+
+        is_student_loan = any(k in account_type_detail for k in student_loan_keywords) or \
+                          any(k in creditor_text for k in student_loan_keywords) or \
+                          any(k in account_type for k in student_loan_keywords)
+
+        if not is_student_loan:
+            return violations
+
+        # 2. Check if the Account Type is wrong (should be Installment, not Open/Revolving)
+        # Account Type should contain "installment" for student loans
+        if "open" in account_type or "revolving" in account_type:
+            violations.append(Violation(
+                violation_type=ViolationType.METRO2_PORTFOLIO_MISMATCH,
+                severity=Severity.MEDIUM,
+                account_id=account.account_id,
+                creditor_name=account.creditor_name,
+                account_number_masked=account.account_number_masked,
+                furnisher_type=account.furnisher_type,
+                bureau=bureau,
+                description=(
+                    f"Student Loan (Educational) is misclassified as '{account.account_type}'. "
+                    f"Under Metro 2 standards, Educational loans are defined as Installment "
+                    f"(Portfolio Type I) because they have fixed terms and payment schedules. "
+                    f"Reporting this as an 'Open Account' (Portfolio Type O) is factually incorrect "
+                    f"and negatively impacts the Credit Mix scoring factor (10% of FICO). "
+                    f"Detail: {account_type_detail or 'Educational'}"
+                ),
+                expected_value="Account Type: Installment",
+                actual_value=f"Account Type: {account.account_type}",
+                fcra_section="623(a)(1)",
+                metro2_field="Field 8 (Portfolio Type)",
+                evidence={
+                    "account_type": account.account_type,
+                    "account_type_detail": account_type_detail,
+                    "creditor_name": account.creditor_name,
+                    "issue": "student_loan_as_open_account"
+                }
+            ))
+
+        return violations
+
+    @staticmethod
     def check_balance_exceeds_high_credit(account: Account, bureau: Bureau) -> List[Violation]:
         """Check if balance exceeds high credit (invalid)."""
         violations = []

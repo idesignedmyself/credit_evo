@@ -97,6 +97,9 @@ class ViolationType(str, Enum):
     COLLECTION_FISHING_INQUIRY = "collection_fishing_inquiry"  # Collector pulled credit but has no tradeline
     DUPLICATE_INQUIRY = "duplicate_inquiry"  # Same creditor pulled multiple times in short window
 
+    # Metro 2 Portfolio Type violations
+    METRO2_PORTFOLIO_MISMATCH = "metro2_portfolio_mismatch"  # Student loan reported as Open instead of Installment
+
 
 class Severity(str, Enum):
     CRITICAL = "critical"  # Highest severity - potential legal violations

@@ -1,9 +1,9 @@
 # Credit Engine System Checklist
 
 ## Current Status Overview
-- **Full Coverage:** 28 violation types
+- **Full Coverage:** 30 violation types
 - **Partial Coverage:** 11 violation types
-- **Not Detected:** 4 violation types
+- **Not Detected:** 3 violation types
 
 ---
 
@@ -233,6 +233,23 @@
   | DEPT OF ED, NELNET, NAVIENT, MOHELA | DEPT OF EDUCATION |
 - **File:** `app/services/audit/rules.py`
 
+### [x] Student Loan Portfolio Mismatch (35% success) - ✅ IMPLEMENTED
+- **Category:** Metro 2 Format Violations
+- **Description:** Student loans reported as "Open" or "Revolving" instead of "Installment"
+- **Legal Basis:** Metro 2 Format Field 8 (Portfolio Type) / FCRA §623(a)(1)
+- **Status:** ✅ Fully implemented via SingleBureauRules class
+- **Rule:** `check_student_loan_portfolio_mismatch()` in `app/services/audit/rules.py`
+- **ViolationType:** `METRO2_PORTFOLIO_MISMATCH`
+- **Severity:** MEDIUM
+- **Metro 2 Field:** Field 8 (Portfolio Type: I=Installment, O=Open, R=Revolving)
+- **Criteria:**
+  - Detects student loans identified by creditor name or account type detail
+  - Student loan keywords: educational, student loan, dept of ed, nelnet, navient, mohela, fedloan, sallie mae, great lakes, acs education, edfinancial, pheaa, ecmc
+  - Flags when account_type is "Open" or "Revolving" instead of "Installment"
+  - Under Metro 2 standards, Educational Loans are Installment contracts (Portfolio Type I)
+- **Impact:** Incorrect portfolio type damages Credit Mix scoring factor (10% of FICO score)
+- **File:** `app/services/audit/rules.py`
+
 ---
 
 ## Partial Coverage - Needs Enhancement
@@ -344,6 +361,7 @@
 | Inquiry Misclassification (soft-pull as hard) | 50% | ✅ Full |
 | Collection Fishing Inquiries (no tradeline) | 45% | ✅ Full |
 | Duplicate Inquiries (same creditor <14 days) | 30% | ✅ Full |
+| Student Loan Portfolio Mismatch (Open vs Installment) | 35% | ✅ Full |
 
 ---
 

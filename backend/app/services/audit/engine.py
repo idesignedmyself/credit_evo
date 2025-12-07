@@ -196,6 +196,7 @@ class AuditEngine:
         violations.extend(self.single_bureau_rules.check_balance_exceeds_credit_limit(account, bureau))
         violations.extend(self.single_bureau_rules.check_negative_credit_limit(account, bureau))
         violations.extend(self.single_bureau_rules.check_missing_dla(account, bureau))
+        violations.extend(self.single_bureau_rules.check_student_loan_portfolio_mismatch(account, bureau))
 
         # Furnisher rules
         violations.extend(self.furnisher_rules.check_closed_oc_reporting_balance(account, bureau))
