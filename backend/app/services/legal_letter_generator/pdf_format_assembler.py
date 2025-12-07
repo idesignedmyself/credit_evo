@@ -261,17 +261,24 @@ CATEGORY_CONFIGS: Dict[ViolationCategory, CategoryConfig] = {
         fcra_section="623(a)(6)"
     ),
     ViolationCategory.IDENTITY_ERROR: CategoryConfig(
-        title="Accounts with Identity Verification Issues",
-        metro2_fields="Multiple Fields",
+        title="Identity Mismatch / Potential Mixed File Errors",
+        metro2_fields="Consumer Identification Fields / Metro 2 Header Segment",
         explanation=(
             "Under FCRA Section 607(b), credit reporting agencies must maintain reasonable procedures "
-            "to assure maximum possible accuracy. The following accounts may not belong to me or contain "
-            "identity-related errors:"
+            "to assure MAXIMUM POSSIBLE ACCURACY of consumer information. The following discrepancies "
+            "between my personal identity information (as provided in my profile) and the credit report "
+            "header indicate a potential MIXED FILE situation - where accounts belonging to another "
+            "consumer (typically a family member with a similar name) have been incorrectly merged into "
+            "my credit file:"
         ),
         resolution=(
-            "These accounts must be verified as belonging to me using original documentation including "
-            "signed applications and identity verification records. If ownership cannot be verified, "
-            "the accounts must be deleted."
+            "Mixed file errors are among the most damaging FCRA violations. These identity discrepancies "
+            "MUST be investigated immediately. You are required to compare the identifying information on "
+            "disputed accounts (name, SSN, DOB, address) against my verified identity. Any accounts that "
+            "cannot be positively verified as belonging to ME - not a relative or person with a similar "
+            "name - must be immediately removed from my credit file. Under Cortez v. Trans Union, LLC, "
+            "617 F.3d 688 (3d Cir. 2010), mixed file errors constitute willful violations of FCRA when "
+            "the CRA fails to implement reasonable procedures to prevent them."
         ),
         fcra_section="607(b)"
     ),
@@ -439,8 +446,18 @@ def _classify_violation(violation: Dict[str, Any]) -> ViolationCategory:
     if "collection" in creditor or "recovery" in creditor:
         return ViolationCategory.COLLECTION_VERIFICATION
 
-    # Check for identity errors
-    if v_type in ["not_mine", "identity_error", "mixed_file"]:
+    # Check for identity errors (including new identity integrity violations)
+    if v_type in [
+        "not_mine", "identity_error", "mixed_file",
+        "identity_suffix_mismatch", "identity_name_mismatch",
+        "identity_ssn_mismatch", "identity_address_mismatch",
+        "mixed_file_indicator"
+    ]:
+        return ViolationCategory.IDENTITY_ERROR
+    # Also check evidence for identity-related keywords
+    if "suffix" in evidence or "jr" in evidence or "sr" in evidence or "mixed file" in evidence:
+        return ViolationCategory.IDENTITY_ERROR
+    if "ssn" in evidence and "mismatch" in evidence:
         return ViolationCategory.IDENTITY_ERROR
 
     return ViolationCategory.OTHER
