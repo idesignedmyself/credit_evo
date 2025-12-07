@@ -874,6 +874,305 @@ class SingleBureauRules:
 
         return violations
 
+    @staticmethod
+    def _infer_dofd_from_payment_history(account: Account) -> Optional[date]:
+        """
+        Correctly infers DOFD by finding the start of the *current* contiguous delinquency.
+
+        CRITICAL: Under FCRA and Metro 2® standards, DOFD is defined as the
+        "commencement of the delinquency which IMMEDIATELY PRECEDED the collection
+        activity or charge-off."
+
+        This means if a consumer was late in 2018, caught up (cured) in 2019,
+        and defaulted again in 2021, the DOFD is 2021 - NOT 2018.
+
+        Algorithm: "Reverse Contiguous Chain"
+        1. Flatten all payment history entries across bureaus
+        2. Sort by date (newest to oldest)
+        3. Walk backwards from today until hitting an "OK/Current" status
+        4. Return the oldest date in the unbroken delinquency chain
+
+        This prevents false "time-barred" findings that could expose users to lawsuits.
+        """
+        from datetime import date
+
+        # Month name to number mapping
+        month_to_num = {
+            'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'may': 5, 'jun': 6,
+            'jul': 7, 'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12
+        }
+
+        # 1. Flatten and collect all payment history entries across bureaus
+        all_entries = []
+
+        for bureau_data in account.bureaus.values():
+            payment_history = getattr(bureau_data, 'payment_history', None)
+            if not payment_history:
+                continue
+
+            for entry in payment_history:
+                if not isinstance(entry, dict):
+                    continue
+
+                month_str = str(entry.get("month", "")).lower()[:3]
+                year = entry.get("year")
+
+                if month_str in month_to_num and year:
+                    try:
+                        # Create date object (1st of month)
+                        d = date(int(year), month_to_num[month_str], 1)
+                        status = str(entry.get("status", "")).upper()
+                        all_entries.append({"date": d, "status": status})
+                    except (ValueError, TypeError):
+                        continue
+
+        if not all_entries:
+            return None
+
+        # 2. Sort: Newest First (reverse chronological)
+        all_entries.sort(key=lambda x: x["date"], reverse=True)
+
+        # 3. Walk backwards to find the "Break Point" (cured status)
+        # OK statuses that indicate the account was current/cured
+        ok_statuses = {"OK", "C", "0", "", "-", "CURRENT"}
+
+        potential_dofd = None
+
+        for entry in all_entries:
+            status = entry["status"]
+
+            # ND = No Data - treat as neutral/skip
+            is_delinquent = status not in ok_statuses and status != "ND"
+
+            if is_delinquent:
+                # This date is part of the delinquency chain; track it
+                potential_dofd = entry["date"]
+            else:
+                # HIT A CURED POINT!
+                # If we already found a delinquency chain, stop here.
+                # The potential_dofd we hold is the start of the CURRENT chain.
+                if potential_dofd:
+                    break
+
+        return potential_dofd
+
+    @staticmethod
+    def get_sol_category(account: Account) -> str:
+        """
+        Infers the Legal Debt Category (Open, Written, Promissory)
+        based on Metro 2 fields and text descriptions.
+
+        Categories:
+        - "open": Open-ended revolving credit (credit cards, lines of credit)
+        - "written": Written contracts (auto loans, personal loans, retail installment)
+        - "promissory": Promissory notes (mortgages, student loans)
+
+        Returns the most appropriate category for SOL lookup.
+        """
+        # Get relevant fields for inference
+        account_type = (account.account_type or "").lower()
+        creditor_name = (account.creditor_name or "").lower()
+        original_creditor = (account.original_creditor or "").lower()
+
+        # Get account_type_detail from bureau data if available
+        account_type_detail = ""
+        for bureau_data in account.bureaus.values():
+            if hasattr(bureau_data, 'account_type_detail') and bureau_data.account_type_detail:
+                account_type_detail = bureau_data.account_type_detail.lower()
+                break
+
+        combined_text = f"{account_type} {account_type_detail} {creditor_name} {original_creditor}"
+
+        # PROMISSORY NOTE indicators (mortgages, student loans, formal notes)
+        promissory_indicators = [
+            'mortgage', 'home loan', 'real estate', 'heloc', 'home equity',
+            'student loan', 'education loan', 'student', 'sallie mae', 'navient',
+            'great lakes', 'nelnet', 'fedloan', 'mohela', 'dept of education',
+            'promissory', 'secured note'
+        ]
+        if any(ind in combined_text for ind in promissory_indicators):
+            return "promissory"
+
+        # OPEN ACCOUNT indicators (revolving credit, credit cards)
+        open_indicators = [
+            'credit card', 'revolving', 'charge card', 'line of credit',
+            'loc', 'visa', 'mastercard', 'amex', 'american express',
+            'discover', 'capital one', 'chase', 'citi', 'bank of america',
+            'wells fargo', 'synchrony', 'store card', 'retail card'
+        ]
+        if any(ind in combined_text for ind in open_indicators):
+            return "open"
+
+        # WRITTEN CONTRACT indicators (installment loans, auto, personal)
+        written_indicators = [
+            'auto', 'car loan', 'vehicle', 'installment', 'personal loan',
+            'consumer loan', 'signature loan', 'unsecured loan', 'medical',
+            'dental', 'hospital', 'utility', 'phone', 'wireless', 'cable',
+            'internet', 'collection', 'charged off'
+        ]
+        if any(ind in combined_text for ind in written_indicators):
+            return "written"
+
+        # Default: Collections and unknown accounts default to "written"
+        # (most conservative - typically shortest SOL)
+        if account.furnisher_type == FurnisherType.COLLECTOR:
+            return "written"
+
+        # Fallback default
+        return "written"
+
+    @staticmethod
+    def check_time_barred_debt(account: Account, user_state: str = "NY") -> List[Violation]:
+        """
+        Detects Time-Barred Debt.
+
+        FUTURE PROOFING: 'user_state' defaults to "NY" (Source of Truth for now),
+        but can be passed dynamically later from the User Profile page.
+
+        A debt is "time-barred" when the Statute of Limitations (SOL) has expired,
+        meaning the creditor loses the legal right to sue for collection.
+
+        IMPORTANT: Under FDCPA, threatening legal action on time-barred debt is
+        a per se violation. This makes time-barred debt a CRITICAL finding.
+
+        Detection Logic:
+        1. Only applies to derogatory accounts (collections, chargeoffs)
+        2. Calculate time since DOFD (or date_last_activity as fallback)
+        3. Compare against state-specific SOL for the debt category
+        4. Flag if SOL has expired
+
+        Legal Basis:
+        - FDCPA §1692e(2)(A) - False representation of legal status of debt
+        - FDCPA §1692e(5) - Threat to take action that cannot legally be taken
+        - State-specific SOL statutes
+        """
+        from .sol_data import SOL_DATA
+
+        violations = []
+        today = date.today()
+
+        # Only check collection accounts and chargeoffs
+        if account.furnisher_type not in [FurnisherType.COLLECTOR, FurnisherType.OC_CHARGEOFF]:
+            return violations
+
+        if account.account_status not in [AccountStatus.COLLECTION, AccountStatus.CHARGEOFF, AccountStatus.DEROGATORY]:
+            return violations
+
+        # Get the anchor date for SOL calculation
+        # Priority: DOFD > inferred DOFD from payment history > date_last_activity > date_last_payment
+        anchor_date = None
+        anchor_source = ""
+
+        if account.date_of_first_delinquency:
+            anchor_date = account.date_of_first_delinquency
+            anchor_source = "Date of First Delinquency"
+        else:
+            # Try to infer DOFD from payment history (across all bureaus)
+            inferred_dofd = SingleBureauRules._infer_dofd_from_payment_history(account)
+            if inferred_dofd:
+                anchor_date = inferred_dofd
+                anchor_source = "Date of First Delinquency (inferred from payment history)"
+            elif account.date_last_activity:
+                anchor_date = account.date_last_activity
+                anchor_source = "Date Last Activity"
+            elif account.date_last_payment:
+                anchor_date = account.date_last_payment
+                anchor_source = "Date Last Payment"
+            else:
+                # No date to calculate from - can't determine SOL
+                return violations
+
+        # Get state SOL data
+        state_upper = user_state.upper()
+        if state_upper not in SOL_DATA["states"]:
+            logger.warning(f"Unknown state '{user_state}' for SOL lookup, defaulting to NY")
+            state_upper = "NY"
+
+        state_sol = SOL_DATA["states"][state_upper]
+        state_name = state_sol["state_name"]
+
+        # Determine debt category using inference
+        debt_category = SingleBureauRules.get_sol_category(account)
+
+        # Get SOL years for this category
+        sol_info = state_sol["statutes"].get(debt_category, state_sol["statutes"]["written"])
+        sol_years = sol_info["years"]
+        sol_citation = sol_info["citation"]
+
+        # Calculate if SOL has expired
+        years_since_anchor = (today - anchor_date).days / 365.25
+
+        if years_since_anchor >= sol_years:
+            # SOL has expired - this is time-barred debt
+            months_past_sol = int((years_since_anchor - sol_years) * 12)
+
+            # Check for legal threat indicators in remarks
+            has_legal_threats = False
+            threat_text = ""
+            for bureau_data in account.bureaus.values():
+                remarks = (bureau_data.remarks or "").lower()
+                legal_threat_indicators = [
+                    'legal action', 'lawsuit', 'court', 'judgment', 'attorney',
+                    'litigation', 'sue', 'summons', 'complaint', 'garnish'
+                ]
+                if any(ind in remarks for ind in legal_threat_indicators):
+                    has_legal_threats = True
+                    threat_text = bureau_data.remarks[:100] if bureau_data.remarks else ""
+                    break
+
+            # Severity: CRITICAL if legal threats detected (FDCPA violation)
+            # HIGH if just time-barred without threats
+            severity = Severity.CRITICAL if has_legal_threats else Severity.HIGH
+
+            # Build description
+            description = (
+                f"This {debt_category} debt has exceeded the {state_name} Statute of Limitations. "
+                f"The {anchor_source} of {anchor_date.strftime('%B %d, %Y')} was {years_since_anchor:.1f} years ago. "
+                f"Under {sol_citation}, the SOL for {debt_category} accounts is {sol_years} years. "
+                f"This debt became time-barred {months_past_sol} months ago. "
+            )
+
+            if has_legal_threats:
+                description += (
+                    f"WARNING: Account remarks indicate potential legal threats ('{threat_text}'). "
+                    f"Under FDCPA §1692e(5), threatening to sue on time-barred debt is a per se violation."
+                )
+            else:
+                description += (
+                    f"While the debt may still be reported, the collector has lost the legal right to sue. "
+                    f"Any threat of legal action on this debt would violate FDCPA §1692e(5)."
+                )
+
+            violations.append(Violation(
+                violation_type=ViolationType.TIME_BARRED_DEBT_RISK,
+                severity=severity,
+                account_id=account.account_id,
+                creditor_name=account.creditor_name,
+                account_number_masked=account.account_number_masked,
+                furnisher_type=account.furnisher_type,
+                bureau=account.bureau,  # Use account's primary bureau
+                description=description,
+                expected_value=f"SOL expired: Cannot sue after {sol_years} years under {sol_citation}",
+                actual_value=f"{years_since_anchor:.1f} years since {anchor_source}",
+                fcra_section="FDCPA 1692e(5)",
+                metro2_field="N/A",
+                evidence={
+                    "anchor_date": str(anchor_date),
+                    "anchor_source": anchor_source,
+                    "years_since_anchor": round(years_since_anchor, 2),
+                    "sol_years": sol_years,
+                    "sol_citation": sol_citation,
+                    "debt_category": debt_category,
+                    "state": state_upper,
+                    "state_name": state_name,
+                    "months_past_sol": months_past_sol,
+                    "has_legal_threats": has_legal_threats,
+                    "threat_text": threat_text if has_legal_threats else None
+                }
+            ))
+
+        return violations
+
 
 # =============================================================================
 # FURNISHER RULES

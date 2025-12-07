@@ -61,6 +61,25 @@ app/
 | Delinquency Jump | `delinquency_jump` | Field 18 (payment history jumps levels, e.g., 0→60) |
 | Stagnant Delinquency | `stagnant_delinquency` | Field 18 (same late status for consecutive months) |
 | Missing Original Creditor | `missing_original_creditor` | K1 Segment (Chain of Title - collection without OC) |
+| Time-Barred Debt Risk | `time_barred_debt_risk` | State SOL / FDCPA §1692e(5) |
+
+**Time-Barred Debt Detection:**
+- `check_time_barred_debt()` - Main detection logic comparing anchor date vs state SOL
+- `get_sol_category()` - Infers debt category (open/written/promissory) from account fields
+- `_infer_dofd_from_payment_history()` - DOFD inference using "Reverse Contiguous Chain" algorithm
+
+**DOFD Inference Algorithm ("Reverse Contiguous Chain"):**
+Under FCRA/Metro 2®, DOFD is the "commencement of the delinquency which IMMEDIATELY PRECEDED the collection/charge-off." This means cured delinquencies are ignored.
+
+Algorithm:
+1. Flatten all payment history entries across bureaus
+2. Sort by date (newest → oldest)
+3. Walk backwards until hitting an "OK/Current" status (cure point)
+4. Return oldest date in the UNBROKEN delinquency chain
+
+Example: Late 2018 → Cured 2019 → Default 2021
+- Old (wrong): Returns 2018 (7 years = "time-barred")
+- New (correct): Returns 2021 (4 years = NOT time-barred)
 
 **To add a new rule:** Create a new function in this file following the existing pattern.
 
@@ -86,6 +105,7 @@ NormalizedReport → audit_report() → runs rules.py → AuditResult
 | Check | Description | Legal Basis |
 |-------|-------------|-------------|
 | Double Jeopardy | OC and Collector BOTH report balance for same debt | FCRA §607(b) |
+| Time-Barred Debt | Collections past state SOL still reporting | FDCPA §1692e(5) |
 
 ---
 
@@ -210,11 +230,13 @@ File: `app/routers/letters.py`
 | Task | File |
 |------|------|
 | Add new violation rule | `app/services/audit/rules.py` |
-| Change DOFD inference | `app/services/parsing/html_parser.py` |
+| Change DOFD inference (parsing) | `app/services/parsing/html_parser.py` |
+| Change DOFD inference (SOL/time-barred) | `app/services/audit/rules.py` (`_infer_dofd_from_payment_history`) |
 | Add cross-bureau check | `app/services/audit/cross_bureau_rules.py` |
 | Change letter sections | `app/services/legal_letter_generator/pdf_format_assembler.py` |
 | Update field name display | `app/routers/letters.py` |
 | Add new ViolationType | `app/models/ssot.py` or `app/models/__init__.py` |
+| Modify state SOL data | `app/services/audit/sol_data.py` |
 
 ---
 

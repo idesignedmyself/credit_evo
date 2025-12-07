@@ -75,6 +75,10 @@ class AuditEngine:
         double_jeopardy_violations = self._check_double_jeopardy(report.accounts)
         all_violations.extend(double_jeopardy_violations)
 
+        # Run time-barred debt checks (SOL expired)
+        time_barred_violations = self._check_time_barred_debts(report.accounts)
+        all_violations.extend(time_barred_violations)
+
         # Build AuditResult (SSOT #2)
         result = AuditResult(
             report_id=report.report_id,
@@ -357,6 +361,31 @@ class AuditEngine:
                         ))
 
         logger.info(f"Double Jeopardy check found {len(violations)} duplicate debt violations")
+        return violations
+
+    def _check_time_barred_debts(self, accounts: List[Account], user_state: str = "NY") -> List[Violation]:
+        """
+        Check all accounts for time-barred debt (SOL expired).
+
+        This runs once per account (not per-bureau) since SOL is based on
+        the account's dates, not bureau-specific data.
+
+        Args:
+            accounts: List of accounts to check
+            user_state: Consumer's state for SOL lookup (defaults to NY for now,
+                        will be dynamic from User Profile later)
+
+        Returns:
+            List of TIME_BARRED_DEBT_RISK violations
+        """
+        violations: List[Violation] = []
+
+        for account in accounts:
+            # The check_time_barred_debt rule handles filtering for collections/chargeoffs
+            time_barred = self.single_bureau_rules.check_time_barred_debt(account, user_state)
+            violations.extend(time_barred)
+
+        logger.info(f"Time-barred debt check found {len(violations)} SOL-expired accounts")
         return violations
 
 

@@ -1,9 +1,9 @@
 # Credit Engine System Checklist
 
 ## Current Status Overview
-- **Full Coverage:** 24 violation types
+- **Full Coverage:** 25 violation types
 - **Partial Coverage:** 11 violation types
-- **Not Detected:** 8 violation types
+- **Not Detected:** 7 violation types
 
 ---
 
@@ -134,12 +134,34 @@
 - **Implementation:** Classify inquiry types and flag mismatches
 - **File:** `app/services/audit/rules.py`
 
-### [ ] Time-Barred Debt (40% success)
+### [x] Time-Barred Debt (40% success) - ✅ IMPLEMENTED
 - **Category:** Collection-Specific Violations
 - **Description:** Collections past statute of limitations still reporting active
-- **Legal Basis:** State SOL Laws / FDCPA
-- **Implementation:** Requires state-specific SOL logic database
-- **File:** `app/services/audit/rules.py` + new SOL config
+- **Legal Basis:** FDCPA §1692e(5) - Threat to take action that cannot legally be taken / State SOL Laws
+- **Status:** ✅ Fully implemented with 50-state SOL database
+- **Rules:**
+  - `check_time_barred_debt()` in `app/services/audit/rules.py`
+  - `get_sol_category()` - Infers debt category (open/written/promissory) from account fields
+  - `_infer_dofd_from_payment_history()` - DOFD inference using "Reverse Contiguous Chain" algorithm
+- **ViolationType:** `TIME_BARRED_DEBT_RISK`
+- **Severity:** CRITICAL (if legal threats detected) / HIGH (otherwise)
+- **Files:**
+  - `app/services/audit/rules.py` - Detection logic + DOFD inference
+  - `app/services/audit/sol_data.py` - 50-state SOL database with citations
+  - `app/services/audit/engine.py` - Wired into audit pipeline
+  - `app/services/legal_letter_generator/pdf_format_assembler.py` - Letter category
+- **Criteria:**
+  - Only applies to COLLECTOR or OC_CHARGEOFF accounts
+  - Anchor date priority: Explicit DOFD > Inferred DOFD (from payment history) > DLA > DLP
+  - DOFD inference uses "Reverse Contiguous Chain" algorithm (finds start of CURRENT delinquency, not oldest ever)
+  - Compares anchor date against state-specific SOL for the debt category
+  - Defaults to NY (3-year SOL under CPLR § 214-i), user_state parameter for future expansion
+- **DOFD Inference Algorithm ("Reverse Contiguous Chain"):**
+  - Sorts payment history newest → oldest
+  - Walks backwards looking for delinquent statuses (30, 60, 90, 120, CO, etc.)
+  - STOPS at the first "OK/Current" status (the cure point)
+  - Returns oldest date in the UNBROKEN delinquency chain
+  - This prevents false "time-barred" findings when old delinquencies were cured
 
 ### [x] Missing Compliance Condition Codes / Dispute Flag Mismatch (35% success) - ✅ IMPLEMENTED
 - **Category:** Metro 2 Format Violations / Cross-Bureau Discrepancy
@@ -269,6 +291,7 @@
 | Delinquency Jump (impossible progression) | 55% | ✅ Full |
 | Stagnant Delinquency (rolling lates) | 55% | ✅ Full |
 | Double Jeopardy (OC + Collector both with balance) | 60% | ✅ Full |
+| Time-Barred Debt (SOL expired collections) | 40% | ✅ Full |
 
 ---
 
@@ -296,7 +319,7 @@
 13. [ ] Soft as Hard Misclassification
 
 ### Phase 5: Complex Implementations
-14. [ ] Time-Barred Debt (requires SOL database)
+14. [x] Time-Barred Debt (requires SOL database) ✅ DONE
 15. [ ] Public Records parsing (judgments, bankruptcy)
 16. [x] Authorized User Misreporting ✅ DONE
 

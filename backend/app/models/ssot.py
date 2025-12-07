@@ -89,9 +89,11 @@ class ViolationType(str, Enum):
     DOFD_REPLACED_WITH_DATE_OPENED = "dofd_replaced_with_date_opened"
     IMPOSSIBLE_TIMELINE = "impossible_timeline"
     OBSOLETE_ACCOUNT = "obsolete_account"
+    TIME_BARRED_DEBT_RISK = "time_barred_debt_risk"  # Collections past SOL still reporting
 
 
 class Severity(str, Enum):
+    CRITICAL = "critical"  # Highest severity - potential legal violations
     HIGH = "high"
     MEDIUM = "medium"
     LOW = "low"

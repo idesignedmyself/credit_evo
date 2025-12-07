@@ -39,6 +39,7 @@ class ViolationCategory(str, Enum):
     """Categories for grouping violations by error type."""
     MISSING_DOFD = "missing_dofd"
     OBSOLETE_ACCOUNT = "obsolete_account"
+    TIME_BARRED_DEBT = "time_barred_debt"  # Collections past statute of limitations
     STALE_REPORTING = "stale_reporting"
     AMOUNT_PAST_DUE_ERROR = "amount_past_due_error"
     BALANCE_ERROR = "balance_error"
@@ -96,6 +97,26 @@ CATEGORY_CONFIGS: Dict[ViolationCategory, CategoryConfig] = {
             "(15 U.S.C. § 1681c(a))."
         ),
         fcra_section="605(a)"
+    ),
+    ViolationCategory.TIME_BARRED_DEBT: CategoryConfig(
+        title="Time-Barred Debt - Statute of Limitations Expired",
+        metro2_fields="State SOL Statutes / FDCPA § 1692e(5)",
+        explanation=(
+            "The following collection accounts have exceeded the applicable Statute of Limitations (SOL) "
+            "for the consumer's state of residence. When the SOL expires, the creditor loses the legal "
+            "right to sue for collection. Under the Fair Debt Collection Practices Act (FDCPA) Section "
+            "1692e(5), threatening to take any action that cannot legally be taken—including suing on "
+            "time-barred debt—is a per se violation. The following accounts are time-barred:"
+        ),
+        resolution=(
+            "While time-barred debt may still be reported on a credit file (separate from the 7-year "
+            "FCRA reporting period), the collector has lost all legal recourse to sue for collection. "
+            "Any communication threatening legal action, lawsuit, garnishment, or judgment on these "
+            "debts would constitute an FDCPA violation. I demand that any legal threat language be "
+            "removed from the account remarks and that the collector cease any implication of legal "
+            "recourse on these time-barred debts."
+        ),
+        fcra_section="FDCPA 1692e(5)"
     ),
     ViolationCategory.STALE_REPORTING: CategoryConfig(
         title="Accounts with Stale Reporting Data",
@@ -354,6 +375,12 @@ def _classify_violation(violation: Dict[str, Any]) -> ViolationCategory:
         return ViolationCategory.OBSOLETE_ACCOUNT
     if "obsolete" in evidence or "2555" in evidence or "7 year" in evidence or "seven year" in evidence:
         return ViolationCategory.OBSOLETE_ACCOUNT
+
+    # Check for time-barred debt (SOL expired)
+    if v_type == "time_barred_debt_risk":
+        return ViolationCategory.TIME_BARRED_DEBT
+    if "statute of limitations" in evidence or "time-barred" in evidence or "sol expired" in evidence:
+        return ViolationCategory.TIME_BARRED_DEBT
 
     # Check for stale reporting (>= 308 days)
     if days and 308 <= days <= 2555:
@@ -1013,6 +1040,7 @@ class PDFFormatAssembler:
         # Define category order for consistent output
         category_order = [
             ViolationCategory.OBSOLETE_ACCOUNT,
+            ViolationCategory.TIME_BARRED_DEBT,  # SOL expired (different from 7-year FCRA rule)
             ViolationCategory.MISSING_DOFD,
             ViolationCategory.STALE_REPORTING,
             ViolationCategory.PHANTOM_LATE_PAYMENT,
