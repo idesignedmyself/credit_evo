@@ -61,6 +61,9 @@ class ViolationCategory(str, Enum):
     # Medical Debt violations (NCAP 2022/2023)
     MEDICAL_UNDER_500 = "medical_under_500"  # Unpaid medical collection < $500 (banned April 2023)
     MEDICAL_PAID_REPORTING = "medical_paid_reporting"  # Paid medical collection still reporting (banned July 2022)
+    # Post-Settlement & Cross-Bureau Gaps
+    POST_SETTLEMENT_NEGATIVE = "post_settlement_negative"  # Late markers reported AFTER account closed/settled
+    MISSING_TRADELINE_INFO = "missing_tradeline_info"  # Account missing from some bureaus (explains score gaps)
     OTHER = "other"
 
 
@@ -477,6 +480,44 @@ CATEGORY_CONFIGS: Dict[ViolationCategory, CategoryConfig] = {
         ),
         fcra_section="Bureau Policy / NCAP 2022"
     ),
+    # POST-SETTLEMENT & CROSS-BUREAU GAPS
+    ViolationCategory.POST_SETTLEMENT_NEGATIVE: CategoryConfig(
+        title="Post-Settlement Negative Reporting (Zombie History)",
+        metro2_fields="Metro 2 Field 18 (Payment History Profile) / Field 24 (Date Closed)",
+        explanation=(
+            "Under FCRA Section 623(a)(1), furnishers must report accurate information. When an account is "
+            "closed, paid, or settled, the furnisher cannot continue to report new derogatory payment markers "
+            "(30/60/90 days late) for periods AFTER the account was closed. This practice, known as 'zombie history' "
+            "or 'ghost delinquency,' artificially refreshes the Date of Last Activity (DLA) and prevents the "
+            "consumer's score from recovering. The following accounts show late payment markers reported for dates "
+            "AFTER the account was closed or settled:"
+        ),
+        resolution=(
+            "These post-settlement derogatory markers must be immediately removed. Once an account is closed "
+            "or settled, no new delinquency can accrue - the debt no longer exists to become past due on. "
+            "These phantom late markers are mathematically impossible and constitute inaccurate reporting under "
+            "FCRA Section 623(a)(1). I demand immediate deletion of all payment history entries dated after the "
+            "account closure/settlement date."
+        ),
+        fcra_section="623(a)(1)"
+    ),
+    ViolationCategory.MISSING_TRADELINE_INFO: CategoryConfig(
+        title="Cross-Bureau Tradeline Gap (Missing Account)",
+        metro2_fields="Furnisher Reporting Practices",
+        explanation=(
+            "The following account appears on some credit bureaus but is MISSING from this bureau's report. "
+            "While furnishers are not legally required to report to all three bureaus, significant tradeline "
+            "gaps between bureaus can materially affect credit scores and create unexplained score discrepancies "
+            "between bureaus. This informational finding explains why scores may differ across bureaus:"
+        ),
+        resolution=(
+            "This is an informational notice regarding a tradeline gap. While not a legal violation, the absence "
+            "of this account from this bureau's report may be contributing to score discrepancies. I request that "
+            "you note this gap for your records. If this account SHOULD be reporting to all bureaus and was "
+            "inadvertently omitted, please contact the furnisher to ensure complete reporting."
+        ),
+        fcra_section="Informational"
+    ),
 }
 
 
@@ -604,6 +645,18 @@ def _classify_violation(violation: Dict[str, Any]) -> ViolationCategory:
     # Paid medical still reporting (banned July 2022)
     if v_type == "medical_paid_reporting":
         return ViolationCategory.MEDICAL_PAID_REPORTING
+
+    # Check for POST-SETTLEMENT NEGATIVE REPORTING (Zombie History)
+    # Late markers reported AFTER account was closed/settled
+    if v_type == "post_settlement_negative":
+        return ViolationCategory.POST_SETTLEMENT_NEGATIVE
+    if "zombie" in evidence or "post-settlement" in evidence or "ghost delinquency" in evidence:
+        return ViolationCategory.POST_SETTLEMENT_NEGATIVE
+
+    # Check for MISSING TRADELINE (Cross-Bureau Gap)
+    # Account appears on some bureaus but is missing from others
+    if v_type == "missing_tradeline_inconsistency":
+        return ViolationCategory.MISSING_TRADELINE_INFO
 
     # Check for missing payment history
     if v_type in ["missing_payment_history", "missing_payment_field"]:
@@ -1237,6 +1290,7 @@ class PDFFormatAssembler:
             ViolationCategory.MISSING_DOFD,
             ViolationCategory.STALE_REPORTING,
             ViolationCategory.PHANTOM_LATE_PAYMENT,
+            ViolationCategory.POST_SETTLEMENT_NEGATIVE,  # Zombie history - late markers after closed
             ViolationCategory.PAID_COLLECTION_CONTRADICTION,
             ViolationCategory.AMOUNT_PAST_DUE_ERROR,
             ViolationCategory.BALANCE_ERROR,
@@ -1245,6 +1299,7 @@ class PDFFormatAssembler:
             ViolationCategory.STUDENT_LOAN_VERIFICATION,
             ViolationCategory.COLLECTION_VERIFICATION,
             ViolationCategory.IDENTITY_ERROR,
+            ViolationCategory.MISSING_TRADELINE_INFO,  # Cross-bureau gaps (informational)
             ViolationCategory.OTHER,
         ]
 

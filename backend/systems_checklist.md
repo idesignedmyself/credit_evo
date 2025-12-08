@@ -78,6 +78,8 @@ Result:       ALL CHECKS PASSED
 | TemporalRules | ACTIVE | `app/services/audit/rules.py` |
 | PublicRecordRules | ACTIVE | `app/services/audit/rules.py` |
 | MedicalDebtRules | ACTIVE | `app/services/audit/rules.py` (NCAP 2022/2023 Bureau Policy) |
+| PostSettlementRules | ACTIVE | `app/services/audit/rules.py` (Zombie History Detection) |
+| MissingTradelineRules | ACTIVE | `app/services/audit/cross_bureau_rules.py` (Cross-Bureau Gaps) |
 
 ---
 
@@ -123,6 +125,8 @@ Result:       ALL CHECKS PASSED
 5. **Child Identity Theft Detection** - CRITICAL: Detects accounts opened when consumer was a minor (<18 years old)
 6. **Public Records Audit** - NEW: Detects NCAP violations (judgments/liens post-2017), satisfied judgments with balance, and obsolete bankruptcies
 7. **Medical Debt Compliance** - NEW: Catches "zombie medical bills" that should have been deleted under NCAP 2022/2023 (paid medical, under $500)
+8. **Post-Settlement Negative Reporting** - NEW: Detects "zombie history" where late markers are reported AFTER an account was closed/settled (artificially refreshes Date of Last Activity)
+9. **Missing Tradelines Detection** - NEW: Detects accounts appearing on some bureaus but missing from others (explains score discrepancies between bureaus)
 
 ---
 

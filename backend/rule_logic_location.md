@@ -74,6 +74,8 @@ app/
 | Bankruptcy Obsolete | `bankruptcy_obsolete` | Public Record (Ch7 > 10 years or Ch13 > 7 years per FCRA §605(a)(1)) |
 | Medical Under $500 | `medical_under_500` | Bureau Policy / NCAP 2023 (Unpaid medical < $500 banned April 2023) |
 | Medical Paid Reporting | `medical_paid_reporting` | Bureau Policy / NCAP 2022 (Paid medical collections banned July 2022) |
+| Post-Settlement Negative | `post_settlement_negative` | Field 18/24 (Late markers reported AFTER account closed/settled - "Zombie History") |
+| Missing Tradeline | `missing_tradeline_inconsistency` | Cross-Bureau (Account appears on some bureaus but missing from others) |
 
 **Time-Barred Debt Detection:**
 - `check_time_barred_debt()` - Main detection logic comparing anchor date vs state SOL
@@ -301,6 +303,7 @@ NormalizedReport → audit_report() → runs rules.py → AuditResult
 | Dispute flag mismatch | One bureau shows dispute (XB/XC/XH), another doesn't | FCRA §623(a)(3) |
 | ECOA code mismatch | Different liability designation (Individual vs Joint) | FCRA §623(a)(1) |
 | Authorized User derogatory | AU account with negative marks (AU not liable) | FCRA §623(a)(1) / ECOA |
+| Missing tradeline | Account appears on some bureaus but missing from others | Informational (explains score gaps) |
 
 **How it works:**
 - IdentityIQ reports contain all 3 bureaus in one file
@@ -427,6 +430,8 @@ File: `app/routers/letters.py`
 | Bankruptcy dates (future/obsolete) | `app/services/audit/rules.py` (`PublicRecordRules.check_bankruptcy_dates`) |
 | Medical debt under $500 | `app/services/audit/rules.py` (`SingleBureauRules.check_medical_debt_compliance`) |
 | Paid medical still reporting | `app/services/audit/rules.py` (`SingleBureauRules.check_medical_debt_compliance`) |
+| Post-settlement negative (zombie history) | `app/services/audit/rules.py` (`SingleBureauRules.check_post_settlement_reporting`) |
+| Missing tradeline (cross-bureau gap) | `app/services/audit/cross_bureau_rules.py` (`CrossBureauRules.check_missing_tradelines`) |
 
 ---
 

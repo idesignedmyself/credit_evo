@@ -119,6 +119,10 @@ class ViolationType(str, Enum):
     MEDICAL_UNDER_500 = "medical_under_500"  # Unpaid medical collection < $500 (banned April 2023)
     MEDICAL_PAID_REPORTING = "medical_paid_reporting"  # Paid medical collection still reporting (banned July 2022)
 
+    # Post-Settlement & Cross-Bureau Gaps
+    POST_SETTLEMENT_NEGATIVE = "post_settlement_negative"  # Late markers reported AFTER account closed/settled
+    MISSING_TRADELINE_INCONSISTENCY = "missing_tradeline_inconsistency"  # Account missing from some bureaus (explains score gaps)
+
 
 class Severity(str, Enum):
     CRITICAL = "critical"  # Highest severity - potential legal violations

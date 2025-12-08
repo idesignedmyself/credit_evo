@@ -1738,6 +1738,167 @@ class SingleBureauRules:
 
         return violations
 
+    @staticmethod
+    def check_post_settlement_reporting(
+        account: Account,
+        bureau: Bureau,
+        bureau_data: Optional[BureauAccountData] = None
+    ) -> List[Violation]:
+        """
+        Detects 'Zombie Reporting': Derogatory history markers occurring
+        AFTER the account was Closed, Paid, or Settled.
+
+        The Problem:
+        - You settle a debt in January, balance goes to $0 (correct)
+        - But in February, March, April, the furnisher keeps reporting "30 Days Late"
+        - This artificially keeps the "Date of Last Activity" fresh
+        - The account can never "age" so the score never recovers
+
+        Legal Basis: FCRA §607(b) - Accuracy requirement
+        Once an account is closed/settled with $0 balance, no new derogatory
+        history should be added.
+
+        Args:
+            account: Account to check
+            bureau: Bureau being checked
+            bureau_data: Bureau-specific data including payment_history
+
+        Returns:
+            List of POST_SETTLEMENT_NEGATIVE violations
+        """
+        violations = []
+
+        # Get date_closed - use bureau_data if available, else account
+        date_closed = None
+        if bureau_data and bureau_data.date_closed:
+            date_closed = bureau_data.date_closed
+        elif account.date_closed:
+            date_closed = account.date_closed
+
+        # 1. Check if the account is Closed/Settled
+        status_lower = (account.payment_status or "").lower()
+        status_code = str(getattr(account, 'account_status_code', ''))
+
+        # Metro 2 codes: 13 (Paid), 61-65 (Paid Derog variations)
+        is_closed_settled = (
+            status_code in ['13', '61', '62', '63', '64', '65'] or
+            date_closed is not None or
+            "paid" in status_lower or
+            "settled" in status_lower or
+            "closed" in status_lower or
+            account.account_status in [AccountStatus.CLOSED, AccountStatus.PAID]
+        )
+
+        if not is_closed_settled or not date_closed:
+            return violations
+
+        # 2. Get payment history - need bureau_data for this
+        payment_history = []
+        if bureau_data and bureau_data.payment_history:
+            payment_history = bureau_data.payment_history
+        elif hasattr(account, 'bureaus') and account.bureaus and bureau in account.bureaus:
+            bd = account.bureaus[bureau]
+            payment_history = bd.payment_history if bd.payment_history else []
+
+        if not payment_history:
+            return violations
+
+        # OK statuses that are NOT derogatory
+        ok_statuses = {"OK", "ok", "Ok", "C", "c", "Current", "current", "0", "", "-", "ND", "nd", None}
+
+        # 3. Check for late markers AFTER the closed date
+        zombie_entries = []
+
+        for entry in payment_history:
+            # Get entry date - may be stored as 'date' or constructed from month/year
+            entry_date = None
+
+            if 'date' in entry and entry['date']:
+                entry_date = entry['date']
+            elif 'year' in entry and 'month' in entry:
+                # Try to construct date from month/year
+                try:
+                    # Month might be "Jan", "Feb", etc. or a number
+                    month_str = str(entry.get('month', ''))
+                    year = int(entry.get('year', 0))
+
+                    if year > 0 and month_str:
+                        # Try parsing month name
+                        month_map = {
+                            'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4,
+                            'may': 5, 'jun': 6, 'jul': 7, 'aug': 8,
+                            'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12
+                        }
+                        month_lower = month_str.lower()[:3]
+                        month_num = month_map.get(month_lower, 0)
+
+                        if month_num == 0 and month_str.isdigit():
+                            month_num = int(month_str)
+
+                        if month_num > 0:
+                            entry_date = date(year, month_num, 1)
+                except (ValueError, TypeError):
+                    continue
+
+            if not entry_date:
+                continue
+
+            # Get status
+            status = str(entry.get('status', '')).strip()
+
+            # Skip OK/Current/No Data statuses
+            if status in ok_statuses:
+                continue
+
+            # THE TRAP: Is the late date AFTER the closed date?
+            # Allow 30-day grace period for processing
+            days_after_closing = (entry_date - date_closed).days
+
+            if days_after_closing > 30:
+                zombie_entries.append({
+                    'date': entry_date,
+                    'status': status,
+                    'days_after': days_after_closing
+                })
+
+        # If we found zombie entries, create violation
+        if zombie_entries:
+            # Sort by date, get the worst one
+            zombie_entries.sort(key=lambda x: x['date'], reverse=True)
+            worst_entry = zombie_entries[0]
+
+            violations.append(Violation(
+                violation_type=ViolationType.POST_SETTLEMENT_NEGATIVE,
+                severity=Severity.HIGH,
+                account_id=account.account_id,
+                creditor_name=account.creditor_name,
+                account_number_masked=account.account_number_masked,
+                furnisher_type=account.furnisher_type,
+                bureau=bureau,
+                description=(
+                    f"Post-Settlement Zombie Reporting: This account was closed/settled on "
+                    f"{date_closed.strftime('%B %d, %Y')}, but the furnisher continues to report "
+                    f"derogatory history AFTER the closure date. Found '{worst_entry['status']}' "
+                    f"status for {worst_entry['date'].strftime('%B %Y')} ({worst_entry['days_after']} days "
+                    f"after closing). Once an account is closed with a $0 balance, no new derogatory "
+                    f"history should be added. This artificially keeps the negative item 'fresh' and "
+                    f"prevents your score from recovering."
+                ),
+                expected_value="No derogatory history after closing date",
+                actual_value=f"'{worst_entry['status']}' reported {worst_entry['days_after']} days after closing",
+                fcra_section="607(b)",
+                metro2_field="Payment History / Field 18",
+                evidence={
+                    "closed_date": str(date_closed),
+                    "zombie_entries": len(zombie_entries),
+                    "worst_late_date": str(worst_entry['date']),
+                    "worst_late_status": worst_entry['status'],
+                    "days_after_closing": worst_entry['days_after']
+                }
+            ))
+
+        return violations
+
 
 # =============================================================================
 # FURNISHER RULES

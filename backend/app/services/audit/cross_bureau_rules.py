@@ -727,6 +727,67 @@ class CrossBureauRules:
 
         return discrepancies
 
+    @staticmethod
+    def check_missing_tradelines(accounts: Dict[Bureau, Account]) -> List[CrossBureauDiscrepancy]:
+        """
+        Detects accounts that are reporting to some bureaus but missing from others.
+
+        The Problem:
+        - You have a Capital One card that shows up on TU and EXP
+        - But it's completely missing from EQ
+        - This explains "Why is my Equifax score 50 points lower?"
+        - Missing positive history can significantly impact Credit Mix factor
+
+        Note: This is rarely a legal violation (creditors are not required to report
+        to all 3 bureaus). This is an INFORMATIONAL finding that explains score gaps.
+
+        Args:
+            accounts: Dict mapping Bureau to Account for a matched account group
+
+        Returns:
+            List of MISSING_TRADELINE_INCONSISTENCY discrepancies
+        """
+        discrepancies = []
+
+        # Identify which bureaus are present for this account
+        reporting_bureaus = list(accounts.keys())
+        expected_bureaus = [Bureau.TRANSUNION, Bureau.EXPERIAN, Bureau.EQUIFAX]
+
+        # Find the missing ones
+        missing_bureaus = [b for b in expected_bureaus if b not in reporting_bureaus]
+
+        # If it's on at least 1 but not all 3...
+        if missing_bureaus and len(reporting_bureaus) >= 1:
+            # Grab a representative account to attach the discrepancy to
+            primary_account = list(accounts.values())[0]
+
+            # Format bureau names for display
+            reporting_names = [b.value.title() for b in reporting_bureaus]
+            missing_names = [b.value.title() for b in missing_bureaus]
+
+            discrepancies.append(CrossBureauDiscrepancy(
+                violation_type=ViolationType.MISSING_TRADELINE_INCONSISTENCY,
+                creditor_name=primary_account.creditor_name,
+                account_number_masked=primary_account.account_number_masked or "",
+                account_fingerprint=create_account_fingerprint(primary_account),
+                field_name="Bureau Reporting Consistency",
+                values_by_bureau={
+                    **{b: "Reporting" for b in reporting_bureaus},
+                    **{b: "MISSING" for b in missing_bureaus}
+                },
+                description=(
+                    f"Inconsistent Bureau Reporting: This account ({primary_account.creditor_name}) "
+                    f"is reported to {', '.join(reporting_names)} but is MISSING from "
+                    f"{', '.join(missing_names)}. While creditors are not legally required to report "
+                    f"to all three bureaus, missing positive payment history can cause significant "
+                    f"score discrepancies. If this is a positive account with good payment history, "
+                    f"consider contacting the creditor to request they report to all bureaus."
+                ),
+                severity=Severity.LOW  # Informational - not a legal violation
+            ))
+
+        return discrepancies
+
 
 # =============================================================================
 # MAIN CROSS-BUREAU AUDIT FUNCTION

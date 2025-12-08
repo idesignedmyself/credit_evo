@@ -219,6 +219,8 @@ class AuditEngine:
             all_discrepancies.extend(self.cross_bureau_rules.check_ecoa_code_mismatch(bureau_accounts))
             # Authorized User with derogatory marks (AU is not liable, shouldn't have negative marks)
             all_discrepancies.extend(self.cross_bureau_rules.check_authorized_user_derogatory(bureau_accounts))
+            # Missing tradelines (account on some bureaus but not others - explains score gaps)
+            all_discrepancies.extend(self.cross_bureau_rules.check_missing_tradelines(bureau_accounts))
 
         logger.info(f"Cross-bureau analysis found {len(all_discrepancies)} discrepancies")
         return all_discrepancies
@@ -340,6 +342,11 @@ class AuditEngine:
             account_for_bureau, bureau, bureau_data
         ))
         violations.extend(self.furnisher_rules.check_paid_collection_contradiction(
+            account_for_bureau, bureau, bureau_data
+        ))
+
+        # Post-settlement zombie reporting check (late markers after account closed)
+        violations.extend(self.single_bureau_rules.check_post_settlement_reporting(
             account_for_bureau, bureau, bureau_data
         ))
 
