@@ -11,7 +11,7 @@ Rule Categories:
 """
 from __future__ import annotations
 import logging
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import List
 
 from ...models.ssot import (
@@ -1523,6 +1523,97 @@ class SingleBureauRules:
                     "ecoa_from_raw": ecoa_from_raw if ecoa_from_raw else None,
                     "compliance_code": compliance_code if compliance_code else None,
                     "consumer_info_indicator": consumer_info_indicator if consumer_info_indicator else None
+                }
+            ))
+
+        return violations
+
+    @staticmethod
+    def check_child_identity_theft(account: Account, bureau: Bureau, user_dob: Optional[date]) -> List[Violation]:
+        """
+        Detects accounts opened before the consumer turned 18 (Age of Majority).
+        Minors generally lack the legal capacity to enter into binding contracts.
+
+        CRITICAL EXCEPTION: Authorized Users (ECOA Code 3) are allowed to be minors.
+        Parents often add children as AUs to help build credit history - this is LEGAL.
+        This rule targets 'Individual' or 'Joint' liability assigned to a minor.
+
+        Args:
+            account: The Account to check
+            bureau: The bureau being checked
+            user_dob: The consumer's date of birth from their profile
+
+        Returns:
+            List of CHILD_IDENTITY_THEFT violations (0 or 1)
+        """
+        violations = []
+
+        # 1. Safety Checks: Need valid dates to proceed
+        if not user_dob or not account.date_opened:
+            return violations
+
+        # 2. Convert string dates to objects if needed (Data hygiene)
+        acct_date = account.date_opened
+        if isinstance(acct_date, str):
+            try:
+                acct_date = datetime.strptime(acct_date, "%Y-%m-%d").date()
+            except ValueError:
+                return violations
+
+        # 3. Check Liability (The Safety Valve)
+        # Parents often add kids as Authorized Users (ECOA Code 3). This is LEGAL.
+        # We only flag if the child is liable (Individual/Joint).
+        # Check bureau_data.bureau_code which holds the ECOA/responsibility code
+        bureau_data = account.get_bureau_data(bureau)
+        if bureau_data:
+            bureau_code = (bureau_data.bureau_code or "").lower()
+            # ECOA Code 3 = Authorized User, also check for keywords
+            if "3" in str(bureau_data.bureau_code) or "authorized" in bureau_code:
+                return violations
+
+        # Also check raw_data for ecoa_code if available
+        raw_ecoa = account.raw_data.get("ecoa_code", "") if account.raw_data else ""
+        if str(raw_ecoa) == "3" or "authorized" in str(raw_ecoa).lower():
+            return violations
+
+        # 4. Calculate Age at Opening
+        # Logic: (Open Date - DOB) / 365.25 (accounting for leap years)
+        age_at_opening = (acct_date - user_dob).days / 365.25
+
+        # 5. The Trigger (Under 18)
+        if age_at_opening < 18:
+            # Calculate when the consumer turned 18
+            try:
+                date_turned_18 = user_dob.replace(year=user_dob.year + 18)
+            except ValueError:
+                # Feb 29 edge case
+                date_turned_18 = user_dob.replace(month=2, day=28, year=user_dob.year + 18)
+
+            violations.append(Violation(
+                violation_type=ViolationType.CHILD_IDENTITY_THEFT,
+                severity=Severity.CRITICAL,
+                account_id=account.account_id,
+                creditor_name=account.creditor_name,
+                account_number_masked=account.account_number_masked,
+                furnisher_type=account.furnisher_type,
+                bureau=bureau,
+                description=(
+                    f"POSSIBLE CHILD IDENTITY THEFT: This account was opened on {acct_date}, "
+                    f"when the consumer was approximately {int(age_at_opening)} years old. "
+                    f"Minors generally lack the legal capacity to enter into binding contracts. "
+                    f"Since this consumer is listed as liable (not an Authorized User), this is a strong "
+                    f"indicator of identity theft or synthetic fraud. The consumer turned 18 on "
+                    f"{date_turned_18}, which is AFTER this account was opened."
+                ),
+                expected_value=f"Account opened after age 18 (on or after {date_turned_18})",
+                actual_value=f"Opened at age {int(age_at_opening)} on {acct_date}",
+                fcra_section="Contract Law / Capacity to Contract",
+                metro2_field="Field 10 (Date Opened) / Field 5 (ECOA Code)",
+                evidence={
+                    "dob": str(user_dob),
+                    "date_opened": str(acct_date),
+                    "age_at_opening": round(age_at_opening, 1),
+                    "date_turned_18": str(date_turned_18)
                 }
             ))
 

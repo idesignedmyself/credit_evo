@@ -101,6 +101,40 @@ class AuditEngine:
         if deceased_violations:
             logger.warning(f"CRITICAL: Deceased indicator found - {len(deceased_violations)} consumer-level violation(s)")
 
+        # Run Child Identity Theft check (Account opened while consumer was a minor)
+        # This requires comparing account Date Opened vs consumer's DOB from profile
+        if user_profile and user_profile.get("date_of_birth"):
+            try:
+                # Parse DOB from profile - handle both date objects and strings
+                dob_raw = user_profile["date_of_birth"]
+                if isinstance(dob_raw, str):
+                    user_dob = datetime.strptime(dob_raw, "%Y-%m-%d").date()
+                else:
+                    user_dob = dob_raw  # Already a date object
+
+                # Check each account for child identity theft
+                child_id_violations = []
+                for account in report.accounts:
+                    # Run check on each bureau's data
+                    if hasattr(account, 'bureaus') and account.bureaus:
+                        for bureau in account.bureaus.keys():
+                            child_id_violations.extend(
+                                self.single_bureau_rules.check_child_identity_theft(account, bureau, user_dob)
+                            )
+                    else:
+                        # Single-bureau fallback
+                        account_bureau = getattr(account, 'bureau', report.bureau)
+                        child_id_violations.extend(
+                            self.single_bureau_rules.check_child_identity_theft(account, account_bureau, user_dob)
+                        )
+
+                all_violations.extend(child_id_violations)
+                if child_id_violations:
+                    logger.warning(f"CRITICAL: Child Identity Theft detected - {len(child_id_violations)} violation(s)")
+
+            except (ValueError, TypeError) as e:
+                logger.debug(f"Could not parse DOB for child ID theft check: {e}")
+
         # Build AuditResult (SSOT #2)
         result = AuditResult(
             report_id=report.report_id,

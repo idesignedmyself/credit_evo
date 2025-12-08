@@ -53,6 +53,7 @@ class ViolationCategory(str, Enum):
     COLLECTION_VERIFICATION = "collection_verification"
     IDENTITY_ERROR = "identity_error"
     DECEASED_INDICATOR = "deceased_indicator"  # Living consumer marked as deceased - CRITICAL
+    CHILD_IDENTITY_THEFT = "child_identity_theft"  # Account opened while consumer was a minor - CRITICAL
     OTHER = "other"
 
 
@@ -354,6 +355,28 @@ CATEGORY_CONFIGS: Dict[ViolationCategory, CategoryConfig] = {
         ),
         fcra_section="611(a), 623(a)(2)"
     ),
+    ViolationCategory.CHILD_IDENTITY_THEFT: CategoryConfig(
+        title="CRITICAL: Account Opened When Consumer Was a Minor - Potential Identity Theft",
+        metro2_fields="Metro 2 Field 10 (Date Opened) / Field 5 (ECOA Code)",
+        explanation=(
+            "Under contract law, minors (persons under 18 years of age) generally lack the legal capacity "
+            "to enter into binding contractual agreements. The following account(s) show a Date Opened "
+            "when I was under 18 years old, yet I am listed as a liable party (Individual or Joint), "
+            "NOT as an Authorized User. This is a strong indicator of identity theft, synthetic fraud, "
+            "or a significant data error. I was a MINOR and could not have legally entered into this contract:"
+        ),
+        resolution=(
+            "Please verify the consumer's age at the time of application by comparing the Date Opened "
+            "against my Date of Birth. Since I was a minor when this account was allegedly opened AND "
+            "I am listed as liable (not an Authorized User), this account is either: (1) the result of "
+            "identity theft where someone fraudulently opened the account in my name as a child, "
+            "(2) a data error where the Date Opened or ECOA code is incorrect, or (3) synthetic identity fraud. "
+            "Under FCRA Section 611(a), you must conduct a reasonable investigation. If the furnisher cannot "
+            "produce a signed application from me as an adult, this tradeline must be DELETED as unverifiable. "
+            "I demand immediate investigation and deletion of this invalid tradeline."
+        ),
+        fcra_section="611(a), Contract Law - Capacity to Contract"
+    ),
 }
 
 
@@ -458,6 +481,10 @@ def _classify_violation(violation: Dict[str, Any]) -> ViolationCategory:
         return ViolationCategory.DECEASED_INDICATOR
     if "deceased" in evidence or "death on credit" in evidence:
         return ViolationCategory.DECEASED_INDICATOR
+
+    # Check for child identity theft (CRITICAL - account opened when consumer was a minor)
+    if v_type == "child_identity_theft":
+        return ViolationCategory.CHILD_IDENTITY_THEFT
 
     # Check for missing payment history
     if v_type in ["missing_payment_history", "missing_payment_field"]:

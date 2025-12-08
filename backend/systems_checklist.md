@@ -55,6 +55,7 @@ This document tracks the status of all system components and configurations.
 | Suffix (Jr/Sr) | PASS | Detects mixed file indicators |
 | SSN Last 4 | PASS | Only validates if both have 4 digits |
 | Deceased Indicator | ACTIVE | CRITICAL - Detects living consumer marked as deceased (score = 0) |
+| Child Identity Theft | ACTIVE | CRITICAL - Detects accounts opened when consumer was a minor (<18) |
 
 **Test Results (Sample User):**
 ```
@@ -116,6 +117,8 @@ Result:       ALL CHECKS PASSED
 1. **Profile Form Fix** - Merged two separate `<form>` elements in ProfilePage.jsx into single form
 2. **Database Cleanup** - Removed stale SQLite file, confirmed PostgreSQL is active database
 3. **Identity Check Verification** - Confirmed DOB, name+middle initial, state all parse correctly from `report_data` JSON
+4. **Deceased Indicator Detection** - CRITICAL: Detects living consumer erroneously marked as deceased (score=0)
+5. **Child Identity Theft Detection** - CRITICAL: Detects accounts opened when consumer was a minor (<18 years old)
 
 ---
 
@@ -129,4 +132,4 @@ Result:       ALL CHECKS PASSED
 
 ---
 
-*Last Updated: 2024-12-07*
+*Last Updated: 2025-12-07*

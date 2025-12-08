@@ -107,6 +107,7 @@ class ViolationType(str, Enum):
     IDENTITY_ADDRESS_MISMATCH = "identity_address_mismatch"  # Wrong State - affects SOL, may indicate mixed file
     MIXED_FILE_INDICATOR = "mixed_file_indicator"  # General mixed file flag
     DECEASED_INDICATOR_ERROR = "deceased_indicator_error"  # Living consumer marked as deceased (CRITICAL - score = 0)
+    CHILD_IDENTITY_THEFT = "child_identity_theft"  # Account opened when consumer was a minor (<18 years old)
 
 
 class Severity(str, Enum):

@@ -67,6 +67,7 @@ app/
 | Duplicate Inquiry | `duplicate_inquiry` | FCRA §604 (same creditor <14 days) |
 | Student Loan Portfolio Mismatch | `metro2_portfolio_mismatch` | Field 8 (student loan as Open/Revolving instead of Installment) |
 | Deceased Indicator Error | `deceased_indicator_error` | Field 37/38 (ECOA Code X or Consumer Info Indicator X/Y/Z) |
+| Child Identity Theft | `child_identity_theft` | Field 10 (Date Opened) vs User DOB - Account opened when minor |
 
 **Time-Barred Debt Detection:**
 - `check_time_barred_debt()` - Main detection logic comparing anchor date vs state SOL
@@ -162,6 +163,18 @@ Example: Late 2018 → Cured 2019 → Default 2021
 - Legal basis: FCRA §611(a) (willful noncompliance), §623(a)(2) (reasonable procedures)
 - Case law: Sloane v. Equifax (defamatory reporting of deceased status)
 
+**Child Identity Theft Detection (Account Opened While Minor):**
+- `check_child_identity_theft()` - Compares account Date Opened vs consumer's DOB from profile
+- Under contract law, minors (<18) lack the legal capacity to enter into binding contracts
+- CRITICAL EXCEPTION: Authorized Users (ECOA Code 3) are allowed to be minors - parents often add children as AUs
+- Detection logic:
+  1. Compare account.date_opened vs user_profile.date_of_birth
+  2. Calculate age at opening: (date_opened - dob).days / 365.25
+  3. Skip if ECOA Code 3 (Authorized User) - this is legal
+  4. Flag if age < 18 AND consumer is liable (Individual/Joint)
+- Legal basis: Contract Law (Capacity to Contract), FCRA §611(a)
+- Strong indicator of identity theft or synthetic fraud
+
 **Identity Integrity Rules (FCRA §607(b) - Maximum Possible Accuracy):**
 - `IdentityRules` class - Static methods for identity validation against user profile
 - `check_identity_integrity(report, user_profile)` - Main entry point, runs all identity checks
@@ -187,6 +200,7 @@ User Profile (PostgreSQL users table) → IdentityRules → Violations
 | State Mismatch | Report state vs user profile state | FCRA §607(b) - Mixed File |
 | Name Mismatch | First/Middle/Last comparison | FCRA §607(b) - Mixed File |
 | Deceased Indicator | ECOA Code X / Consumer Info X/Y/Z / Remarks | FCRA §611(a) / §623(a)(2) - CRITICAL |
+| Child Identity Theft | Date Opened vs DOB, age < 18 (skip ECOA 3 AUs) | Contract Law / FCRA §611(a) - CRITICAL |
 
 **To add a new rule:** Create a new function in this file following the existing pattern.
 
@@ -360,6 +374,7 @@ File: `app/routers/letters.py`
 | Name mismatch | `app/services/audit/rules.py` (`IdentityRules.check_name_mismatch`) |
 | Deceased indicator (account-level) | `app/services/audit/rules.py` (`SingleBureauRules.check_deceased_indicator`) |
 | Deceased indicator (consumer-level) | `app/services/audit/rules.py` (`IdentityRules.check_deceased_indicator_consumer`) |
+| Child identity theft | `app/services/audit/rules.py` (`SingleBureauRules.check_child_identity_theft`) |
 
 ---
 
