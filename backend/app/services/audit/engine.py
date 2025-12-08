@@ -143,6 +143,26 @@ class AuditEngine:
             if public_record_violations:
                 logger.info(f"Public Records audit found {len(public_record_violations)} violation(s)")
 
+        # Run Medical Debt Compliance check (NCAP 2022/2023 Bureau Policy)
+        # Catches: 1) Unpaid medical < $500, 2) Paid medical still reporting
+        medical_violations = []
+        for account in report.accounts:
+            # Check each bureau the account appears in
+            if hasattr(account, 'bureaus') and account.bureaus:
+                for bureau in account.bureaus.keys():
+                    medical_violations.extend(
+                        self.single_bureau_rules.check_medical_debt_compliance(account, bureau)
+                    )
+            else:
+                # Single-bureau fallback
+                account_bureau = getattr(account, 'bureau', report.bureau)
+                medical_violations.extend(
+                    self.single_bureau_rules.check_medical_debt_compliance(account, account_bureau)
+                )
+        all_violations.extend(medical_violations)
+        if medical_violations:
+            logger.info(f"Medical Debt Compliance check found {len(medical_violations)} violation(s)")
+
         # Build AuditResult (SSOT #2)
         result = AuditResult(
             report_id=report.report_id,

@@ -115,6 +115,10 @@ class ViolationType(str, Enum):
     BANKRUPTCY_DATE_ERROR = "bankruptcy_date_error"  # Impossible dates (future filing date)
     BANKRUPTCY_OBSOLETE = "bankruptcy_obsolete"  # Ch7 > 10 years or Ch13 > 7 years
 
+    # Medical Debt violations (NCAP 2022/2023 Bureau Policy)
+    MEDICAL_UNDER_500 = "medical_under_500"  # Unpaid medical collection < $500 (banned April 2023)
+    MEDICAL_PAID_REPORTING = "medical_paid_reporting"  # Paid medical collection still reporting (banned July 2022)
+
 
 class Severity(str, Enum):
     CRITICAL = "critical"  # Highest severity - potential legal violations

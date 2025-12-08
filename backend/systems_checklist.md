@@ -77,6 +77,7 @@ Result:       ALL CHECKS PASSED
 | FurnisherRules | ACTIVE | `app/services/audit/rules.py` |
 | TemporalRules | ACTIVE | `app/services/audit/rules.py` |
 | PublicRecordRules | ACTIVE | `app/services/audit/rules.py` |
+| MedicalDebtRules | ACTIVE | `app/services/audit/rules.py` (NCAP 2022/2023 Bureau Policy) |
 
 ---
 
@@ -121,6 +122,7 @@ Result:       ALL CHECKS PASSED
 4. **Deceased Indicator Detection** - CRITICAL: Detects living consumer erroneously marked as deceased (score=0)
 5. **Child Identity Theft Detection** - CRITICAL: Detects accounts opened when consumer was a minor (<18 years old)
 6. **Public Records Audit** - NEW: Detects NCAP violations (judgments/liens post-2017), satisfied judgments with balance, and obsolete bankruptcies
+7. **Medical Debt Compliance** - NEW: Catches "zombie medical bills" that should have been deleted under NCAP 2022/2023 (paid medical, under $500)
 
 ---
 

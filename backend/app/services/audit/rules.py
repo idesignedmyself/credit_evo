@@ -1619,6 +1619,125 @@ class SingleBureauRules:
 
         return violations
 
+    @staticmethod
+    def check_medical_debt_compliance(account: Account, bureau: Bureau) -> List[Violation]:
+        """
+        Audits Medical Debt against the 2022/2023 Bureau Policy updates (NCAP).
+
+        Two specific rules:
+        1. No reporting of unpaid Medical Debt < $500 (effective April 2023)
+        2. No reporting of PAID Medical Debt, regardless of amount (effective July 2022)
+
+        These are BUREAU POLICY violations - the bureaus agreed to these rules but
+        their systems don't always properly filter. This catches "zombie medical bills"
+        that should have been purged.
+        """
+        violations = []
+
+        # 1. Identify Medical Accounts
+        # Check Account Type detail or look for keywords in the Creditor Name
+        # (Collectors often use names like "Radiology", "Ambulance", "Health", "Med")
+        name = (account.creditor_name or "").lower()
+        detail = (account.account_type_detail or "").lower()
+        remarks = " ".join(account.remarks or []).lower()
+
+        # Medical keywords - hospitals, clinics, and common healthcare providers
+        med_keywords = [
+            "medical", "health", "hospital", "clinic", "radiology",
+            "anesthesia", "ambulance", "lab", "physician", "dental",
+            "doctor", "ems", "emergency", "pediatric", "surgery",
+            "urgent care", "pharmacy", "imaging", "pathology", "orthopedic",
+            "cardiology", "oncology", "dermatology", "optometry", "vision"
+        ]
+
+        # Check if this is a medical account
+        is_medical = (
+            any(k in name for k in med_keywords) or
+            any(k in detail for k in med_keywords) or
+            "medical" in remarks or
+            getattr(account, 'account_type_code', None) == "90"  # Metro 2 code for Medical
+        )
+
+        if not is_medical:
+            return violations
+
+        balance = account.balance or 0.0
+
+        # RULE A: The "Under $500" Threshold (April 2023)
+        # If unpaid and under $500, it's a violation - should be deleted
+        if balance > 0 and balance < 500:
+            violations.append(Violation(
+                violation_type=ViolationType.MEDICAL_UNDER_500,
+                severity=Severity.CRITICAL,
+                account_id=account.account_id,
+                creditor_name=account.creditor_name,
+                account_number_masked=account.account_number_masked,
+                furnisher_type=account.furnisher_type,
+                bureau=bureau,
+                description=(
+                    f"Medical collection reported with a balance of ${balance:.2f}. "
+                    f"As of April 2023, all three major credit bureaus (Equifax, Experian, TransUnion) "
+                    f"agreed to remove all unpaid medical collections under $500 from credit reports. "
+                    f"This reporting violates current bureau policy and data acceptance standards. "
+                    f"This item should be immediately deleted."
+                ),
+                expected_value="Deleted / Not Reported",
+                actual_value=f"Reporting Balance: ${balance:.2f}",
+                fcra_section="Bureau Policy / NCAP 2023",
+                metro2_field="Balance Field / Industry Code",
+                evidence={
+                    "balance": balance,
+                    "is_medical": True,
+                    "policy_effective_date": "2023-04-01"
+                }
+            ))
+
+        # RULE B: The "Paid is Dead" Rule (July 2022)
+        # If the status is Paid/Settled, it must be deleted immediately
+        status_text = (account.payment_status or "").lower()
+        account_status = (account.account_status or "").lower()
+
+        # Check for paid/settled indicators
+        is_paid = (
+            "paid" in status_text or
+            "settled" in status_text or
+            "paid" in account_status or
+            "settled" in account_status or
+            str(getattr(account, 'account_status_code', '')) in ['62', '13'] or  # Metro 2 paid codes
+            (balance == 0 and ("collection" in detail or "collection" in name))  # Zero balance collection
+        )
+
+        if is_paid:
+            violations.append(Violation(
+                violation_type=ViolationType.MEDICAL_PAID_REPORTING,
+                severity=Severity.CRITICAL,
+                account_id=account.account_id,
+                creditor_name=account.creditor_name,
+                account_number_masked=account.account_number_masked,
+                furnisher_type=account.furnisher_type,
+                bureau=bureau,
+                description=(
+                    f"Paid medical collection is still appearing on credit report. "
+                    f"Effective July 1, 2022, the three major credit bureaus agreed that "
+                    f"paid medical collections must be removed from credit reports immediately "
+                    f"upon payment. The fact that this account is marked '{account.payment_status or account.account_status}' "
+                    f"but still appears on the report is a direct violation of bureau policy. "
+                    f"This item should be immediately deleted."
+                ),
+                expected_value="Deleted",
+                actual_value=f"Still reporting as: {account.payment_status or account.account_status}",
+                fcra_section="Bureau Policy / NCAP 2022",
+                metro2_field="Account Status / Payment Status",
+                evidence={
+                    "is_medical": True,
+                    "is_paid": True,
+                    "status": account.payment_status or account.account_status,
+                    "policy_effective_date": "2022-07-01"
+                }
+            ))
+
+        return violations
+
 
 # =============================================================================
 # FURNISHER RULES

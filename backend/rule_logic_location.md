@@ -72,6 +72,8 @@ app/
 | Judgment Not Updated | `judgment_not_updated` | Public Record (Satisfied judgment still reporting balance > $0) |
 | Bankruptcy Date Error | `bankruptcy_date_error` | Public Record (Filed date is in the future - impossible) |
 | Bankruptcy Obsolete | `bankruptcy_obsolete` | Public Record (Ch7 > 10 years or Ch13 > 7 years per FCRA §605(a)(1)) |
+| Medical Under $500 | `medical_under_500` | Bureau Policy / NCAP 2023 (Unpaid medical < $500 banned April 2023) |
+| Medical Paid Reporting | `medical_paid_reporting` | Bureau Policy / NCAP 2022 (Paid medical collections banned July 2022) |
 
 **Time-Barred Debt Detection:**
 - `check_time_barred_debt()` - Main detection logic comparing anchor date vs state SOL
@@ -231,6 +233,20 @@ User Profile (PostgreSQL users table) → IdentityRules → Violations
 - Chapter 7 and Chapter 11: 10 years from filing date
 - Chapter 13: 7 years from filing date
 - "Filed date" is the anchor, not discharge date
+
+**Medical Debt Compliance (NCAP 2022/2023 Bureau Policy):**
+- `check_medical_debt_compliance(account, bureau)` - Checks for "zombie medical bills" that bureaus should have purged
+- Two specific violations detected:
+  1. **Medical Under $500** (April 2023): Unpaid medical collections < $500 should be deleted
+  2. **Medical Paid Reporting** (July 2022): ANY paid medical collection should be deleted immediately
+- Medical detection uses keyword matching: medical, health, hospital, clinic, radiology, etc.
+- Bureau policy violations - the bureaus agreed to these rules but systems don't always filter correctly
+
+**Medical Debt Violation Types:**
+| Check | Detection Method | Legal Basis |
+|-------|-----------------|-------------|
+| Under $500 | Balance > 0 AND Balance < 500 AND is_medical | Bureau Policy / NCAP 2023 |
+| Paid Reporting | is_paid (status=Paid/Settled OR $0 balance) AND is_medical | Bureau Policy / NCAP 2022 |
 
 **To add a new rule:** Create a new function in this file following the existing pattern.
 
@@ -409,6 +425,8 @@ File: `app/routers/letters.py`
 | NCAP compliance (judgments/liens) | `app/services/audit/rules.py` (`PublicRecordRules.check_ncap_compliance`) |
 | Judgment status (satisfied w/balance) | `app/services/audit/rules.py` (`PublicRecordRules.check_judgment_status`) |
 | Bankruptcy dates (future/obsolete) | `app/services/audit/rules.py` (`PublicRecordRules.check_bankruptcy_dates`) |
+| Medical debt under $500 | `app/services/audit/rules.py` (`SingleBureauRules.check_medical_debt_compliance`) |
+| Paid medical still reporting | `app/services/audit/rules.py` (`SingleBureauRules.check_medical_debt_compliance`) |
 
 ---
 

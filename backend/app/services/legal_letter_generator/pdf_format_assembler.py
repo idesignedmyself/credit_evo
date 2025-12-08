@@ -58,6 +58,9 @@ class ViolationCategory(str, Enum):
     PUBLIC_RECORD_NCAP = "public_record_ncap"  # Civil Judgment/Tax Lien appearing post-NCAP 2017
     PUBLIC_RECORD_JUDGMENT_BALANCE = "public_record_judgment_balance"  # Satisfied judgment with balance
     PUBLIC_RECORD_BANKRUPTCY_OBSOLETE = "public_record_bankruptcy_obsolete"  # Obsolete bankruptcy > 7/10 years
+    # Medical Debt violations (NCAP 2022/2023)
+    MEDICAL_UNDER_500 = "medical_under_500"  # Unpaid medical collection < $500 (banned April 2023)
+    MEDICAL_PAID_REPORTING = "medical_paid_reporting"  # Paid medical collection still reporting (banned July 2022)
     OTHER = "other"
 
 
@@ -437,6 +440,43 @@ CATEGORY_CONFIGS: Dict[ViolationCategory, CategoryConfig] = {
         ),
         fcra_section="605(a)(1)"
     ),
+    # MEDICAL DEBT VIOLATIONS (NCAP 2022/2023 Bureau Policy)
+    ViolationCategory.MEDICAL_UNDER_500: CategoryConfig(
+        title="Medical Collection Under $500 Threshold (Bureau Policy Violation)",
+        metro2_fields="Balance / Industry Code",
+        explanation=(
+            "As of April 2023, all three major credit bureaus (Equifax, Experian, and TransUnion) agreed "
+            "to remove ALL unpaid medical collections under $500 from consumer credit reports. This was "
+            "part of the National Consumer Assistance Plan (NCAP) updates to reduce the impact of medical "
+            "debt on consumer credit scores. The following medical collection falls below the $500 threshold "
+            "and should NOT appear on this report:"
+        ),
+        resolution=(
+            "This medical collection is under $500 and should have been removed under the bureau's own "
+            "data acceptance policy effective April 2023. You are reporting this item in violation of your "
+            "own accuracy standards. Please DELETE this trade line immediately as it falls below the "
+            "current medical debt reporting threshold."
+        ),
+        fcra_section="Bureau Policy / NCAP 2023"
+    ),
+    ViolationCategory.MEDICAL_PAID_REPORTING: CategoryConfig(
+        title="Paid Medical Debt Still Reporting (Bureau Policy Violation)",
+        metro2_fields="Account Status / Payment Status",
+        explanation=(
+            "Effective July 1, 2022, all three major credit bureaus (Equifax, Experian, and TransUnion) "
+            "agreed to remove ALL paid medical collections from consumer credit reports. This was a "
+            "significant policy change under the National Consumer Assistance Plan (NCAP) that recognizes "
+            "the unfair impact of keeping paid medical debts on credit reports. The following paid medical "
+            "collection should NOT appear on this report:"
+        ),
+        resolution=(
+            "This medical collection has been marked as PAID or SETTLED but is still appearing on my "
+            "credit report. Under the bureau's policy effective July 1, 2022, paid medical collections must "
+            "be removed IMMEDIATELY upon payment. The continued presence of this item violates your own "
+            "data acceptance standards and serves no permissible purpose. Please DELETE this item immediately."
+        ),
+        fcra_section="Bureau Policy / NCAP 2022"
+    ),
 }
 
 
@@ -556,6 +596,14 @@ def _classify_violation(violation: Dict[str, Any]) -> ViolationCategory:
     # Obsolete bankruptcies (Ch7 > 10 years, Ch13 > 7 years) and impossible dates
     if v_type in ["bankruptcy_obsolete", "bankruptcy_date_error"]:
         return ViolationCategory.PUBLIC_RECORD_BANKRUPTCY_OBSOLETE
+
+    # Check for MEDICAL DEBT violations (NCAP 2022/2023 Bureau Policy)
+    # Unpaid medical < $500 (banned April 2023)
+    if v_type == "medical_under_500":
+        return ViolationCategory.MEDICAL_UNDER_500
+    # Paid medical still reporting (banned July 2022)
+    if v_type == "medical_paid_reporting":
+        return ViolationCategory.MEDICAL_PAID_REPORTING
 
     # Check for missing payment history
     if v_type in ["missing_payment_history", "missing_payment_field"]:
