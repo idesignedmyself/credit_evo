@@ -106,6 +106,7 @@ class ViolationType(str, Enum):
     IDENTITY_SSN_MISMATCH = "identity_ssn_mismatch"  # Last 4 don't match - CRITICAL error
     IDENTITY_ADDRESS_MISMATCH = "identity_address_mismatch"  # Wrong State - affects SOL, may indicate mixed file
     MIXED_FILE_INDICATOR = "mixed_file_indicator"  # General mixed file flag
+    DECEASED_INDICATOR_ERROR = "deceased_indicator_error"  # Living consumer marked as deceased (CRITICAL - score = 0)
 
 
 class Severity(str, Enum):

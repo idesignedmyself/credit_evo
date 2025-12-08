@@ -93,6 +93,14 @@ class AuditEngine:
             all_violations.extend(identity_violations)
             logger.info(f"Identity integrity check found {len(identity_violations)} violations")
 
+        # Run consumer-level deceased indicator check (CRITICAL - "Death on Credit" error)
+        # This is separate from account-level checks - it scans all accounts and creates
+        # a single consumer-level violation if ANY deceased indicator is found
+        deceased_violations = IdentityRules.check_deceased_indicator_consumer(report)
+        all_violations.extend(deceased_violations)
+        if deceased_violations:
+            logger.warning(f"CRITICAL: Deceased indicator found - {len(deceased_violations)} consumer-level violation(s)")
+
         # Build AuditResult (SSOT #2)
         result = AuditResult(
             report_id=report.report_id,
@@ -207,6 +215,8 @@ class AuditEngine:
         violations.extend(self.single_bureau_rules.check_negative_credit_limit(account, bureau))
         violations.extend(self.single_bureau_rules.check_missing_dla(account, bureau))
         violations.extend(self.single_bureau_rules.check_student_loan_portfolio_mismatch(account, bureau))
+        # Deceased indicator check (CRITICAL - score = 0 if present)
+        violations.extend(self.single_bureau_rules.check_deceased_indicator(account, bureau))
 
         # Furnisher rules
         violations.extend(self.furnisher_rules.check_closed_oc_reporting_balance(account, bureau))

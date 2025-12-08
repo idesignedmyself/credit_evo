@@ -54,6 +54,7 @@ This document tracks the status of all system components and configurations.
 | State | PASS | Matches user profile state against report state |
 | Suffix (Jr/Sr) | PASS | Detects mixed file indicators |
 | SSN Last 4 | PASS | Only validates if both have 4 digits |
+| Deceased Indicator | ACTIVE | CRITICAL - Detects living consumer marked as deceased (score = 0) |
 
 **Test Results (Sample User):**
 ```

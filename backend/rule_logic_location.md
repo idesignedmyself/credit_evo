@@ -66,6 +66,7 @@ app/
 | Collection Fishing Inquiry | `collection_fishing_inquiry` | FCRA §604(a)(3)(A) (collector without tradeline) |
 | Duplicate Inquiry | `duplicate_inquiry` | FCRA §604 (same creditor <14 days) |
 | Student Loan Portfolio Mismatch | `metro2_portfolio_mismatch` | Field 8 (student loan as Open/Revolving instead of Installment) |
+| Deceased Indicator Error | `deceased_indicator_error` | Field 37/38 (ECOA Code X or Consumer Info Indicator X/Y/Z) |
 
 **Time-Barred Debt Detection:**
 - `check_time_barred_debt()` - Main detection logic comparing anchor date vs state SOL
@@ -148,6 +149,19 @@ Example: Late 2018 → Cured 2019 → Default 2021
 - Checks both `account_type_detail` and `creditor_name` for student loan indicators
 - Flags when `account_type` contains "open" or "revolving" instead of "installment"
 
+**Deceased Indicator Error Detection (CRITICAL - Score = 0):**
+- `check_deceased_indicator()` - Account-level detection of erroneous deceased marker on tradeline
+- `check_deceased_indicator_consumer()` - Consumer-level detection in report header
+- Under Metro 2, "Death on Credit" occurs when a living consumer is erroneously marked as deceased
+- This causes credit score to drop to ZERO and results in complete credit denial
+- Detection sources:
+  - ECOA Code 'X' (Metro 2 Field 37) - Deceased indicator
+  - Consumer Information Indicator 'X', 'Y', 'Z' (Metro 2 Field 38) - Deceased/death notice
+  - Remarks containing "deceased", "death", "consumer deceased" keywords
+  - Payment status or compliance condition codes indicating death
+- Legal basis: FCRA §611(a) (willful noncompliance), §623(a)(2) (reasonable procedures)
+- Case law: Sloane v. Equifax (defamatory reporting of deceased status)
+
 **Identity Integrity Rules (FCRA §607(b) - Maximum Possible Accuracy):**
 - `IdentityRules` class - Static methods for identity validation against user profile
 - `check_identity_integrity(report, user_profile)` - Main entry point, runs all identity checks
@@ -172,6 +186,7 @@ User Profile (PostgreSQL users table) → IdentityRules → Violations
 | SSN Mismatch | Last 4 digits don't match | FCRA §607(b) - Wrong File |
 | State Mismatch | Report state vs user profile state | FCRA §607(b) - Mixed File |
 | Name Mismatch | First/Middle/Last comparison | FCRA §607(b) - Mixed File |
+| Deceased Indicator | ECOA Code X / Consumer Info X/Y/Z / Remarks | FCRA §611(a) / §623(a)(2) - CRITICAL |
 
 **To add a new rule:** Create a new function in this file following the existing pattern.
 
@@ -343,6 +358,8 @@ File: `app/routers/letters.py`
 | SSN last 4 mismatch | `app/services/audit/rules.py` (`IdentityRules.check_ssn_mismatch`) |
 | State mismatch | `app/services/audit/rules.py` (`IdentityRules.check_state_mismatch`) |
 | Name mismatch | `app/services/audit/rules.py` (`IdentityRules.check_name_mismatch`) |
+| Deceased indicator (account-level) | `app/services/audit/rules.py` (`SingleBureauRules.check_deceased_indicator`) |
+| Deceased indicator (consumer-level) | `app/services/audit/rules.py` (`IdentityRules.check_deceased_indicator_consumer`) |
 
 ---
 

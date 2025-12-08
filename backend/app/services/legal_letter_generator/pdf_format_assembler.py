@@ -52,6 +52,7 @@ class ViolationCategory(str, Enum):
     STUDENT_LOAN_VERIFICATION = "student_loan_verification"
     COLLECTION_VERIFICATION = "collection_verification"
     IDENTITY_ERROR = "identity_error"
+    DECEASED_INDICATOR = "deceased_indicator"  # Living consumer marked as deceased - CRITICAL
     OTHER = "other"
 
 
@@ -330,6 +331,29 @@ CATEGORY_CONFIGS: Dict[ViolationCategory, CategoryConfig] = {
         ),
         fcra_section="607(b)"
     ),
+    ViolationCategory.DECEASED_INDICATOR: CategoryConfig(
+        title="CRITICAL: Erroneous Deceased Indicator - Living Consumer Marked as Deceased",
+        metro2_fields="Metro 2 Field 37 (ECOA Code) / Field 38 (Consumer Information Indicator)",
+        explanation=(
+            "This is among the most damaging errors possible on a credit report. Under Metro 2 "
+            "reporting standards, ECOA Code 'X' or Consumer Information Indicator codes 'X', 'Y', or 'Z' "
+            "designate a consumer as DECEASED. When a living consumer is erroneously marked as deceased, "
+            "their credit score effectively drops to ZERO, and NO creditor will extend credit. "
+            "This is commonly known as a 'Death on Credit' error. I AM ALIVE and this indicator "
+            "is factually incorrect:"
+        ),
+        resolution=(
+            "The deceased indicator must be IMMEDIATELY removed from my credit file. Under FCRA "
+            "Section 611(a), you are required to conduct a reasonable investigation and correct "
+            "this error. Under Section 623(a)(2), furnishers have a duty to correct inaccurate "
+            "information. Continued reporting of a deceased indicator on a living consumer's file "
+            "constitutes a willful violation of FCRA, causing catastrophic damage to my creditworthiness. "
+            "See Sloane v. Equifax Info. Servs., LLC, where the court recognized the severe harm caused "
+            "by deceased indicator errors. I demand immediate correction and will pursue statutory damages "
+            "if this error is not resolved within the 30-day investigation period."
+        ),
+        fcra_section="611(a), 623(a)(2)"
+    ),
 }
 
 
@@ -428,6 +452,12 @@ def _classify_violation(violation: Dict[str, Any]) -> ViolationCategory:
     # Check for double jeopardy (OC and Collector BOTH report balance for same debt)
     if v_type == "double_jeopardy":
         return ViolationCategory.DOUBLE_JEOPARDY
+
+    # Check for deceased indicator error (CRITICAL - "Death on Credit" error)
+    if v_type == "deceased_indicator_error":
+        return ViolationCategory.DECEASED_INDICATOR
+    if "deceased" in evidence or "death on credit" in evidence:
+        return ViolationCategory.DECEASED_INDICATOR
 
     # Check for missing payment history
     if v_type in ["missing_payment_history", "missing_payment_field"]:

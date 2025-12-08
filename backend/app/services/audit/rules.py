@@ -1421,6 +1421,113 @@ class SingleBureauRules:
 
         return violations
 
+    @staticmethod
+    def check_deceased_indicator(account: Account, bureau: Bureau) -> List[Violation]:
+        """
+        Detects erroneous Deceased Indicator on a tradeline.
+
+        Metro 2 Field 37 (ECOA Code) value 'X' = Deceased
+        Metro 2 Field 38 (Consumer Information Indicator) - 'X', 'Y', 'Z' for deceased statuses
+
+        If a living consumer has a "Deceased" indicator on their credit report,
+        their score effectively drops to 0 and no creditor will lend to them.
+        This is a CRITICAL "Death on Credit" error.
+
+        Detection approach (since ECOA/compliance fields aren't explicitly stored):
+        1. Check bureau_code for 'X' or 'Deceased'
+        2. Check remarks for 'deceased' keywords
+        3. Check payment_status for deceased indicators
+        4. Check raw_data for any deceased-related fields
+        """
+        violations = []
+        bureau_data = account.get_bureau_data(bureau)
+
+        if not bureau_data:
+            return violations
+
+        # Deceased indicator keywords
+        deceased_keywords = ["deceased", "death", "died", "decedent"]
+
+        # Check 1: Bureau code contains deceased indicator (ECOA Code X)
+        bureau_code = (bureau_data.bureau_code or "").lower().strip()
+        ecoa_deceased = bureau_code == "x" or "deceased" in bureau_code
+
+        # Check 2: Remarks contain deceased language
+        remarks = (bureau_data.remarks or "").lower()
+        remarks_deceased = any(kw in remarks for kw in deceased_keywords)
+
+        # Check 3: Payment status contains deceased indicator
+        payment_status = (bureau_data.payment_status or "").lower()
+        status_deceased = any(kw in payment_status for kw in deceased_keywords)
+
+        # Check 4: Account status raw contains deceased
+        account_status_raw = (bureau_data.account_status_raw or "").lower()
+        status_raw_deceased = any(kw in account_status_raw for kw in deceased_keywords)
+
+        # Check 5: Raw data fields (some parsers store ecoa_code or compliance codes here)
+        raw_data = account.raw_data or {}
+        raw_deceased = False
+        ecoa_from_raw = str(raw_data.get("ecoa_code", "")).lower().strip()
+        compliance_code = str(raw_data.get("compliance_condition_code", "")).lower().strip()
+        consumer_info_indicator = str(raw_data.get("consumer_information_indicator", "")).lower().strip()
+
+        if ecoa_from_raw == "x" or "deceased" in ecoa_from_raw:
+            raw_deceased = True
+        if compliance_code in ["x", "y", "z"] or "deceased" in compliance_code:
+            raw_deceased = True
+        if consumer_info_indicator in ["x", "y", "z"] or "deceased" in consumer_info_indicator:
+            raw_deceased = True
+
+        # If any indicator found, create violation
+        if ecoa_deceased or remarks_deceased or status_deceased or status_raw_deceased or raw_deceased:
+            # Build evidence of what triggered detection
+            triggers = []
+            if ecoa_deceased:
+                triggers.append(f"Bureau Code: '{bureau_data.bureau_code}'")
+            if remarks_deceased:
+                triggers.append(f"Remarks: '{bureau_data.remarks}'")
+            if status_deceased:
+                triggers.append(f"Payment Status: '{bureau_data.payment_status}'")
+            if status_raw_deceased:
+                triggers.append(f"Account Status: '{bureau_data.account_status_raw}'")
+            if raw_deceased:
+                triggers.append(f"Raw Data Codes: ecoa={ecoa_from_raw}, compliance={compliance_code}")
+
+            violations.append(Violation(
+                violation_type=ViolationType.DECEASED_INDICATOR_ERROR,
+                severity=Severity.CRITICAL,  # CRITICAL - score drops to 0
+                account_id=account.account_id,
+                creditor_name=account.creditor_name,
+                account_number_masked=account.account_number_masked,
+                furnisher_type=account.furnisher_type,
+                bureau=bureau,
+                description=(
+                    f"CRITICAL: This account shows a 'Deceased' indicator, but the consumer is alive. "
+                    f"Under Metro 2 standards, ECOA Code 'X' or Consumer Information Indicator codes "
+                    f"'X', 'Y', 'Z' mark a consumer as deceased. This error causes the credit score "
+                    f"to effectively drop to 0, preventing ALL credit access. "
+                    f"Detected via: {'; '.join(triggers)}. "
+                    f"This is a 'Death on Credit' error requiring immediate correction under "
+                    f"FCRA §611 (disputes) and §623(a)(2) (duty to correct)."
+                ),
+                expected_value="No Deceased Indicator (Consumer is alive)",
+                actual_value=f"Deceased indicator detected via: {triggers[0]}",
+                fcra_section="611(a), 623(a)(2)",
+                metro2_field="Field 37 (ECOA Code) / Field 38 (Consumer Information Indicator)",
+                evidence={
+                    "triggers": triggers,
+                    "bureau_code": bureau_data.bureau_code,
+                    "remarks": bureau_data.remarks,
+                    "payment_status": bureau_data.payment_status,
+                    "account_status_raw": bureau_data.account_status_raw,
+                    "ecoa_from_raw": ecoa_from_raw if ecoa_from_raw else None,
+                    "compliance_code": compliance_code if compliance_code else None,
+                    "consumer_info_indicator": consumer_info_indicator if consumer_info_indicator else None
+                }
+            ))
+
+        return violations
+
 
 # =============================================================================
 # FURNISHER RULES
@@ -2723,6 +2830,87 @@ class IdentityRules:
                     "profile_first_name": profile_first,
                     "profile_last_name": profile_last,
                     "report_name": report_name
+                }
+            ))
+
+        return violations
+
+    @staticmethod
+    def check_deceased_indicator_consumer(report: 'NormalizedReport') -> List[Violation]:
+        """
+        Check for Deceased Indicator at the consumer/report level.
+
+        Metro 2 Field 38 (Consumer Information Indicator) can have values:
+        - 'X' = Consumer deceased
+        - 'Y' = Consumer's spouse deceased (may affect joint accounts)
+        - 'Z' = Consumer and spouse deceased
+
+        This check scans for ANY deceased indicators across the entire report
+        and creates a single CRITICAL-level violation at the consumer level.
+        This is different from the account-level check in SingleBureauRules,
+        which flags individual tradelines.
+
+        A living consumer with a deceased indicator has effectively a 0 credit score.
+        """
+        violations = []
+
+        # Deceased indicator keywords
+        deceased_keywords = ["deceased", "death", "died", "decedent"]
+
+        # Track all sources where deceased was detected
+        deceased_sources = []
+        bureaus_affected = set()
+
+        # Check across all accounts for deceased indicators
+        for account in report.accounts:
+            for bureau, bureau_data in account.bureaus.items():
+                # Check bureau_code
+                bureau_code = (bureau_data.bureau_code or "").lower().strip()
+                if bureau_code == "x" or "deceased" in bureau_code:
+                    deceased_sources.append(f"{account.creditor_name} ({bureau.value}): Bureau Code '{bureau_data.bureau_code}'")
+                    bureaus_affected.add(bureau.value)
+
+                # Check remarks
+                remarks = (bureau_data.remarks or "").lower()
+                if any(kw in remarks for kw in deceased_keywords):
+                    deceased_sources.append(f"{account.creditor_name} ({bureau.value}): Remarks contain deceased indicator")
+                    bureaus_affected.add(bureau.value)
+
+                # Check payment_status
+                payment_status = (bureau_data.payment_status or "").lower()
+                if any(kw in payment_status for kw in deceased_keywords):
+                    deceased_sources.append(f"{account.creditor_name} ({bureau.value}): Payment Status '{bureau_data.payment_status}'")
+                    bureaus_affected.add(bureau.value)
+
+            # Check raw_data for Consumer Information Indicator
+            raw_data = account.raw_data or {}
+            consumer_info = str(raw_data.get("consumer_information_indicator", "")).lower().strip()
+            if consumer_info in ["x", "y", "z"] or "deceased" in consumer_info:
+                deceased_sources.append(f"{account.creditor_name}: Consumer Information Indicator '{consumer_info}'")
+                bureaus_affected.add(account.bureau.value if account.bureau else "unknown")
+
+        # If deceased indicator found anywhere, create a single CRITICAL violation
+        if deceased_sources:
+            violations.append(Violation(
+                violation_type=ViolationType.DECEASED_INDICATOR_ERROR,
+                severity=Severity.CRITICAL,
+                description=(
+                    f"CRITICAL: Your credit report contains a 'Deceased' indicator even though you are alive. "
+                    f"This is a 'Death on Credit' error that effectively reduces your credit score to 0 "
+                    f"and prevents ALL credit access. Found in {len(deceased_sources)} location(s) across "
+                    f"{len(bureaus_affected)} bureau(s). Under FCRA §611, you have the right to dispute "
+                    f"this inaccurate information. Under §623(a)(2), furnishers have a duty to correct errors. "
+                    f"This is among the most damaging errors possible on a credit report."
+                ),
+                expected_value="No Deceased Indicator (Consumer is alive)",
+                actual_value=f"Deceased indicator found in {len(deceased_sources)} location(s)",
+                fcra_section="611(a), 623(a)(2)",
+                metro2_field="Field 38 (Consumer Information Indicator)",
+                evidence={
+                    "deceased_sources": deceased_sources[:10],  # Limit to first 10
+                    "total_sources": len(deceased_sources),
+                    "bureaus_affected": list(bureaus_affected),
+                    "consumer_name": report.consumer.full_name if report.consumer else None
                 }
             ))
 
