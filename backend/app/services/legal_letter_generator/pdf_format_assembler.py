@@ -54,6 +54,10 @@ class ViolationCategory(str, Enum):
     IDENTITY_ERROR = "identity_error"
     DECEASED_INDICATOR = "deceased_indicator"  # Living consumer marked as deceased - CRITICAL
     CHILD_IDENTITY_THEFT = "child_identity_theft"  # Account opened while consumer was a minor - CRITICAL
+    # Public Record violations
+    PUBLIC_RECORD_NCAP = "public_record_ncap"  # Civil Judgment/Tax Lien appearing post-NCAP 2017
+    PUBLIC_RECORD_JUDGMENT_BALANCE = "public_record_judgment_balance"  # Satisfied judgment with balance
+    PUBLIC_RECORD_BANKRUPTCY_OBSOLETE = "public_record_bankruptcy_obsolete"  # Obsolete bankruptcy > 7/10 years
     OTHER = "other"
 
 
@@ -377,6 +381,62 @@ CATEGORY_CONFIGS: Dict[ViolationCategory, CategoryConfig] = {
         ),
         fcra_section="611(a), Contract Law - Capacity to Contract"
     ),
+    # PUBLIC RECORD VIOLATIONS
+    ViolationCategory.PUBLIC_RECORD_NCAP: CategoryConfig(
+        title="Civil Judgment/Tax Lien Reported in Violation of NCAP Agreement",
+        metro2_fields="Public Record Segment",
+        explanation=(
+            "In 2017, the three major credit bureaus (Equifax, Experian, and TransUnion) entered into the "
+            "National Consumer Assistance Plan (NCAP) settlement agreement. Under this agreement, the bureaus "
+            "committed to removing all Civil Judgments and Tax Liens from credit reports because public court "
+            "records do NOT contain sufficient Personally Identifiable Information (PII) - specifically SSN "
+            "and Date of Birth - to accurately match records to consumers. This led to high error rates and "
+            "mixed file issues. The following public record is reported in violation of this agreement:"
+        ),
+        resolution=(
+            "You are reporting a Civil Judgment/Tax Lien in violation of the NCAP settlement agreement that "
+            "your bureau entered into in 2017. Public court records lack the SSN and DOB data required to "
+            "accurately match this record to me under FCRA Section 607(b) maximum possible accuracy standards. "
+            "Please DELETE this public record immediately as it cannot be verified to the required standard "
+            "and its continued presence violates your own NCAP commitments."
+        ),
+        fcra_section="NCAP Settlement / FCRA 607(b)"
+    ),
+    ViolationCategory.PUBLIC_RECORD_JUDGMENT_BALANCE: CategoryConfig(
+        title="Satisfied Judgment/Lien Still Reporting Balance",
+        metro2_fields="Public Record Amount Field",
+        explanation=(
+            "When a judgment or lien is satisfied, paid, released, or discharged, the reported balance/amount "
+            "must be immediately updated to $0.00. Continuing to report an outstanding balance on a satisfied "
+            "public record is inaccurate and misleading to creditors who may believe the debt remains unpaid. "
+            "The following public record shows a paid/satisfied status but continues to report a balance:"
+        ),
+        resolution=(
+            "This public record is marked as satisfied/paid/released but continues to report an outstanding "
+            "balance. This is factually inaccurate - once satisfied, there is NO remaining balance. Under "
+            "FCRA Section 611(a), you must correct this inaccuracy. Please update the balance to $0.00 or "
+            "DELETE this record if the status cannot be accurately reconciled with the amount."
+        ),
+        fcra_section="611(a) / 607(b)"
+    ),
+    ViolationCategory.PUBLIC_RECORD_BANKRUPTCY_OBSOLETE: CategoryConfig(
+        title="Obsolete Bankruptcy Exceeding FCRA Reporting Period",
+        metro2_fields="Public Record Segment / FCRA 605(a)(1)",
+        explanation=(
+            "Under FCRA Section 605(a)(1), bankruptcies have specific maximum reporting periods: Chapter 7 and "
+            "Chapter 11 bankruptcies may be reported for 10 years from the filing date, while Chapter 13 "
+            "bankruptcies may be reported for 7 years from the filing date. The following bankruptcy has "
+            "exceeded its legal reporting period and must be deleted:"
+        ),
+        resolution=(
+            "This bankruptcy has exceeded the maximum reporting period allowed under FCRA Section 605(a)(1). "
+            "Continued reporting of obsolete bankruptcy information constitutes a willful violation of federal "
+            "law. Please DELETE this obsolete public record IMMEDIATELY. Failure to remove this time-barred "
+            "information may result in liability under FCRA Section 616 (willful noncompliance) and Section 617 "
+            "(negligent noncompliance)."
+        ),
+        fcra_section="605(a)(1)"
+    ),
 }
 
 
@@ -485,6 +545,17 @@ def _classify_violation(violation: Dict[str, Any]) -> ViolationCategory:
     # Check for child identity theft (CRITICAL - account opened when consumer was a minor)
     if v_type == "child_identity_theft":
         return ViolationCategory.CHILD_IDENTITY_THEFT
+
+    # Check for PUBLIC RECORD violations (Bankruptcies, Judgments, Liens)
+    # NCAP violations - Civil Judgments and Tax Liens banned post-2017
+    if v_type == "ncap_violation_judgment":
+        return ViolationCategory.PUBLIC_RECORD_NCAP
+    # Satisfied judgments still reporting a balance (should be $0)
+    if v_type == "judgment_not_updated":
+        return ViolationCategory.PUBLIC_RECORD_JUDGMENT_BALANCE
+    # Obsolete bankruptcies (Ch7 > 10 years, Ch13 > 7 years) and impossible dates
+    if v_type in ["bankruptcy_obsolete", "bankruptcy_date_error"]:
+        return ViolationCategory.PUBLIC_RECORD_BANKRUPTCY_OBSOLETE
 
     # Check for missing payment history
     if v_type in ["missing_payment_history", "missing_payment_field"]:

@@ -68,6 +68,10 @@ app/
 | Student Loan Portfolio Mismatch | `metro2_portfolio_mismatch` | Field 8 (student loan as Open/Revolving instead of Installment) |
 | Deceased Indicator Error | `deceased_indicator_error` | Field 37/38 (ECOA Code X or Consumer Info Indicator X/Y/Z) |
 | Child Identity Theft | `child_identity_theft` | Field 10 (Date Opened) vs User DOB - Account opened when minor |
+| NCAP Violation (Judgment/Lien) | `ncap_violation_judgment` | Public Record (Civil Judgments/Tax Liens banned post-2017 NCAP) |
+| Judgment Not Updated | `judgment_not_updated` | Public Record (Satisfied judgment still reporting balance > $0) |
+| Bankruptcy Date Error | `bankruptcy_date_error` | Public Record (Filed date is in the future - impossible) |
+| Bankruptcy Obsolete | `bankruptcy_obsolete` | Public Record (Ch7 > 10 years or Ch13 > 7 years per FCRA §605(a)(1)) |
 
 **Time-Barred Debt Detection:**
 - `check_time_barred_debt()` - Main detection logic comparing anchor date vs state SOL
@@ -201,6 +205,32 @@ User Profile (PostgreSQL users table) → IdentityRules → Violations
 | Name Mismatch | First/Middle/Last comparison | FCRA §607(b) - Mixed File |
 | Deceased Indicator | ECOA Code X / Consumer Info X/Y/Z / Remarks | FCRA §611(a) / §623(a)(2) - CRITICAL |
 | Child Identity Theft | Date Opened vs DOB, age < 18 (skip ECOA 3 AUs) | Contract Law / FCRA §611(a) - CRITICAL |
+
+**Public Records Rules (Bankruptcies, Judgments, Liens):**
+- `PublicRecordRules` class - Static methods for public record-specific violations
+- `check_ncap_compliance(record)` - Flags Civil Judgments and Tax Liens appearing post-2017 (banned under NCAP settlement)
+- `check_judgment_status(record)` - Flags satisfied/paid judgments still reporting a balance > $0
+- `check_bankruptcy_dates(record)` - Flags impossible dates (future) and obsolete bankruptcies
+- `audit_public_records(records)` - Main entry point that runs all public record checks
+
+**Public Record Violation Types:**
+| Check | Detection Method | Legal Basis |
+|-------|-----------------|-------------|
+| NCAP Violation | Civil Judgment or Tax Lien appearing after July 1, 2017 | NCAP Settlement (2015) |
+| Judgment Not Updated | Satisfied/Paid judgment with balance > $0 | FCRA §623(a)(2) / Metro 2 accuracy |
+| Bankruptcy Date Error | Filed date is in the future | FCRA §623(a)(1) - impossible data |
+| Bankruptcy Obsolete | Ch7/11 > 10 years OR Ch13 > 7 years | FCRA §605(a)(1) |
+
+**NCAP Settlement Background (2015):**
+- National Consumer Assistance Plan required bureaus to improve accuracy
+- Key provision: Civil Judgments and Tax Liens must contain full PII (name, address, SSN or DOB)
+- Effective July 1, 2017: All Civil Judgments and Tax Liens removed (none could meet PII standards)
+- Exception: Child support and divorce-related judgments are still allowed
+
+**Bankruptcy Obsolescence (FCRA §605(a)(1)):**
+- Chapter 7 and Chapter 11: 10 years from filing date
+- Chapter 13: 7 years from filing date
+- "Filed date" is the anchor, not discharge date
 
 **To add a new rule:** Create a new function in this file following the existing pattern.
 
@@ -375,6 +405,10 @@ File: `app/routers/letters.py`
 | Deceased indicator (account-level) | `app/services/audit/rules.py` (`SingleBureauRules.check_deceased_indicator`) |
 | Deceased indicator (consumer-level) | `app/services/audit/rules.py` (`IdentityRules.check_deceased_indicator_consumer`) |
 | Child identity theft | `app/services/audit/rules.py` (`SingleBureauRules.check_child_identity_theft`) |
+| Public records audit | `app/services/audit/rules.py` (`PublicRecordRules.audit_public_records`) |
+| NCAP compliance (judgments/liens) | `app/services/audit/rules.py` (`PublicRecordRules.check_ncap_compliance`) |
+| Judgment status (satisfied w/balance) | `app/services/audit/rules.py` (`PublicRecordRules.check_judgment_status`) |
+| Bankruptcy dates (future/obsolete) | `app/services/audit/rules.py` (`PublicRecordRules.check_bankruptcy_dates`) |
 
 ---
 

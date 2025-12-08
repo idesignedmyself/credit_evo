@@ -15,7 +15,7 @@ from datetime import date, datetime, timedelta
 from typing import List
 
 from ...models.ssot import (
-    Account, NormalizedReport, Violation, BureauAccountData, Inquiry,
+    Account, NormalizedReport, Violation, BureauAccountData, Inquiry, PublicRecord,
     ViolationType, Severity, FurnisherType, AccountStatus, Bureau
 )
 from typing import Dict, Any
@@ -3006,3 +3006,226 @@ class IdentityRules:
             ))
 
         return violations
+
+
+# =============================================================================
+# PUBLIC RECORD RULES
+# =============================================================================
+
+class PublicRecordRules:
+    """
+    Audits the 'Public Records' section (Bankruptcies, Judgments, Liens).
+    Enforces NCAP 2017 standards and FCRA obsolescence periods.
+    """
+
+    @staticmethod
+    def check_ncap_compliance(record: PublicRecord) -> List[Violation]:
+        """
+        NCAP (National Consumer Assistance Plan) Compliance Check.
+
+        In 2017, the three major bureaus agreed to remove Civil Judgments and Tax Liens
+        from credit reports due to lack of PII (SSN/DOB) matching requirements.
+        If a Civil Judgment or Tax Lien appears, it is a likely violation of this agreement.
+        """
+        violations = []
+
+        record_type_lower = (record.record_type or "").lower()
+
+        # NCAP banned "Civil Judgments" and "Tax Liens"
+        # Exception: Divorce decrees or Child Support may still appear
+        if "judgment" in record_type_lower or "lien" in record_type_lower:
+            # Skip child support and divorce-related records
+            if "child support" in record_type_lower or "divorce" in record_type_lower:
+                return violations
+
+            violations.append(Violation(
+                violation_type=ViolationType.NCAP_VIOLATION_JUDGMENT,
+                severity=Severity.HIGH,
+                account_id=record.record_id,
+                creditor_name=record.court_name or "Public Record",
+                description=(
+                    f"NCAP VIOLATION: A '{record.record_type}' is reported on your credit file. "
+                    f"Under the National Consumer Assistance Plan (NCAP) of 2017, the three major "
+                    f"credit bureaus agreed to remove Civil Judgments and Tax Liens due to high "
+                    f"error rates in matching consumer PII (Name, Address, SSN, DOB). Public court "
+                    f"records typically lack SSN/DOB data required for accurate matching. "
+                    f"This record likely cannot be verified to the standard required by NCAP and FCRA §607(b)."
+                ),
+                expected_value="No Civil Judgments or Tax Liens Reporting (per NCAP)",
+                actual_value=f"Public Record: {record.record_type}",
+                fcra_section="NCAP Settlement / FCRA 607(b)",
+                metro2_field="Public Record Segment",
+                evidence={
+                    "record_type": record.record_type,
+                    "court_name": record.court_name,
+                    "filed_date": str(record.filed_date) if record.filed_date else None,
+                    "amount": record.amount
+                }
+            ))
+
+        return violations
+
+    @staticmethod
+    def check_judgment_status(record: PublicRecord) -> List[Violation]:
+        """
+        Check for Satisfied/Paid Judgments still reporting a balance.
+
+        If a Judgment is marked "Satisfied", "Paid", or "Released",
+        the reported balance/amount must be $0.
+        """
+        violations = []
+
+        record_type_lower = (record.record_type or "").lower()
+        status_lower = (record.status or "").lower()
+        balance = record.amount or 0.0
+
+        # Only check judgments/liens
+        if "judgment" not in record_type_lower and "lien" not in record_type_lower:
+            return violations
+
+        # Check for paid/satisfied status keywords
+        paid_keywords = ["satisfied", "paid", "released", "discharged", "vacated", "dismissed"]
+        is_satisfied = any(kw in status_lower for kw in paid_keywords)
+
+        if is_satisfied and balance > 0:
+            violations.append(Violation(
+                violation_type=ViolationType.JUDGMENT_NOT_UPDATED,
+                severity=Severity.HIGH,
+                account_id=record.record_id,
+                creditor_name=record.court_name or "Public Record",
+                description=(
+                    f"This {record.record_type} is marked '{record.status}' but still reports an "
+                    f"outstanding amount of ${balance:,.2f}. Once a judgment or lien is satisfied, "
+                    f"the reported balance must be updated to $0.00 immediately. Continuing to report "
+                    f"a balance on a satisfied record is inaccurate and misleading to creditors."
+                ),
+                expected_value="Balance: $0.00 (Satisfied/Paid)",
+                actual_value=f"Balance: ${balance:,.2f}",
+                fcra_section="611(a) / 607(b)",
+                metro2_field="Public Record Amount Field",
+                evidence={
+                    "record_type": record.record_type,
+                    "status": record.status,
+                    "amount": balance,
+                    "court_name": record.court_name
+                }
+            ))
+
+        return violations
+
+    @staticmethod
+    def check_bankruptcy_dates(record: PublicRecord) -> List[Violation]:
+        """
+        Check for Bankruptcy Date Errors and Obsolescence.
+
+        Detects:
+        1. Future filing dates (data integrity error)
+        2. Obsolete bankruptcies (FCRA §605(a)(1)):
+           - Chapter 7: 10 years from filing date
+           - Chapter 13: 7 years from filing date (or discharge)
+        """
+        violations = []
+        record_type_lower = (record.record_type or "").lower()
+
+        # Only check Bankruptcies
+        if "bankruptcy" not in record_type_lower:
+            return violations
+
+        filing_date = record.filed_date
+        today = date.today()
+
+        if not filing_date:
+            return violations  # Cannot check without date
+
+        # Convert string date if needed
+        if isinstance(filing_date, str):
+            try:
+                filing_date = datetime.strptime(filing_date, "%Y-%m-%d").date()
+            except ValueError:
+                return violations
+
+        # 1. LOGIC CHECK: Future Filing Date
+        if filing_date > today:
+            violations.append(Violation(
+                violation_type=ViolationType.BANKRUPTCY_DATE_ERROR,
+                severity=Severity.MEDIUM,
+                account_id=record.record_id,
+                creditor_name=record.court_name or "Public Record",
+                description=(
+                    f"Bankruptcy Filing Date is in the future ({filing_date}). "
+                    f"This is a clear data integrity error - a bankruptcy cannot be filed "
+                    f"in the future. This record contains inaccurate information."
+                ),
+                expected_value="Past or Present Date",
+                actual_value=str(filing_date),
+                fcra_section="611(a) - Accuracy",
+                metro2_field="Public Record Date Field",
+                evidence={
+                    "record_type": record.record_type,
+                    "filed_date": str(filing_date),
+                    "court_name": record.court_name
+                }
+            ))
+            return violations  # Don't check obsolescence if date is invalid
+
+        # 2. OBSOLESCENCE CHECK (Time-Barred Reporting)
+        # Chapter 7/11: 10 Years from Filing
+        # Chapter 13: 7 Years from Filing (standard removal)
+
+        age_years = (today - filing_date).days / 365.25
+
+        # Determine chapter type and limit
+        is_chapter_7_or_11 = "7" in record_type_lower or "11" in record_type_lower
+        is_chapter_13 = "13" in record_type_lower
+
+        # Default to 10 years if chapter unclear (most protective for consumer)
+        if is_chapter_13:
+            limit = 7
+            chapter_name = "Chapter 13"
+        else:
+            limit = 10
+            chapter_name = "Chapter 7/11" if is_chapter_7_or_11 else "Bankruptcy"
+
+        if age_years > limit:
+            violations.append(Violation(
+                violation_type=ViolationType.BANKRUPTCY_OBSOLETE,
+                severity=Severity.CRITICAL,
+                account_id=record.record_id,
+                creditor_name=record.court_name or "Public Record",
+                description=(
+                    f"OBSOLETE PUBLIC RECORD: This {chapter_name} Bankruptcy "
+                    f"was filed on {filing_date} ({age_years:.1f} years ago). "
+                    f"Under FCRA §605(a)(1), bankruptcies must be removed after {limit} years "
+                    f"from the date of filing. This record is {age_years - limit:.1f} years "
+                    f"past its legal reporting period and should have been deleted."
+                ),
+                expected_value=f"Deleted / Obsolete (>{limit} years)",
+                actual_value=f"Still Reporting ({age_years:.1f} years old)",
+                fcra_section="605(a)(1)",
+                metro2_field="Public Record Segment",
+                evidence={
+                    "record_type": record.record_type,
+                    "chapter": chapter_name,
+                    "filed_date": str(filing_date),
+                    "age_years": round(age_years, 1),
+                    "limit_years": limit,
+                    "years_past_limit": round(age_years - limit, 1)
+                }
+            ))
+
+        return violations
+
+    @staticmethod
+    def audit_public_records(records: List[PublicRecord]) -> List[Violation]:
+        """
+        Main entry point for auditing all public records.
+        Runs all public record checks and returns combined violations.
+        """
+        all_violations = []
+
+        for record in records:
+            all_violations.extend(PublicRecordRules.check_ncap_compliance(record))
+            all_violations.extend(PublicRecordRules.check_judgment_status(record))
+            all_violations.extend(PublicRecordRules.check_bankruptcy_dates(record))
+
+        return all_violations

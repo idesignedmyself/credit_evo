@@ -109,6 +109,12 @@ class ViolationType(str, Enum):
     DECEASED_INDICATOR_ERROR = "deceased_indicator_error"  # Living consumer marked as deceased (CRITICAL - score = 0)
     CHILD_IDENTITY_THEFT = "child_identity_theft"  # Account opened when consumer was a minor (<18 years old)
 
+    # Public Record violations
+    JUDGMENT_NOT_UPDATED = "judgment_not_updated"  # Satisfied/Paid judgment still showing balance
+    NCAP_VIOLATION_JUDGMENT = "ncap_violation_judgment"  # Civil Judgment appearing post-2017 (NCAP banned)
+    BANKRUPTCY_DATE_ERROR = "bankruptcy_date_error"  # Impossible dates (future filing date)
+    BANKRUPTCY_OBSOLETE = "bankruptcy_obsolete"  # Ch7 > 10 years or Ch13 > 7 years
+
 
 class Severity(str, Enum):
     CRITICAL = "critical"  # Highest severity - potential legal violations

@@ -13,7 +13,7 @@ from ...models.ssot import (
     NormalizedReport, AuditResult, Violation, Bureau, CrossBureauDiscrepancy,
     Account, BureauAccountData, FurnisherType, ViolationType, Severity
 )
-from .rules import SingleBureauRules, FurnisherRules, TemporalRules, InquiryRules, IdentityRules
+from .rules import SingleBureauRules, FurnisherRules, TemporalRules, InquiryRules, IdentityRules, PublicRecordRules
 from .cross_bureau_rules import CrossBureauRules
 
 logger = logging.getLogger(__name__)
@@ -134,6 +134,14 @@ class AuditEngine:
 
             except (ValueError, TypeError) as e:
                 logger.debug(f"Could not parse DOB for child ID theft check: {e}")
+
+        # Run Public Records audit (Bankruptcies, Judgments, Liens)
+        # This checks for NCAP violations, satisfied-but-reporting-balance, and obsolete bankruptcies
+        if report.public_records:
+            public_record_violations = PublicRecordRules.audit_public_records(report.public_records)
+            all_violations.extend(public_record_violations)
+            if public_record_violations:
+                logger.info(f"Public Records audit found {len(public_record_violations)} violation(s)")
 
         # Build AuditResult (SSOT #2)
         result = AuditResult(
