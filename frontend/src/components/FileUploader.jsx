@@ -81,18 +81,21 @@ const FileUploader = ({ onUploadSuccess }) => {
 
   return (
     <Box>
+      {/* Dropzone */}
       <Paper
+        elevation={0}
         sx={{
-          p: 4,
+          p: 6,
           textAlign: 'center',
           border: '2px dashed',
-          borderColor: dragActive ? 'primary.main' : 'grey.300',
-          backgroundColor: dragActive ? 'action.hover' : 'background.paper',
+          borderColor: dragActive ? 'primary.main' : '#e0e0e0',
+          borderRadius: 4,
+          backgroundColor: dragActive ? '#f0f7ff' : '#fafafa',
           cursor: 'pointer',
           transition: 'all 0.2s ease',
           '&:hover': {
-            borderColor: 'primary.light',
-            backgroundColor: 'action.hover',
+            borderColor: 'primary.main',
+            backgroundColor: '#f0f7ff',
           },
         }}
         onDragEnter={handleDrag}
@@ -109,35 +112,38 @@ const FileUploader = ({ onUploadSuccess }) => {
         />
 
         <label htmlFor="file-upload" style={{ cursor: 'pointer', display: 'block' }}>
-          <CloudUploadIcon sx={{ fontSize: 64, color: 'primary.main', mb: 2 }} />
-          <Typography variant="h6" gutterBottom>
+          <CloudUploadIcon sx={{ fontSize: 60, color: 'primary.main', mb: 2 }} />
+          <Typography variant="h5" gutterBottom sx={{ fontWeight: 600 }}>
             Drop your credit report here
           </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
             or click to browse files
           </Typography>
-          <Typography variant="caption" color="text.secondary">
-            Export your report from IdentityIQ, Credit Karma, or your bureau as HTML
+          <Typography variant="caption" display="block" color="text.disabled">
+            Accepts HTML reports from IdentityIQ, Credit Karma, or Bureau downloads.
           </Typography>
         </label>
       </Paper>
 
+      {/* Selected File */}
       {selectedFile && (
-        <Paper sx={{ p: 2, mt: 2 }}>
+        <Paper sx={{ p: 2, mt: 2, borderRadius: 3 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <InsertDriveFileIcon color="primary" />
+            <InsertDriveFileIcon color="primary" sx={{ fontSize: 40 }} />
             <Box sx={{ flex: 1 }}>
-              <Typography variant="body1">{selectedFile.name}</Typography>
+              <Typography variant="body1" sx={{ fontWeight: 500 }}>{selectedFile.name}</Typography>
               <Typography variant="caption" color="text.secondary">
                 {(selectedFile.size / 1024).toFixed(1)} KB
               </Typography>
             </Box>
             <Button
               variant="contained"
+              size="large"
               onClick={handleUpload}
               disabled={isUploading}
+              disableElevation
             >
-              {isUploading ? 'Uploading...' : 'Upload'}
+              {isUploading ? 'Uploading...' : 'Upload & Analyze'}
             </Button>
           </Box>
 
@@ -145,20 +151,21 @@ const FileUploader = ({ onUploadSuccess }) => {
             <LinearProgress
               variant="determinate"
               value={uploadProgress}
-              sx={{ mt: 2 }}
+              sx={{ mt: 2, borderRadius: 1 }}
             />
           )}
         </Paper>
       )}
 
+      {/* Errors */}
       {fileError && (
-        <Alert severity="warning" sx={{ mt: 2 }} onClose={() => setFileError(null)}>
+        <Alert severity="warning" sx={{ mt: 2, borderRadius: 2 }} onClose={() => setFileError(null)}>
           {fileError}
         </Alert>
       )}
 
       {error && (
-        <Alert severity="error" sx={{ mt: 2 }} onClose={clearError}>
+        <Alert severity="error" sx={{ mt: 2, borderRadius: 2 }} onClose={clearError}>
           {error}
         </Alert>
       )}

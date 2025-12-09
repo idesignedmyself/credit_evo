@@ -9,6 +9,7 @@ const useReportStore = create((set, get) => ({
   // State
   currentReport: null,
   reports: [],
+  latestReportId: null,
   uploadProgress: 0,
   isUploading: false,
   error: null,
@@ -21,6 +22,7 @@ const useReportStore = create((set, get) => ({
       set((state) => ({
         currentReport: result,
         reports: [...state.reports, result],
+        latestReportId: result.report_id,
         isUploading: false,
         uploadProgress: 100,
       }));
@@ -28,6 +30,21 @@ const useReportStore = create((set, get) => ({
     } catch (error) {
       set({ error: error.message, isUploading: false });
       throw error;
+    }
+  },
+
+  fetchLatestReportId: async () => {
+    try {
+      const reports = await reportApi.listReports();
+      if (reports && reports.length > 0) {
+        set({ latestReportId: reports[0].report_id });
+        return reports[0].report_id;
+      }
+      set({ latestReportId: null });
+      return null;
+    } catch (error) {
+      set({ latestReportId: null });
+      return null;
     }
   },
 
@@ -59,6 +76,7 @@ const useReportStore = create((set, get) => ({
     set({
       currentReport: null,
       reports: [],
+      latestReportId: null,
       uploadProgress: 0,
       isUploading: false,
       error: null,

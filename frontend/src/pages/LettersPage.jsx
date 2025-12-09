@@ -1,6 +1,6 @@
 /**
- * Credit Engine 2.0 - Report History Page
- * Modern table view with actions
+ * Credit Engine 2.0 - Letters Page
+ * Displays all saved dispute letters for the user
  */
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -14,76 +14,59 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  Button,
   IconButton,
   Alert,
   CircularProgress,
   Chip,
+  Button,
 } from '@mui/material';
-import DeleteIcon from '@mui/icons-material/Delete';
 import VisibilityIcon from '@mui/icons-material/Visibility';
+import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
-import { reportApi } from '../api';
-import { useViolationStore } from '../state';
+import DownloadIcon from '@mui/icons-material/Download';
+import { letterApi } from '../api';
 
-const ReportHistoryPage = () => {
+const LettersPage = () => {
   const navigate = useNavigate();
-  const { clearViolations } = useViolationStore();
-  const [reports, setReports] = useState([]);
+  const [letters, setLetters] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
 
-  const fetchReports = async () => {
+  const fetchLetters = async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const data = await reportApi.listReports();
-      setReports(data);
+      const data = await letterApi.getAllLetters();
+      setLetters(data || []);
     } catch (err) {
-      setError(err.message || 'Failed to load reports');
+      setError(err.message || 'Failed to load letters');
     } finally {
       setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchReports();
+    fetchLetters();
   }, []);
 
-  const handleView = (reportId) => {
-    navigate(`/audit/${reportId}`);
+  const handleView = (letter) => {
+    // Navigate to letter page with letterId
+    navigate(`/letter/${letter.report_id}?letterId=${letter.letter_id}`);
   };
 
-  const handleDelete = async (reportId) => {
-    if (!window.confirm('Delete this report? This action cannot be undone.')) {
+  const handleDelete = async (letterId) => {
+    if (!window.confirm('Delete this letter? This action cannot be undone.')) {
       return;
     }
-    setDeletingId(reportId);
+    setDeletingId(letterId);
     try {
-      await reportApi.deleteReport(reportId);
-      setReports(reports.filter((r) => r.report_id !== reportId));
-      clearViolations();
+      await letterApi.deleteLetter(letterId);
+      setLetters(letters.filter((l) => l.letter_id !== letterId));
     } catch (err) {
-      setError(err.message || 'Failed to delete report');
+      setError(err.message || 'Failed to delete letter');
     } finally {
       setDeletingId(null);
-    }
-  };
-
-  const handleDeleteAll = async () => {
-    if (!window.confirm('Delete ALL reports? This action cannot be undone.')) {
-      return;
-    }
-    setIsLoading(true);
-    try {
-      await reportApi.deleteAllReports();
-      setReports([]);
-      clearViolations();
-    } catch (err) {
-      setError(err.message || 'Failed to delete reports');
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -92,11 +75,24 @@ const ReportHistoryPage = () => {
       return new Date(dateString).toLocaleDateString('en-US', {
         month: 'numeric',
         day: 'numeric',
-        year: 'numeric'
+        year: 'numeric',
       });
     } catch {
       return dateString;
     }
+  };
+
+  const getLetterTypeChip = (letterType) => {
+    return letterType === 'legal' ? (
+      <Chip label="Legal" size="small" color="primary" variant="filled" />
+    ) : (
+      <Chip label="Civilian" size="small" sx={{ bgcolor: '#e8f5e9', color: '#2e7d32' }} />
+    );
+  };
+
+  const getToneChip = (tone) => {
+    const toneLabel = tone?.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) || 'Standard';
+    return <Chip label={toneLabel} size="small" variant="outlined" />;
   };
 
   return (
@@ -104,27 +100,16 @@ const ReportHistoryPage = () => {
       {/* Header */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Typography variant="h5" sx={{ fontWeight: 'bold' }}>
-          Report History
+          My Letters
         </Typography>
-        <Box sx={{ display: 'flex', gap: 1 }}>
-          {reports.length > 0 && (
-            <Button
-              color="error"
-              onClick={handleDeleteAll}
-              disabled={isLoading}
-            >
-              Delete All
-            </Button>
-          )}
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => navigate('/upload')}
-            disableElevation
-          >
-            Upload New
-          </Button>
-        </Box>
+        <Button
+          variant="contained"
+          startIcon={<AddIcon />}
+          onClick={() => navigate('/upload')}
+          disableElevation
+        >
+          Create New Letter
+        </Button>
       </Box>
 
       {/* Error Alert */}
@@ -139,14 +124,14 @@ const ReportHistoryPage = () => {
         <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
           <CircularProgress />
         </Box>
-      ) : reports.length === 0 ? (
+      ) : letters.length === 0 ? (
         /* Empty State */
         <Paper sx={{ p: 6, textAlign: 'center', borderRadius: 3 }}>
           <Typography variant="h6" color="text.secondary" sx={{ mb: 2 }}>
-            No reports uploaded yet
+            No letters generated yet
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-            Upload your first credit report to get started
+            Upload a credit report and generate your first dispute letter
           </Typography>
           <Button
             variant="contained"
@@ -154,11 +139,11 @@ const ReportHistoryPage = () => {
             onClick={() => navigate('/upload')}
             disableElevation
           >
-            Upload Your First Report
+            Upload Report & Create Letter
           </Button>
         </Paper>
       ) : (
-        /* Report Table */
+        /* Letters Table */
         <TableContainer
           component={Paper}
           elevation={0}
@@ -167,59 +152,55 @@ const ReportHistoryPage = () => {
           <Table sx={{ minWidth: 650 }}>
             <TableHead sx={{ bgcolor: '#f9fafb' }}>
               <TableRow>
-                <TableCell sx={{ fontWeight: 'bold' }}>Filename</TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }}>Uploaded</TableCell>
-                <TableCell align="center" sx={{ fontWeight: 'bold' }}>Accounts</TableCell>
+                <TableCell sx={{ fontWeight: 'bold' }}>Bureau</TableCell>
+                <TableCell sx={{ fontWeight: 'bold' }}>Type</TableCell>
+                <TableCell sx={{ fontWeight: 'bold' }}>Tone</TableCell>
                 <TableCell align="center" sx={{ fontWeight: 'bold' }}>Violations</TableCell>
+                <TableCell sx={{ fontWeight: 'bold' }}>Created</TableCell>
                 <TableCell align="right" sx={{ fontWeight: 'bold' }}>Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
-              {reports.map((report) => (
+              {letters.map((letter) => (
                 <TableRow
-                  key={report.report_id}
+                  key={letter.letter_id}
                   sx={{ '&:last-child td, &:last-child th': { border: 0 } }}
                   hover
                 >
                   <TableCell component="th" scope="row" sx={{ fontWeight: 500 }}>
-                    {report.filename}
+                    {letter.bureau?.toUpperCase() || 'N/A'}
                   </TableCell>
-                  <TableCell color="text.secondary">
-                    {formatDate(report.uploaded)}
-                  </TableCell>
+                  <TableCell>{getLetterTypeChip(letter.letter_type)}</TableCell>
+                  <TableCell>{getToneChip(letter.tone)}</TableCell>
                   <TableCell align="center">
                     <Chip
-                      label={report.accounts}
+                      label={letter.violation_count || 0}
                       size="small"
-                      sx={{ bgcolor: '#f3f4f6', minWidth: 40 }}
-                    />
-                  </TableCell>
-                  <TableCell align="center">
-                    <Chip
-                      label={report.violations}
-                      size="small"
-                      color={report.violations > 0 ? 'error' : 'success'}
+                      color="error"
                       variant="filled"
                       sx={{ minWidth: 40 }}
                     />
+                  </TableCell>
+                  <TableCell color="text.secondary">
+                    {formatDate(letter.created_at)}
                   </TableCell>
                   <TableCell align="right">
                     <IconButton
                       color="primary"
                       size="small"
-                      onClick={() => handleView(report.report_id)}
-                      title="View Report"
+                      onClick={() => handleView(letter)}
+                      title="View Letter"
                     >
                       <VisibilityIcon />
                     </IconButton>
                     <IconButton
                       color="error"
                       size="small"
-                      onClick={() => handleDelete(report.report_id)}
-                      disabled={deletingId === report.report_id}
-                      title="Delete Report"
+                      onClick={() => handleDelete(letter.letter_id)}
+                      disabled={deletingId === letter.letter_id}
+                      title="Delete Letter"
                     >
-                      {deletingId === report.report_id ? (
+                      {deletingId === letter.letter_id ? (
                         <CircularProgress size={20} />
                       ) : (
                         <DeleteIcon />
@@ -236,4 +217,4 @@ const ReportHistoryPage = () => {
   );
 };
 
-export default ReportHistoryPage;
+export default LettersPage;

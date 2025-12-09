@@ -1,23 +1,29 @@
 /**
  * Credit Engine 2.0 - Letter Page
- * Letter customization and generation
+ * Letter customization and generation with modern UI
  */
 import React, { useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  Container,
   Box,
   Typography,
   Button,
   Paper,
   Alert,
+  Stepper,
+  Step,
+  StepLabel,
+  Chip,
+  Stack,
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import HomeIcon from '@mui/icons-material/Home';
-import Chip from '@mui/material/Chip';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import { ToneSelector, LetterPreview } from '../components';
 import { useViolationStore, useUIStore } from '../state';
 import { getViolationLabel } from '../utils';
+
+const steps = ['Upload Report', 'Review Violations', 'Generate Letter'];
 
 const LetterPage = () => {
   const { reportId } = useParams();
@@ -101,100 +107,149 @@ const LetterPage = () => {
   }, {});
 
   return (
-    <Container maxWidth="lg">
-      <Box sx={{ py: 4 }}>
-        {error && (
-          <Alert severity="error" sx={{ mb: 3, borderRadius: 2 }}>
-            {error}
-          </Alert>
-        )}
+    <Box>
+      {/* Page Header */}
+      <Box sx={{ textAlign: 'center', mb: 4 }}>
+        <Typography variant="h4" component="h1" gutterBottom sx={{ fontWeight: 'bold' }}>
+          Generate Dispute Letter
+        </Typography>
+        <Typography variant="body1" color="text.secondary">
+          Customize and generate your FCRA-compliant dispute letter
+        </Typography>
+      </Box>
 
-        {/* Letter Customization Section - Above Everything */}
-        <Box sx={{ mb: 4 }}>
-          <ToneSelector />
+      {/* Stepper */}
+      <Box sx={{ width: '100%', mb: 4, maxWidth: 600, mx: 'auto' }}>
+        <Stepper activeStep={2} alternativeLabel>
+          {steps.map((label) => (
+            <Step key={label}>
+              <StepLabel>{label}</StepLabel>
+            </Step>
+          ))}
+        </Stepper>
+      </Box>
+
+      {error && (
+        <Alert severity="error" sx={{ mb: 3, borderRadius: 2 }}>
+          {error}
+        </Alert>
+      )}
+
+      {/* Letter Customization Section */}
+      <Box sx={{ mb: 4 }}>
+        <ToneSelector />
+      </Box>
+
+      {/* Action Bar */}
+      <Paper
+        elevation={0}
+        sx={{
+          p: 2,
+          mb: 4,
+          bgcolor: currentLetter ? '#e8f5e9' : '#e3f2fd',
+          border: '1px solid',
+          borderColor: currentLetter ? '#a5d6a7' : '#bbdefb',
+          borderRadius: 2,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 2,
+        }}
+      >
+        <Box>
+          <Typography
+            variant="subtitle1"
+            sx={{ fontWeight: 'bold', color: currentLetter ? 'success.dark' : 'primary.main' }}
+          >
+            {currentLetter ? 'Letter Generated' : 'Ready to Generate'}
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            {selectedViolationIds.length} violation{selectedViolationIds.length !== 1 ? 's' : ''} selected
+          </Typography>
         </Box>
+        <Stack direction="row" spacing={1}>
+          <Button
+            variant="text"
+            startIcon={<ArrowBackIcon />}
+            onClick={handleBack}
+            size="small"
+          >
+            Back
+          </Button>
+          {currentLetter ? (
+            <Button
+              variant="outlined"
+              size="large"
+              onClick={handleRegenerate}
+              disabled={isGeneratingLetter}
+              startIcon={<AutoAwesomeIcon />}
+            >
+              {isGeneratingLetter ? 'Regenerating...' : 'Regenerate'}
+            </Button>
+          ) : (
+            <Button
+              variant="contained"
+              size="large"
+              onClick={handleGenerate}
+              disabled={isGeneratingLetter || selectedViolationIds.length === 0}
+              startIcon={<AutoAwesomeIcon />}
+              disableElevation
+            >
+              {isGeneratingLetter ? 'Generating...' : 'Generate Letter'}
+            </Button>
+          )}
+        </Stack>
+      </Paper>
 
-        {/* Generate Section */}
-        <Paper
-          elevation={2}
-          sx={{
-            p: 3,
-            mb: 4,
-            borderRadius: 3,
-            boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
-          }}
-        >
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
-            <Box>
-              <Typography variant="h6" gutterBottom sx={{ mb: 0.5 }}>
-                Ready to Generate
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                {selectedViolationIds.length} violation{selectedViolationIds.length !== 1 ? 's' : ''} selected for your dispute letter.
-              </Typography>
-            </Box>
-            <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-              <Button
-                variant="text"
-                startIcon={<ArrowBackIcon />}
-                onClick={handleBack}
-              >
-                Back to Violations
-              </Button>
-              <Button
-                variant="contained"
-                size="large"
-                onClick={handleGenerate}
-                disabled={isGeneratingLetter || selectedViolationIds.length === 0 || currentLetter}
-              >
-                {isGeneratingLetter ? 'Generating...' : 'Generate Letter'}
-              </Button>
-            </Box>
-          </Box>
-        </Paper>
+      {/* Letter Preview */}
+      <LetterPreview
+        letter={currentLetter}
+        isLoading={isGeneratingLetter}
+        error={error}
+        onRegenerate={currentLetter ? handleRegenerate : null}
+        isRegenerating={isGeneratingLetter}
+        stats={stats}
+      />
 
-        {/* Letter Preview - Full Width */}
-        <LetterPreview
-          letter={currentLetter}
-          isLoading={isGeneratingLetter}
-          error={error}
-          onRegenerate={currentLetter ? handleRegenerate : null}
-          isRegenerating={isGeneratingLetter}
-          stats={stats}
-        />
-
-        {currentLetter && (
-          <>
-            {/* Violation Types Summary */}
-            {Object.keys(violationsByType).length > 0 && (
-              <Paper
-                elevation={1}
+      {currentLetter && (
+        <>
+          {/* Violation Types Summary */}
+          {Object.keys(violationsByType).length > 0 && (
+            <Paper
+              elevation={0}
+              sx={{
+                p: 3,
+                mt: 4,
+                borderRadius: 3,
+                border: '1px solid',
+                borderColor: 'divider',
+                backgroundColor: '#fafafa',
+              }}
+            >
+              <Typography
+                variant="subtitle1"
                 sx={{
-                  p: 3,
-                  mt: 4,
-                  borderRadius: 2,
-                  backgroundColor: 'grey.50',
+                  fontWeight: 'bold',
+                  mb: 2,
+                  pb: 1,
+                  borderBottom: '2px solid',
+                  borderColor: 'primary.main',
                 }}
               >
-                <Typography
-                  variant="subtitle1"
-                  sx={{
-                    fontWeight: 'bold',
-                    mb: 2,
-                    pb: 1,
-                    borderBottom: '2px solid',
-                    borderColor: 'primary.main',
-                  }}
-                >
-                  Violation Types Included ({selectedViolations.length})
-                </Typography>
+                Violations Included ({selectedViolations.length})
+              </Typography>
+              <Stack spacing={2}>
                 {Object.entries(violationsByType)
                   .sort((a, b) => b[1].length - a[1].length)
                   .map(([type, accounts]) => (
-                    <Box key={type} sx={{ mb: 2 }}>
-                      <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 0.5 }}>
-                        {type}
-                      </Typography>
+                    <Box key={type}>
+                      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                          {type}
+                        </Typography>
+                        <Chip label={accounts.length} size="small" color="primary" variant="outlined" />
+                      </Stack>
                       <Box sx={{ pl: 2 }}>
                         {accounts.map((account, idx) => (
                           <Typography
@@ -210,22 +265,22 @@ const LetterPage = () => {
                       </Box>
                     </Box>
                   ))}
-              </Paper>
-            )}
+              </Stack>
+            </Paper>
+          )}
 
-            <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
-              <Button
-                variant="outlined"
-                startIcon={<HomeIcon />}
-                onClick={handleStartOver}
-              >
-                Start Over with New Report
-              </Button>
-            </Box>
-          </>
-        )}
-      </Box>
-    </Container>
+          <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
+            <Button
+              variant="outlined"
+              startIcon={<HomeIcon />}
+              onClick={handleStartOver}
+            >
+              Start Over with New Report
+            </Button>
+          </Box>
+        </>
+      )}
+    </Box>
   );
 };
 
