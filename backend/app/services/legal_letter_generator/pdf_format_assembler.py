@@ -1053,9 +1053,9 @@ def _format_account_bullet(violation: Dict[str, Any]) -> str:
             field_summary = " | ".join(field_values)
             # Add the description to explain what's wrong
             if description:
-                # Truncate long descriptions
-                desc_short = description[:100] + "..." if len(description) > 100 else description
-                details.append(f"{field_summary} — {desc_short}")
+                # Use full description - no truncation for legal letters
+                # Descriptions contain critical factual evidence
+                details.append(f"{field_summary} — {description}")
             else:
                 details.append(f"{field_summary} — These fields require investigation")
 
