@@ -867,6 +867,7 @@ def _format_account_bullet(violation: Dict[str, Any]) -> str:
     dofd_source = violation.get("dofd_source", "")  # "explicit", "inferred", or ""
     missing_field = violation.get("missing_field", "")
     violation_type = violation.get("violation_type", "")
+    description = violation.get("description", "")
 
     # Convert dates to readable format (January 26, 2025 instead of 2025-01-26)
     last_reported_date = _format_readable_date(last_reported_date_raw)
@@ -880,6 +881,12 @@ def _format_account_bullet(violation: Dict[str, Any]) -> str:
 
     # Add specific issue details
     details = []
+
+    # Extract key field values from evidence dict for display
+    evidence_dict = evidence if isinstance(evidence, dict) else {}
+    payment_status = evidence_dict.get("payment_status", "") or violation.get("payment_status", "")
+    balance = evidence_dict.get("balance") or evidence_dict.get("current_balance") or violation.get("balance")
+    account_status = evidence_dict.get("account_status", "") or violation.get("account_status", "")
 
     # Handle Status/Payment History Mismatch violations with structured evidence
     if violation_type == "status_payment_history_mismatch" and isinstance(evidence, dict):
@@ -1019,12 +1026,38 @@ def _format_account_bullet(violation: Dict[str, Any]) -> str:
         else:
             details.append(f"Missing {missing_field} field prevents proper verification, violating 15 U.S.C. § 1681e(b)")
 
-    # Add evidence if not already covered
-    if evidence and evidence not in str(details):
+    # Add evidence if not already covered (handle string evidence)
+    if evidence and isinstance(evidence, str) and evidence not in str(details):
         # Clean up evidence text
         evidence_clean = evidence.strip()
         if evidence_clean:
             details.append(evidence_clean)
+
+    # FALLBACK: If no details were added but we have field values, show them
+    # This ensures violations always show factual data like "Payment Status: X | Balance: Y"
+    if not details:
+        field_values = []
+        if payment_status:
+            field_values.append(f"Payment Status: {payment_status}")
+        if balance is not None:
+            try:
+                balance_formatted = f"${float(balance):,.2f}" if balance else "$0.00"
+            except (ValueError, TypeError):
+                balance_formatted = str(balance)
+            field_values.append(f"Balance: {balance_formatted}")
+        if account_status and account_status != payment_status:
+            field_values.append(f"Account Status: {account_status}")
+
+        if field_values:
+            # Build a summary line with the field values
+            field_summary = " | ".join(field_values)
+            # Add the description to explain what's wrong
+            if description:
+                # Truncate long descriptions
+                desc_short = description[:100] + "..." if len(description) > 100 else description
+                details.append(f"{field_summary} — {desc_short}")
+            else:
+                details.append(f"{field_summary} — These fields require investigation")
 
     if details:
         return f"• {account_id}: {'; '.join(details)}"

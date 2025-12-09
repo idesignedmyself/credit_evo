@@ -502,13 +502,20 @@ async def generate_letter(
                     "violation_type": v.violation_type.value,
                     "fcra_section": v.fcra_section or get_violation_fcra_section(v.violation_type.value),
                     "metro2_field": v.metro2_field,
-                    "evidence": v.evidence.get("reason", "") if v.evidence else v.description,
+                    # Pass full evidence dict for structured data, with text "reason" fallback
+                    "evidence": v.evidence if isinstance(v.evidence, dict) else (v.evidence or v.description),
                     "days_since_update": get_days_since_update(v),
                     "missing_field": get_missing_field_name(v),
                     "last_reported_date": get_last_reported_date(v),
                     "dofd": get_dofd(v),  # FCRA 605(a) uses DOFD for 7-year calculation
                     "dofd_source": get_dofd_source(v),  # 'explicit', 'inferred', or ''
                     "severity": v.severity.value,
+                    # Pass description for fallback display text
+                    "description": v.description,
+                    # Extract commonly needed fields from evidence for display
+                    "payment_status": v.evidence.get("payment_status", "") if v.evidence else "",
+                    "balance": v.evidence.get("balance") if v.evidence else None,
+                    "account_status": v.evidence.get("account_status", "") if v.evidence else "",
                 }
                 for v in filtered_violations
             ]
