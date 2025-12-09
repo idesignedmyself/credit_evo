@@ -1,6 +1,6 @@
 /**
  * Credit Engine 2.0 - Violation Toggle Component
- * Accordion-style violation card with toggle functionality
+ * Premium "Fintech" accordion-style violation card with technical details grid
  */
 import React from 'react';
 import {
@@ -12,6 +12,9 @@ import {
   Checkbox,
   Chip,
   Stack,
+  Paper,
+  Divider,
+  Grid,
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { formatViolation, getSeverityConfig } from '../utils';
@@ -29,21 +32,27 @@ const ViolationToggle = React.memo(({ violation, isSelected, onToggle }) => {
     <Accordion
       disableGutters
       sx={{
-        mb: 1,
+        mb: 1.5,
         border: '1px solid',
-        borderColor: isSelected ? 'primary.main' : 'divider',
-        borderRadius: '8px !important',
-        backgroundColor: isSelected ? 'action.selected' : 'background.paper',
+        borderColor: isSelected ? 'secondary.main' : '#E2E8F0',
+        borderRadius: '12px !important',
+        backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.04)' : 'background.paper',
         '&:before': { display: 'none' },
-        '&.Mui-expanded': { margin: '0 0 8px 0' },
+        '&.Mui-expanded': { margin: '0 0 12px 0' },
+        boxShadow: isSelected
+          ? '0 0 0 1px rgba(59, 130, 246, 0.3), 0 4px 12px rgba(59, 130, 246, 0.1)'
+          : '0px 1px 3px rgba(0, 0, 0, 0.04)',
+        transition: 'all 0.15s ease',
       }}
     >
       <AccordionSummary
-        expandIcon={<ExpandMoreIcon />}
+        expandIcon={<ExpandMoreIcon sx={{ color: 'text.secondary' }} />}
         sx={{
+          px: 2,
           '& .MuiAccordionSummary-content': {
             alignItems: 'center',
             gap: 1,
+            my: 1.5,
           },
         }}
       >
@@ -52,6 +61,10 @@ const ViolationToggle = React.memo(({ violation, isSelected, onToggle }) => {
           onClick={handleCheckboxClick}
           color="primary"
           size="small"
+          sx={{
+            color: '#CBD5E1',
+            '&.Mui-checked': { color: 'secondary.main' },
+          }}
         />
 
         <Stack
@@ -61,15 +74,25 @@ const ViolationToggle = React.memo(({ violation, isSelected, onToggle }) => {
           sx={{ flexGrow: 1 }}
         >
           <Box sx={{ flexGrow: 1 }}>
-            <Stack direction="row" alignItems="center" spacing={1}>
-              <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+            <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.5 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 600, color: 'text.primary' }}>
                 {formatted.displayLabel}
               </Typography>
               <Chip
                 label={violation.severity}
                 size="small"
-                color={severityConfig.color}
-                variant="outlined"
+                sx={{
+                  fontWeight: 600,
+                  fontSize: '0.7rem',
+                  height: 22,
+                  bgcolor: severityConfig.color === 'error' ? '#FEE2E2'
+                    : severityConfig.color === 'warning' ? '#FEF3C7'
+                    : '#D1FAE5',
+                  color: severityConfig.color === 'error' ? '#991B1B'
+                    : severityConfig.color === 'warning' ? '#92400E'
+                    : '#065F46',
+                  border: 'none',
+                }}
               />
             </Stack>
             <Typography variant="caption" color="text.secondary">
@@ -80,44 +103,144 @@ const ViolationToggle = React.memo(({ violation, isSelected, onToggle }) => {
         </Stack>
       </AccordionSummary>
 
-      <AccordionDetails sx={{ bgcolor: '#fafafa', p: 3 }}>
-        <Typography variant="body2" sx={{ mb: 2 }}>
+      <AccordionDetails sx={{ bgcolor: '#F8FAFC', p: 3, borderTop: '1px solid #E2E8F0' }}>
+        {/* Description */}
+        <Typography variant="body2" sx={{ mb: 3, color: 'text.secondary', maxWidth: '800px', lineHeight: 1.6 }}>
           {formatted.displayDescription}
         </Typography>
 
-        {/* Legal Tags */}
-        <Stack direction="row" spacing={1} sx={{ mb: 2, flexWrap: 'wrap', gap: 1 }}>
-          {formatted.fcraDisplay && (
-            <Chip
-              label={formatted.fcraDisplay}
-              size="small"
-              sx={{ bgcolor: '#e3f2fd', color: '#1565c0', border: 'none' }}
-            />
+        {/* Technical Details Grid */}
+        <Grid container spacing={2}>
+          {/* Expected vs Actual Box */}
+          {(violation.expected_value || violation.actual_value) && (
+            <Grid item xs={12} md={6}>
+              <Paper
+                variant="outlined"
+                sx={{
+                  p: 2.5,
+                  bgcolor: '#fff',
+                  borderColor: '#E2E8F0',
+                  borderRadius: 2,
+                }}
+              >
+                <Typography
+                  variant="caption"
+                  sx={{
+                    textTransform: 'uppercase',
+                    color: 'text.secondary',
+                    fontWeight: 700,
+                    letterSpacing: '0.05em',
+                    fontSize: '0.65rem',
+                  }}
+                >
+                  Discrepancy Detected
+                </Typography>
+                <Box sx={{ mt: 2, display: 'flex', justifyContent: 'space-between', gap: 2 }}>
+                  {violation.expected_value && (
+                    <Box sx={{ flex: 1 }}>
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          fontWeight: 700,
+                          color: '#10B981',
+                          fontSize: '0.65rem',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.03em',
+                        }}
+                      >
+                        Expected
+                      </Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 500, mt: 0.5, color: 'text.primary' }}>
+                        {violation.expected_value}
+                      </Typography>
+                    </Box>
+                  )}
+                  {violation.expected_value && violation.actual_value && (
+                    <Divider orientation="vertical" flexItem sx={{ borderColor: '#E2E8F0' }} />
+                  )}
+                  {violation.actual_value && (
+                    <Box sx={{ flex: 1 }}>
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          fontWeight: 700,
+                          color: '#EF4444',
+                          fontSize: '0.65rem',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.03em',
+                        }}
+                      >
+                        Actual Reporting
+                      </Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 500, mt: 0.5, color: 'text.primary' }}>
+                        {violation.actual_value}
+                      </Typography>
+                    </Box>
+                  )}
+                </Box>
+              </Paper>
+            </Grid>
           )}
-          {formatted.metroDisplay && (
-            <Chip
-              label={formatted.metroDisplay}
-              size="small"
-              sx={{ bgcolor: '#f3e5f5', color: '#7b1fa2', border: 'none' }}
-            />
-          )}
-        </Stack>
 
-        {/* Expected vs Actual */}
-        {(violation.expected_value || violation.actual_value) && (
-          <Box>
-            {violation.expected_value && (
-              <Typography variant="caption" display="block">
-                <strong>Expected:</strong> {violation.expected_value}
-              </Typography>
-            )}
-            {violation.actual_value && (
-              <Typography variant="caption" display="block">
-                <strong>Actual:</strong> {violation.actual_value}
-              </Typography>
-            )}
-          </Box>
-        )}
+          {/* Legal Codes Box */}
+          {(formatted.fcraDisplay || formatted.metroDisplay) && (
+            <Grid item xs={12} md={(violation.expected_value || violation.actual_value) ? 6 : 12}>
+              <Paper
+                variant="outlined"
+                sx={{
+                  p: 2.5,
+                  bgcolor: '#fff',
+                  height: '100%',
+                  borderColor: '#E2E8F0',
+                  borderRadius: 2,
+                }}
+              >
+                <Typography
+                  variant="caption"
+                  sx={{
+                    textTransform: 'uppercase',
+                    color: 'text.secondary',
+                    fontWeight: 700,
+                    letterSpacing: '0.05em',
+                    fontSize: '0.65rem',
+                  }}
+                >
+                  Cited Statutes
+                </Typography>
+                <Stack direction="row" spacing={1} sx={{ mt: 1.5, flexWrap: 'wrap', gap: 1 }}>
+                  {formatted.fcraDisplay && (
+                    <Chip
+                      label={formatted.fcraDisplay}
+                      size="small"
+                      sx={{
+                        bgcolor: '#EFF6FF',
+                        color: '#1E40AF',
+                        fontWeight: 600,
+                        borderRadius: 1,
+                        fontSize: '0.75rem',
+                        height: 26,
+                      }}
+                    />
+                  )}
+                  {formatted.metroDisplay && (
+                    <Chip
+                      label={formatted.metroDisplay}
+                      size="small"
+                      sx={{
+                        bgcolor: '#F3E8FF',
+                        color: '#6B21A8',
+                        fontWeight: 600,
+                        borderRadius: 1,
+                        fontSize: '0.75rem',
+                        height: 26,
+                      }}
+                    />
+                  )}
+                </Stack>
+              </Paper>
+            </Grid>
+          )}
+        </Grid>
       </AccordionDetails>
     </Accordion>
   );
