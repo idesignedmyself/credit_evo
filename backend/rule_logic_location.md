@@ -435,6 +435,112 @@ File: `app/routers/letters.py`
 
 ---
 
+## Frontend Dashboard (Dec 2025 Upgrade)
+
+### Architecture Overview
+
+```
+frontend/src/
+├── layouts/
+│   └── DashboardLayout.jsx      # Responsive sidebar + content area
+├── pages/
+│   ├── DashboardPage.jsx        # Auto-redirect to latest report audit
+│   ├── AuditPage.jsx            # Score dashboard + violation list
+│   ├── UploadPage.jsx           # PDF report upload
+│   ├── ReportHistoryPage.jsx    # List of all uploaded reports
+│   ├── LetterPage.jsx           # Letter generation workflow
+│   ├── LettersPage.jsx          # My Letters - saved letter history
+│   └── ProfilePage.jsx          # User profile management
+├── components/
+│   ├── ScoreDashboard.jsx       # 3-bureau score cards with circular gauges
+│   └── ViolationToggle.jsx      # Violation list with selection toggles
+├── state/
+│   ├── authStore.js             # Zustand - authentication state
+│   └── reportStore.js           # Zustand - report state + latestReportId
+├── theme.js                     # MUI theme (blue primary, clean typography)
+└── api/
+    └── index.js                 # Axios API client
+```
+
+### Key Features
+
+| Feature | File | Description |
+|---------|------|-------------|
+| Smart Dashboard | `DashboardPage.jsx` | Auto-redirects to `/audit/{latestReportId}` or shows empty state |
+| Latest Report ID | `reportStore.js` | Zustand store caches `latestReportId` for instant navigation |
+| Score Gauges | `ScoreDashboard.jsx` | Circular progress indicators for TU/EX/EQ scores |
+| Sidebar Navigation | `DashboardLayout.jsx` | Responsive drawer with mobile hamburger menu |
+| Letter History | `LettersPage.jsx` | Lists all saved letters with download/delete options |
+
+### Dashboard Navigation Flow
+
+```
+User logs in → DashboardLayout fetches latestReportId
+                     ↓
+            Navigate to /dashboard
+                     ↓
+        DashboardPage checks latestReportId
+                     ↓
+    ┌─────────────────┴─────────────────┐
+    ↓                                   ↓
+Has report                         No reports
+    ↓                                   ↓
+<Navigate to="/audit/{id}">     Show "Upload First Report" CTA
+```
+
+### State Management (Zustand)
+
+**reportStore.js:**
+```javascript
+{
+  currentReport: null,      // Currently loaded report data
+  reports: [],              // List of all reports
+  latestReportId: null,     // Cached for instant dashboard redirect
+  uploadProgress: 0,        // Upload progress percentage
+  isUploading: false,       // Upload in progress flag
+  error: null               // Error message
+}
+```
+
+**Key actions:**
+- `fetchLatestReportId()` - Called on mount to get most recent report
+- `uploadReport(file)` - Handles PDF upload with progress tracking
+- `fetchReport(reportId)` - Loads specific report data
+
+---
+
+## Letter Generation Data Sources
+
+### Consumer Address Priority (Dec 2025 Fix)
+
+**File:** `app/routers/letters.py` - `reconstruct_consumer()`
+
+Consumer data is now sourced in priority order:
+
+1. **User Profile (UserDB)** - Preferred source
+   - `first_name`, `middle_name`, `last_name`, `suffix`
+   - `street_address`, `unit`, `city`, `state`, `zip_code`
+
+2. **Parsed Report (ReportDB)** - Fallback only
+   - `consumer_name`, `consumer_address`
+   - `consumer_city`, `consumer_state`, `consumer_zip`
+
+**Why this matters:**
+- Parsed credit report addresses often have formatting issues
+- User profile data is manually entered and verified
+- Prevents issues like "NY10026-" (missing space, trailing dash)
+
+### Address Formatting
+
+**File:** `app/services/legal_letter_generator/pdf_format_assembler.py` - `_format_city_state_zip()`
+
+Handles edge cases:
+- Removes trailing punctuation: "10026-," → "10026"
+- Fixes state/zip concatenation: "NY10026" → "NY 10026"
+- Cleans up double commas: "CITY,, STATE" → "CITY, STATE"
+
+---
+
 ## Related Documentation
 
 - `letter_fixes.md` - Recent fixes and Metro 2 field reference
