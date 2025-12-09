@@ -180,14 +180,51 @@ def reconstruct_violations(violations_data: list) -> List[Violation]:
     return violations
 
 
-def reconstruct_consumer(report: ReportDB) -> Consumer:
-    """Reconstruct Consumer object from database record."""
+def reconstruct_consumer(report: ReportDB, user: UserDB = None) -> Consumer:
+    """
+    Reconstruct Consumer object, preferring user profile data over parsed report data.
+
+    Priority:
+    1. User profile data (if user has filled out their profile)
+    2. Parsed report data (fallback)
+
+    Also fixes formatting issues like "NY10026-" -> "NY 10026"
+    """
+    # Build full name from user profile if available
+    if user and user.first_name and user.last_name:
+        name_parts = [user.first_name]
+        if user.middle_name:
+            name_parts.append(user.middle_name)
+        name_parts.append(user.last_name)
+        if user.suffix:
+            name_parts.append(user.suffix)
+        full_name = " ".join(name_parts).upper()
+    else:
+        full_name = report.consumer_name or ""
+
+    # Use user profile address if available
+    if user and user.street_address and user.city and user.state and user.zip_code:
+        address = user.street_address
+        if user.unit:
+            address += f" {user.unit}"
+        city = user.city
+        state = user.state
+        zip_code = user.zip_code
+    else:
+        address = report.consumer_address or ""
+        city = report.consumer_city or ""
+        state = report.consumer_state or ""
+        zip_code = report.consumer_zip or ""
+
+    # Clean up zip code - remove trailing dash and ensure proper formatting
+    zip_code = zip_code.rstrip('-').strip()
+
     return Consumer(
-        full_name=report.consumer_name or "",
-        address=report.consumer_address or "",
-        city=report.consumer_city or "",
-        state=report.consumer_state or "",
-        zip_code=report.consumer_zip or ""
+        full_name=full_name,
+        address=address,
+        city=city,
+        state=state,
+        zip_code=zip_code
     )
 
 
@@ -280,8 +317,8 @@ async def generate_letter(
     else:
         filtered_discrepancies = []  # Don't include discrepancies by default
 
-    # Reconstruct consumer
-    consumer = reconstruct_consumer(report)
+    # Reconstruct consumer - prefer user profile data over parsed report data
+    consumer = reconstruct_consumer(report, current_user)
 
     try:
         # Normalize tone for routing
@@ -676,9 +713,9 @@ async def preview_letter(
     if not audit_db:
         raise HTTPException(status_code=404, detail="Audit result not found")
 
-    # Reconstruct violations and consumer
+    # Reconstruct violations and consumer - prefer user profile data
     all_violations = reconstruct_violations(audit_db.violations_data or [])
-    consumer = reconstruct_consumer(report)
+    consumer = reconstruct_consumer(report, current_user)
 
     # Create AuditResult object
     audit_result = AuditResult(

@@ -835,7 +835,10 @@ def _format_address(address: str) -> str:
 def _format_city_state_zip(city_state_zip: str) -> str:
     """
     Format city/state/zip properly.
-    Fixes issues like "10026-," -> "10026"
+    Fixes issues like:
+    - "10026-," -> "10026"
+    - "NY10026-" -> "NY 10026"
+    - "NY10026" -> "NY 10026"
     """
     if not city_state_zip:
         return ""
@@ -845,6 +848,10 @@ def _format_city_state_zip(city_state_zip: str) -> str:
 
     # Remove dangling comma before zip
     city_state_zip = re.sub(r',\s*,', ',', city_state_zip)
+
+    # Fix state/zip concatenation: "NY10026" -> "NY 10026"
+    # Match 2-letter state code immediately followed by zip code (no space)
+    city_state_zip = re.sub(r'([A-Z]{2})(\d{5})', r'\1 \2', city_state_zip)
 
     return city_state_zip.strip()
 
