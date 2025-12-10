@@ -52,7 +52,9 @@ const LettersPage = () => {
 
   const handleView = (letter) => {
     // Navigate to letter page with letterId
-    navigate(`/letter/${letter.report_id}?letterId=${letter.letter_id}`);
+    // Use a placeholder report_id if null (orphaned letters still work via letterId query param)
+    const reportId = letter.report_id || 'view';
+    navigate(`/letter/${reportId}?letterId=${letter.letter_id}`);
   };
 
   const handleDelete = async (letterId) => {

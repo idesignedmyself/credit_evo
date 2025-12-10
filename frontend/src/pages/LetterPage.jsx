@@ -51,11 +51,15 @@ const LetterPage = () => {
       return;
     }
 
-    // Otherwise, if no violations selected, fetch audit results
+    // No letterId means we're generating a new letter - clear any existing letter
+    // so the user sees the "Ready to Generate" state
+    clearLetter();
+
+    // If no violations selected, fetch audit results
     if (selectedViolationIds.length === 0) {
       fetchAuditResults(reportId);
     }
-  }, [reportId, letterId, selectedViolationIds.length, fetchAuditResults, fetchTones, loadSavedLetter]);
+  }, [reportId, letterId, selectedViolationIds.length, fetchAuditResults, fetchTones, loadSavedLetter, clearLetter]);
 
   // Auto-set bureau from audit result when loaded
   useEffect(() => {

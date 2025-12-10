@@ -935,6 +935,12 @@ async def list_all_letters(
         .all()
     )
 
+    def get_letter_type(tone: str) -> str:
+        """Infer letter type from tone."""
+        if tone and is_legal_tone(tone):
+            return "legal"
+        return "civilian"
+
     return [
         {
             "letter_id": letter.id,
@@ -942,8 +948,9 @@ async def list_all_letters(
             "created_at": letter.created_at.isoformat() if letter.created_at else None,
             "bureau": letter.bureau,
             "tone": letter.tone,
+            "letter_type": get_letter_type(letter.tone),
             "word_count": letter.word_count,
-            "violations": len(letter.violations_cited or []),
+            "violation_count": len(letter.violations_cited or []),
             "accounts": len(letter.accounts_disputed or []),
             "has_edits": letter.edited_content is not None,
         }

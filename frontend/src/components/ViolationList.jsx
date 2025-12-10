@@ -138,105 +138,109 @@ const ViolationList = () => {
         </Tabs>
       </Box>
 
-      {/* ------- SPA INSTANT TABS (no unmounting) ------- */}
+      {/* ------- TAB PANELS (conditional render for AutoSizer compatibility) ------- */}
 
       {/* TYPE TAB */}
-      <Box hidden={groupBy !== "type"}>
+      {groupBy === "type" && (
         <VirtualizedViolationList
           violations={filteredData}
           selectedViolationIds={selectedViolationIds}
           toggleViolation={toggleViolation}
           groupedData={groupedByType}
         />
-      </Box>
+      )}
 
       {/* ACCOUNT TAB */}
-      <Box hidden={groupBy !== "account"}>
+      {groupBy === "account" && (
         <VirtualizedViolationList
           violations={filteredData}
           selectedViolationIds={selectedViolationIds}
           toggleViolation={toggleViolation}
           groupedData={groupedByAccount}
         />
-      </Box>
+      )}
 
       {/* BUREAU TAB */}
-      <Box hidden={groupBy !== "bureau"}>
+      {groupBy === "bureau" && (
         <VirtualizedViolationList
           violations={filteredData}
           selectedViolationIds={selectedViolationIds}
           toggleViolation={toggleViolation}
           groupedData={groupedByBureau}
         />
-      </Box>
+      )}
 
       {/* CROSS-BUREAU TAB */}
-      <Box hidden={groupBy !== "crossbureau"}>
-        {(!discrepancies || discrepancies.length === 0) ? (
-          <Paper sx={{ p: 3, textAlign: 'center' }}>
-            <Typography variant="body1" color="text.secondary">
-              No cross-bureau discrepancies found. This means the same accounts are being reported consistently across all bureaus.
-            </Typography>
-          </Paper>
-        ) : (
-          <Box sx={{ mb: 3 }}>
-            <Typography
-              variant="subtitle1"
-              sx={{
-                fontWeight: 'bold',
-                mb: 1,
-                pb: 1,
-                borderBottom: '2px solid',
-                borderColor: 'primary.main',
-              }}
-            >
-              Cross-Bureau Discrepancies ({discrepancies.length})
-            </Typography>
+      {groupBy === "crossbureau" && (
+        <>
+          {(!discrepancies || discrepancies.length === 0) ? (
+            <Paper sx={{ p: 3, textAlign: 'center' }}>
+              <Typography variant="body1" color="text.secondary">
+                No cross-bureau discrepancies found. This means the same accounts are being reported consistently across all bureaus.
+              </Typography>
+            </Paper>
+          ) : (
+            <Box sx={{ mb: 3 }}>
+              <Typography
+                variant="subtitle1"
+                sx={{
+                  fontWeight: 'bold',
+                  mb: 1,
+                  pb: 1,
+                  borderBottom: '2px solid',
+                  borderColor: 'primary.main',
+                }}
+              >
+                Cross-Bureau Discrepancies ({discrepancies.length})
+              </Typography>
 
-            {discrepancies.map((discrepancy, index) => (
-              <DiscrepancyToggle
-                key={discrepancy.discrepancy_id || index}
-                discrepancy={discrepancy}
-                isSelected={selectedDiscrepancyIds.includes(discrepancy.discrepancy_id)}
-                onToggle={toggleDiscrepancy}
-              />
-            ))}
-          </Box>
-        )}
-      </Box>
+              {discrepancies.map((discrepancy, index) => (
+                <DiscrepancyToggle
+                  key={discrepancy.discrepancy_id || index}
+                  discrepancy={discrepancy}
+                  isSelected={selectedDiscrepancyIds.includes(discrepancy.discrepancy_id)}
+                  onToggle={toggleDiscrepancy}
+                />
+              ))}
+            </Box>
+          )}
+        </>
+      )}
 
       {/* ACCOUNTS TAB */}
-      <Box hidden={groupBy !== "accounts"}>
-        {accounts.length === 0 ? (
-          <Paper sx={{ p: 3, textAlign: 'center' }}>
-            <Typography variant="body1" color="text.secondary">
-              No accounts found in this report.
-            </Typography>
-          </Paper>
-        ) : (
-          <Box sx={{ mb: 3 }}>
-            <Typography
-              variant="subtitle1"
-              sx={{
-                fontWeight: 'bold',
-                mb: 1,
-                pb: 1,
-                borderBottom: '2px solid',
-                borderColor: 'primary.main',
-              }}
-            >
-              All Accounts ({accounts.length})
-            </Typography>
+      {groupBy === "accounts" && (
+        <>
+          {accounts.length === 0 ? (
+            <Paper sx={{ p: 3, textAlign: 'center' }}>
+              <Typography variant="body1" color="text.secondary">
+                No accounts found in this report.
+              </Typography>
+            </Paper>
+          ) : (
+            <Box sx={{ mb: 3 }}>
+              <Typography
+                variant="subtitle1"
+                sx={{
+                  fontWeight: 'bold',
+                  mb: 1,
+                  pb: 1,
+                  borderBottom: '2px solid',
+                  borderColor: 'primary.main',
+                }}
+              >
+                All Accounts ({accounts.length})
+              </Typography>
 
-            {accounts.map((account, index) => (
-              <AccountAccordion
-                key={account.account_id || index}
-                account={account}
-              />
-            ))}
-          </Box>
-        )}
-      </Box>
+              {accounts.map((account, index) => (
+                <AccountAccordion
+                  key={account.account_id || index}
+                  account={account}
+                />
+              ))}
+            </Box>
+          )}
+        </>
+      )}
     </Box>
   );
 };

@@ -18,6 +18,8 @@ import PersonIcon from '@mui/icons-material/Person';
 import LogoutIcon from '@mui/icons-material/Logout';
 import useAuthStore from '../state/authStore';
 import useReportStore from '../state/reportStore';
+import useViolationStore from '../state/violationStore';
+import useUIStore from '../state/uiStore';
 
 const drawerWidth = 260;
 
@@ -33,7 +35,9 @@ export default function DashboardLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useAuthStore();
-  const { latestReportId, fetchLatestReportId } = useReportStore();
+  const { latestReportId, fetchLatestReportId, resetState: resetReportState } = useReportStore();
+  const { resetState: resetViolationState } = useViolationStore();
+  const { resetState: resetUIState } = useUIStore();
 
   // Fetch latest report ID on mount (for Dashboard navigation)
   useEffect(() => {
@@ -55,8 +59,12 @@ export default function DashboardLayout() {
   };
 
   const handleLogout = () => {
+    // Reset all stores on logout to clear user data
+    resetViolationState();
+    resetUIState();
+    resetReportState();
     logout();
-    navigate('/login');
+    navigate('/');
   };
 
   const isActive = (path) => {

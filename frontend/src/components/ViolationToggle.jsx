@@ -20,6 +20,9 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { formatViolation, getSeverityConfig } from '../utils';
 
 const ViolationToggle = React.memo(({ violation, isSelected, onToggle }) => {
+  // Guard against undefined/null violation
+  if (!violation) return null;
+
   const formatted = formatViolation(violation);
   const severityConfig = getSeverityConfig(violation.severity);
 

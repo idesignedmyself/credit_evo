@@ -307,36 +307,29 @@ const LetterPreview = ({ letter, isLoading, error, onRegenerate, isRegenerating,
             }}
           />
         ) : (
-          /* A4 Paper Preview - looks like a physical document */
+          /* Letter Preview - clean document view */
           <Box
             sx={{
-              bgcolor: '#E2E8F0', // Darker slate background behind paper
-              p: { xs: 2, md: 4 },
+              bgcolor: '#f8fafc',
+              border: '1px solid #e2e8f0',
               borderRadius: 2,
-              display: 'flex',
-              justifyContent: 'center',
+              p: { xs: 2, md: 3 },
               overflow: 'auto',
-              maxHeight: '80vh',
+              maxHeight: '70vh',
             }}
           >
-            <Paper
-              elevation={4}
+            <Box
               sx={{
-                width: '100%',
-                maxWidth: '8.5in', // US Letter width
-                minHeight: '11in', // US Letter height
-                p: { xs: 3, md: '1in' }, // Standard print margins
                 bgcolor: 'white',
                 color: '#111',
                 fontFamily: '"Times New Roman", Times, serif',
                 fontSize: '12pt',
-                lineHeight: 1.6,
+                lineHeight: 1.8,
                 whiteSpace: 'pre-wrap',
-                boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)', // Deep shadow
               }}
             >
               {editableLetter || 'No letter content available.'}
-            </Paper>
+            </Box>
           </Box>
         )}
       </Paper>

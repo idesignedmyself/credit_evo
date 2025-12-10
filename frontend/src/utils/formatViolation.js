@@ -62,6 +62,9 @@ export const getSeverityConfig = (severity) => {
  * @returns {Object} Formatted violation with display properties
  */
 export const formatViolation = (violation) => {
+  // Guard against null/undefined violation
+  if (!violation) return null;
+
   const severityConfig = getSeverityConfig(violation.severity);
 
   return {
@@ -82,13 +85,18 @@ export const formatViolation = (violation) => {
  * @returns {Object} Grouped violations by type
  */
 export const groupViolationsByType = (violations) => {
+  const safeViolations = violations ?? [];
+  if (!Array.isArray(safeViolations)) return {};
+
   const grouped = {};
-  violations.forEach(v => {
+  safeViolations.forEach(v => {
+    if (!v) return;
     const label = getViolationLabel(v.violation_type);
     if (!grouped[label]) {
       grouped[label] = [];
     }
-    grouped[label].push(formatViolation(v));
+    const formatted = formatViolation(v);
+    if (formatted) grouped[label].push(formatted);
   });
   return grouped;
 };
@@ -99,13 +107,18 @@ export const groupViolationsByType = (violations) => {
  * @returns {Object} Grouped violations by account
  */
 export const groupViolationsByAccount = (violations) => {
+  const safeViolations = violations ?? [];
+  if (!Array.isArray(safeViolations)) return {};
+
   const grouped = {};
-  violations.forEach(v => {
+  safeViolations.forEach(v => {
+    if (!v) return;
     const key = v.creditor_name || 'Unknown Account';
     if (!grouped[key]) {
       grouped[key] = [];
     }
-    grouped[key].push(formatViolation(v));
+    const formatted = formatViolation(v);
+    if (formatted) grouped[key].push(formatted);
   });
   return grouped;
 };
@@ -123,14 +136,19 @@ const BUREAU_LABELS = {
  * @returns {Object} Grouped violations by bureau
  */
 export const groupViolationsByBureau = (violations) => {
+  const safeViolations = violations ?? [];
+  if (!Array.isArray(safeViolations)) return {};
+
   const grouped = {};
-  violations.forEach(v => {
+  safeViolations.forEach(v => {
+    if (!v) return;
     const bureauKey = v.bureau?.toLowerCase() || 'unknown';
     const label = BUREAU_LABELS[bureauKey] || bureauKey.charAt(0).toUpperCase() + bureauKey.slice(1);
     if (!grouped[label]) {
       grouped[label] = [];
     }
-    grouped[label].push(formatViolation(v));
+    const formatted = formatViolation(v);
+    if (formatted) grouped[label].push(formatted);
   });
   return grouped;
 };
