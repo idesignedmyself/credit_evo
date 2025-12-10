@@ -1,38 +1,10 @@
 /**
- * Credit Engine 2.0 - Virtualized Violation List Component
- * Uses react-window for 60FPS rendering of large violation lists
- * Falls back to standard rendering for small lists (<50 items)
+ * Credit Engine 2.0 - Violation List Component
+ * Simple non-virtualized list (virtualization removed due to react-window compatibility issues)
  */
-import React, { useMemo } from 'react';
-import { List } from 'react-window';
-import AutoSizer from 'react-virtualized-auto-sizer';
+import React from 'react';
 import { Box, Typography } from '@mui/material';
 import ViolationToggle from './ViolationToggle';
-
-// Height constants for violation items
-const ITEM_HEIGHT = 90; // Collapsed accordion height with margin
-
-// Threshold for using virtualization (small lists render faster without it)
-const VIRTUALIZATION_THRESHOLD = 50;
-
-/**
- * Row renderer for virtualized list
- */
-const ViolationRow = React.memo(({ data, index, style }) => {
-  const { violations, selectedViolationIds, toggleViolation } = data;
-  const violation = violations[index];
-  const isSelected = selectedViolationIds.includes(violation.violation_id);
-
-  return (
-    <div style={{ ...style, paddingRight: 8, paddingBottom: 8 }}>
-      <ViolationToggle
-        violation={violation}
-        isSelected={isSelected}
-        onToggle={toggleViolation}
-      />
-    </div>
-  );
-});
 
 /**
  * Group header component for grouped violations
@@ -53,106 +25,76 @@ const GroupHeader = ({ group, count }) => (
 );
 
 /**
- * Standard (non-virtualized) violation list for small datasets
+ * Standard violation list
  */
-const StandardViolationList = React.memo(({ violations, selectedViolationIds, toggleViolation }) => (
-  <>
-    {violations.map((violation) => (
-      <ViolationToggle
-        key={violation.violation_id}
-        violation={violation}
-        isSelected={selectedViolationIds.includes(violation.violation_id)}
-        onToggle={toggleViolation}
-      />
-    ))}
-  </>
-));
+const StandardViolationList = React.memo(({ violations, selectedViolationIds, toggleViolation }) => {
+  // Guard against null/undefined
+  const safeViolations = Array.isArray(violations) ? violations : [];
+  const safeSelectedIds = Array.isArray(selectedViolationIds) ? selectedViolationIds : [];
 
-/**
- * Virtualized list for large datasets (>50 violations)
- */
-const VirtualizedList = React.memo(({ violations, selectedViolationIds, toggleViolation }) => {
-  const itemData = useMemo(() => ({
-    violations,
-    selectedViolationIds,
-    toggleViolation,
-  }), [violations, selectedViolationIds, toggleViolation]);
+  if (safeViolations.length === 0) return null;
 
   return (
-    <Box sx={{ height: 'calc(100vh - 400px)', minHeight: 400 }}>
-      <AutoSizer>
-        {({ height, width }) => (
-          <List
-            height={height}
-            width={width}
-            itemCount={violations.length}
-            itemSize={ITEM_HEIGHT}
-            itemData={itemData}
-            overscanCount={5}
-          >
-            {ViolationRow}
-          </List>
-        )}
-      </AutoSizer>
-    </Box>
+    <>
+      {safeViolations.map((violation) => {
+        if (!violation) return null;
+        return (
+          <ViolationToggle
+            key={violation.violation_id}
+            violation={violation}
+            isSelected={safeSelectedIds.includes(violation.violation_id)}
+            onToggle={toggleViolation}
+          />
+        );
+      })}
+    </>
   );
 });
 
 /**
  * Main VirtualizedViolationList Component
- * Automatically chooses between virtualized and standard rendering based on item count
+ * (Name kept for backward compatibility, but virtualization is disabled)
  */
 const VirtualizedViolationList = ({
-  violations,
-  selectedViolationIds,
+  violations = [],
+  selectedViolationIds = [],
   toggleViolation,
   groupedData = null,
-  forceVirtualize = false,
 }) => {
-  // Use virtualization for large lists or when forced
-  const shouldVirtualize = forceVirtualize || violations.length > VIRTUALIZATION_THRESHOLD;
+  // Guard against null/undefined
+  const safeViolations = Array.isArray(violations) ? violations : [];
+  const safeSelectedIds = Array.isArray(selectedViolationIds) ? selectedViolationIds : [];
+  const safeGroupedData = groupedData && typeof groupedData === 'object' ? groupedData : null;
 
   // If grouped data is provided, render groups with their violations
-  if (groupedData && Object.keys(groupedData).length > 0) {
+  if (safeGroupedData && Object.keys(safeGroupedData).length > 0) {
     return (
       <>
-        {Object.entries(groupedData).map(([group, items]) => (
-          <Box key={group} sx={{ mb: 3 }}>
-            <GroupHeader group={group} count={items.length} />
-            {items.length > VIRTUALIZATION_THRESHOLD ? (
-              <VirtualizedList
-                violations={items}
-                selectedViolationIds={selectedViolationIds}
-                toggleViolation={toggleViolation}
-              />
-            ) : (
+        {Object.entries(safeGroupedData).map(([group, items]) => {
+          // Guard against non-array items
+          const safeItems = Array.isArray(items) ? items : [];
+          if (safeItems.length === 0) return null;
+
+          return (
+            <Box key={group} sx={{ mb: 3 }}>
+              <GroupHeader group={group} count={safeItems.length} />
               <StandardViolationList
-                violations={items}
-                selectedViolationIds={selectedViolationIds}
+                violations={safeItems}
+                selectedViolationIds={safeSelectedIds}
                 toggleViolation={toggleViolation}
               />
-            )}
-          </Box>
-        ))}
+            </Box>
+          );
+        })}
       </>
     );
   }
 
   // Flat list rendering
-  if (shouldVirtualize) {
-    return (
-      <VirtualizedList
-        violations={violations}
-        selectedViolationIds={selectedViolationIds}
-        toggleViolation={toggleViolation}
-      />
-    );
-  }
-
   return (
     <StandardViolationList
-      violations={violations}
-      selectedViolationIds={selectedViolationIds}
+      violations={safeViolations}
+      selectedViolationIds={safeSelectedIds}
       toggleViolation={toggleViolation}
     />
   );

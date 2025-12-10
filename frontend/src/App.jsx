@@ -5,7 +5,6 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ThemeProvider, CssBaseline } from '@mui/material';
-import { AliveScope, KeepAlive } from 'react-activation';
 import { DashboardPage, UploadPage, AuditPage, LetterPage, LettersPage, ReportHistoryPage, RegisterPage, ProfilePage, LandingPage } from './pages';
 import DashboardLayout from './layouts/DashboardLayout';
 import theme from './theme';
@@ -45,7 +44,7 @@ const AppLayout = () => {
         <Route path="/upload" element={<UploadPage />} />
         <Route path="/reports" element={<ReportHistoryPage />} />
         <Route path="/letters" element={<LettersPage />} />
-        <Route path="/audit/:reportId" element={<KeepAlive when={() => true}><AuditPage /></KeepAlive>} />
+        <Route path="/audit/:reportId" element={<AuditPage />} />
         <Route path="/letter/:reportId" element={<LetterPage />} />
         <Route path="/profile" element={<ProfilePage />} />
       </Route>
@@ -62,9 +61,7 @@ function App() {
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <Router>
-        <AliveScope>
-          <AppLayout />
-        </AliveScope>
+        <AppLayout />
       </Router>
     </ThemeProvider>
   );

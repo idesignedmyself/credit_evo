@@ -937,7 +937,7 @@ async def list_all_letters(
 
     return [
         {
-            "id": letter.id,
+            "letter_id": letter.id,
             "report_id": letter.report_id,  # May be NULL if report was deleted
             "created_at": letter.created_at.isoformat() if letter.created_at else None,
             "bureau": letter.bureau,
