@@ -64,6 +64,8 @@ export default function DashboardLayout() {
     resetUIState();
     resetReportState();
     logout();
+    // Scroll to top before navigating so landing page shows from the top
+    window.scrollTo(0, 0);
     navigate('/');
   };
 
