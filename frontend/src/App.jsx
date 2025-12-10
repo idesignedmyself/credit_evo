@@ -5,7 +5,7 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ThemeProvider, CssBaseline } from '@mui/material';
-import { DashboardPage, UploadPage, AuditPage, LetterPage, LettersPage, ReportHistoryPage, LoginPage, RegisterPage, ProfilePage } from './pages';
+import { DashboardPage, UploadPage, AuditPage, LetterPage, LettersPage, ReportHistoryPage, RegisterPage, ProfilePage, LandingPage } from './pages';
 import DashboardLayout from './layouts/DashboardLayout';
 import theme from './theme';
 import useAuthStore from './state/authStore';
@@ -16,7 +16,7 @@ const ProtectedRoute = ({ children }) => {
   const location = useLocation();
 
   if (!isAuthenticated) {
-    return <Navigate to="/login" state={{ from: location }} replace />;
+    return <Navigate to="/" state={{ from: location }} replace />;
   }
 
   return children;
@@ -28,8 +28,8 @@ const AppLayout = () => {
 
   return (
     <Routes>
-      {/* Public routes */}
-      <Route path="/login" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <LoginPage />} />
+      {/* Public routes - /login redirects to landing page which has the login form */}
+      <Route path="/login" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Navigate to="/" replace />} />
       <Route path="/register" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <RegisterPage />} />
 
       {/* Protected routes with DashboardLayout */}
@@ -49,9 +49,9 @@ const AppLayout = () => {
         <Route path="/profile" element={<ProfilePage />} />
       </Route>
 
-      {/* Default redirect */}
-      <Route path="/" element={<Navigate to="/dashboard" replace />} />
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      {/* Default routes - show LandingPage for non-auth, redirect to dashboard for auth */}
+      <Route path="/" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <LandingPage />} />
+      <Route path="*" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Navigate to="/" replace />} />
     </Routes>
   );
 };

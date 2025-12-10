@@ -164,6 +164,72 @@ The system dynamically extracts violation types from data. Common types include:
 
 ---
 
+## Marketing Landing Page
+
+**Added:** December 2024
+
+### Overview
+Full-featured marketing landing page with integrated login form, replacing the standalone login page. Features a gradient background, transparent navbar, and multiple marketing sections.
+
+### Location
+`frontend/src/pages/LandingPage.jsx`
+
+### Sections
+
+#### 1. Navbar
+- Transparent background (blends with gradient)
+- "Credit Copilot" branding with document icon
+- Clickable logo scrolls to top with smooth animation
+- Login/Register navigation links
+
+#### 2. Hero Section
+- Split layout: Marketing content (left) + Login form (right)
+- Gradient background: `linear-gradient(135deg, #0F172A 0%, #1E3A5F 50%, #1E40AF 100%)`
+- Trust indicators: 98% Success Rate, 150+ Violation Types, 24/7 Automated Monitoring
+- Embedded login form matching LoginPage proportions (500px maxWidth)
+
+#### 3. Features Section
+- 6 feature cards with icons
+- Credit Monitoring, Violation Detection, Letter Generation, etc.
+- Light background for contrast
+
+#### 4. Pricing Section
+- 3-tier pricing (Basic, Pro, Enterprise)
+- Pro tier highlighted as recommended
+- Slate gradient background
+
+#### 5. About Section
+- Company information
+- "Get Started" CTA button
+
+#### 6. Footer
+- Copyright notice
+- Links to Privacy Policy, Terms of Service, Contact
+
+### Route Configuration
+**Location:** `frontend/src/App.jsx`
+
+```jsx
+// Landing page at root for non-authenticated users
+<Route path="/" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <LandingPage />} />
+
+// /login redirects to landing page
+<Route path="/login" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Navigate to="/" replace />} />
+
+// Protected routes redirect to / instead of /login
+if (!isAuthenticated) {
+  return <Navigate to="/" state={{ from: location }} replace />;
+}
+```
+
+### Styling Details
+- **Background Gradient:** Deep navy to blue (`#0F172A` → `#1E3A5F` → `#1E40AF`)
+- **Accent Color:** Light blue (`#60A5FA`) for highlighted text
+- **Form Container:** White background, 500px maxWidth, borderRadius 4
+- **Button Style:** Blue (`#2563EB`), no text transform, 600 font weight
+
+---
+
 ## Legal Letter Generator
 
 ### PDF Format Assembler
