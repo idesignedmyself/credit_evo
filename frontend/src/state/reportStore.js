@@ -8,6 +8,7 @@ import { reportApi } from '../api';
 const useReportStore = create((set, get) => ({
   // State
   currentReport: null,
+  currentReportId: null,  // Track which report is loaded for caching
   reports: [],
   latestReportId: null,
   uploadProgress: 0,
@@ -53,10 +54,16 @@ const useReportStore = create((set, get) => ({
   },
 
   fetchReport: async (reportId) => {
+    // Skip if we already have this report cached
+    const state = get();
+    if (state.currentReportId === reportId && state.currentReport) {
+      return state.currentReport;
+    }
+
     set({ error: null });
     try {
       const report = await reportApi.getReport(reportId);
-      set({ currentReport: report });
+      set({ currentReport: report, currentReportId: reportId });
       return report;
     } catch (error) {
       set({ error: error.message });
@@ -65,7 +72,7 @@ const useReportStore = create((set, get) => ({
   },
 
   clearReport: () => {
-    set({ currentReport: null, error: null });
+    set({ currentReport: null, currentReportId: null, error: null });
   },
 
   clearError: () => {
@@ -75,6 +82,7 @@ const useReportStore = create((set, get) => ({
   resetState: () => {
     set({
       currentReport: null,
+      currentReportId: null,
       reports: [],
       latestReportId: null,
       uploadProgress: 0,

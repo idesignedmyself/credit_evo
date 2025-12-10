@@ -7,13 +7,13 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box,
   Button,
-  CircularProgress,
   Alert,
   Paper,
   Typography,
 } from '@mui/material';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import ScoreDashboard from '../components/ScoreDashboard';
+import AuditSkeleton from '../components/AuditSkeleton';
 import { ViolationList } from '../components';
 import { useReportStore, useViolationStore } from '../state';
 
@@ -22,22 +22,21 @@ const AuditPage = () => {
   const navigate = useNavigate();
   const { currentReport, fetchReport } = useReportStore();
   const {
-    auditResult,
     violations,
     selectedViolationIds,
     isLoading,
     error,
     fetchAuditResults,
-    clearViolations,
   } = useViolationStore();
 
   useEffect(() => {
+    // Fetch data for this report - stores handle their own caching
+    // Each store checks if it already has data for this reportId
     if (reportId) {
-      clearViolations();
       fetchReport(reportId);
       fetchAuditResults(reportId);
     }
-  }, [reportId, fetchReport, fetchAuditResults, clearViolations]);
+  }, [reportId]); // Only depend on reportId - store state is checked inside
 
   // Extract scores from report data (backend returns credit_scores)
   const scores = useMemo(() => {
@@ -74,15 +73,9 @@ const AuditPage = () => {
     navigate(`/letter/${reportId}`);
   };
 
-  if (isLoading) {
-    return (
-      <Box sx={{ py: 8, textAlign: 'center' }}>
-        <CircularProgress />
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-          Analyzing your credit report...
-        </Typography>
-      </Box>
-    );
+  // Show skeleton on first load (no cached data), show real content instantly if cached
+  if (isLoading && violations.length === 0) {
+    return <AuditSkeleton />;
   }
 
   return (

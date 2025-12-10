@@ -30,6 +30,7 @@ import ViolationToggle from './ViolationToggle';
 import DiscrepancyToggle from './DiscrepancyToggle';
 import AccountAccordion from './AccountAccordion';
 import FilterToolbar from './FilterToolbar';
+import VirtualizedViolationList from './VirtualizedViolationList';
 
 const ViolationList = () => {
   const [groupBy, setGroupBy] = useState("type");
@@ -141,89 +142,32 @@ const ViolationList = () => {
 
       {/* TYPE TAB */}
       <Box hidden={groupBy !== "type"}>
-        {Object.entries(groupedByType).map(([group, items]) => (
-          <Box key={group} sx={{ mb: 3 }}>
-            <Typography
-              variant="subtitle1"
-              sx={{
-                fontWeight: 'bold',
-                mb: 1,
-                pb: 1,
-                borderBottom: '2px solid',
-                borderColor: 'primary.main',
-              }}
-            >
-              {group} ({items.length})
-            </Typography>
-
-            {items.map((violation) => (
-              <ViolationToggle
-                key={violation.violation_id}
-                violation={violation}
-                isSelected={selectedViolationIds.includes(violation.violation_id)}
-                onToggle={toggleViolation}
-              />
-            ))}
-          </Box>
-        ))}
+        <VirtualizedViolationList
+          violations={filteredData}
+          selectedViolationIds={selectedViolationIds}
+          toggleViolation={toggleViolation}
+          groupedData={groupedByType}
+        />
       </Box>
 
       {/* ACCOUNT TAB */}
       <Box hidden={groupBy !== "account"}>
-        {Object.entries(groupedByAccount).map(([group, items]) => (
-          <Box key={group} sx={{ mb: 3 }}>
-            <Typography
-              variant="subtitle1"
-              sx={{
-                fontWeight: 'bold',
-                mb: 1,
-                pb: 1,
-                borderBottom: '2px solid',
-                borderColor: 'primary.main',
-              }}
-            >
-              {group} ({items.length})
-            </Typography>
-
-            {items.map((violation) => (
-              <ViolationToggle
-                key={violation.violation_id}
-                violation={violation}
-                isSelected={selectedViolationIds.includes(violation.violation_id)}
-                onToggle={toggleViolation}
-              />
-            ))}
-          </Box>
-        ))}
+        <VirtualizedViolationList
+          violations={filteredData}
+          selectedViolationIds={selectedViolationIds}
+          toggleViolation={toggleViolation}
+          groupedData={groupedByAccount}
+        />
       </Box>
 
       {/* BUREAU TAB */}
       <Box hidden={groupBy !== "bureau"}>
-        {Object.entries(groupedByBureau).map(([group, items]) => (
-          <Box key={group} sx={{ mb: 3 }}>
-            <Typography
-              variant="subtitle1"
-              sx={{
-                fontWeight: 'bold',
-                mb: 1,
-                pb: 1,
-                borderBottom: '2px solid',
-                borderColor: 'primary.main',
-              }}
-            >
-              {group} ({items.length})
-            </Typography>
-
-            {items.map((violation) => (
-              <ViolationToggle
-                key={violation.violation_id}
-                violation={violation}
-                isSelected={selectedViolationIds.includes(violation.violation_id)}
-                onToggle={toggleViolation}
-              />
-            ))}
-          </Box>
-        ))}
+        <VirtualizedViolationList
+          violations={filteredData}
+          selectedViolationIds={selectedViolationIds}
+          toggleViolation={toggleViolation}
+          groupedData={groupedByBureau}
+        />
       </Box>
 
       {/* CROSS-BUREAU TAB */}

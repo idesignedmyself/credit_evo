@@ -14,9 +14,16 @@ const useViolationStore = create((set, get) => ({
   selectedDiscrepancyIds: [],  // Selected cross-bureau discrepancies
   isLoading: false,
   error: null,
+  currentReportId: null,  // Track which report the violations belong to
 
   // Actions
   fetchAuditResults: async (reportId) => {
+    // Skip if we already have data for this report
+    const state = get();
+    if (state.currentReportId === reportId && state.violations.length > 0) {
+      return state.auditResult;
+    }
+
     set({ isLoading: true, error: null });
     try {
       const result = await auditApi.getAuditResults(reportId);
@@ -27,6 +34,7 @@ const useViolationStore = create((set, get) => ({
         selectedViolationIds: [],
         selectedDiscrepancyIds: [],
         isLoading: false,
+        currentReportId: reportId,  // Track which report this data belongs to
       });
       return result;
     } catch (error) {
@@ -158,6 +166,7 @@ const useViolationStore = create((set, get) => ({
       selectedViolationIds: [],
       selectedDiscrepancyIds: [],
       error: null,
+      currentReportId: null,
     });
   },
 
