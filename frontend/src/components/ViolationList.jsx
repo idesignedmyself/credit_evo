@@ -1,6 +1,6 @@
 /**
  * Credit Engine 2.0 - Violation List Component (Clean SPA Version)
- * Instant tab switching (no animations, no URL delays)
+ * Instant tab switching with live filtering engine
  */
 
 import React, { useState, useMemo } from 'react';
@@ -25,9 +25,11 @@ import {
   groupViolationsByBureau
 } from '../utils';
 
+import { useCreditFilter } from '../hooks/useCreditFilter';
 import ViolationToggle from './ViolationToggle';
 import DiscrepancyToggle from './DiscrepancyToggle';
 import AccountAccordion from './AccountAccordion';
+import FilterToolbar from './FilterToolbar';
 
 const ViolationList = () => {
   const [groupBy, setGroupBy] = useState("type");
@@ -46,18 +48,30 @@ const ViolationList = () => {
   const { currentReport } = useReportStore();
   const accounts = currentReport?.accounts || [];
 
-  // PRE-COMPUTE GROUPINGS ONCE
+  // FILTERING ENGINE
+  const {
+    filteredData,
+    filters,
+    filterOptions,
+    toggleFilter,
+    clearFilters,
+    hasActiveFilters,
+    totalCount,
+    filteredCount
+  } = useCreditFilter(violations);
+
+  // PRE-COMPUTE GROUPINGS ONCE (using filtered data)
   const groupedByType = useMemo(() => {
-    return groupViolationsByType(violations);
-  }, [violations]);
+    return groupViolationsByType(filteredData);
+  }, [filteredData]);
 
   const groupedByAccount = useMemo(() => {
-    return groupViolationsByAccount(violations);
-  }, [violations]);
+    return groupViolationsByAccount(filteredData);
+  }, [filteredData]);
 
   const groupedByBureau = useMemo(() => {
-    return groupViolationsByBureau(violations);
-  }, [violations]);
+    return groupViolationsByBureau(filteredData);
+  }, [filteredData]);
 
   if (isLoading) {
     return (
@@ -75,10 +89,21 @@ const ViolationList = () => {
     );
   }
 
-  const totalViolations = violations.length;
-
   return (
     <Box>
+      {/* FILTER TOOLBAR */}
+      {violations.length > 0 && (
+        <FilterToolbar
+          filters={filters}
+          filterOptions={filterOptions}
+          toggleFilter={toggleFilter}
+          clearFilters={clearFilters}
+          hasActiveFilters={hasActiveFilters}
+          filteredCount={filteredCount}
+          totalCount={totalCount}
+        />
+      )}
+
       {/* HEADER */}
       <Typography
         variant="h6"
@@ -90,7 +115,7 @@ const ViolationList = () => {
           borderColor: 'primary.main',
         }}
       >
-        {totalViolations} Violations Found
+        {hasActiveFilters ? `${filteredCount} of ${totalCount}` : totalCount} Violations Found
       </Typography>
 
       {/* TABS */}
