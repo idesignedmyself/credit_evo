@@ -32,7 +32,7 @@ import AccountAccordion from './AccountAccordion';
 import FilterToolbar from './FilterToolbar';
 import VirtualizedViolationList from './VirtualizedViolationList';
 
-const ViolationList = () => {
+const ViolationList = ({ hideFilters = false, hideHeader = false }) => {
   const [groupBy, setGroupBy] = useState("type");
 
   const {
@@ -92,8 +92,8 @@ const ViolationList = () => {
 
   return (
     <Box>
-      {/* FILTER TOOLBAR */}
-      {violations.length > 0 && (
+      {/* FILTER TOOLBAR - only show if not hidden */}
+      {!hideFilters && violations.length > 0 && (
         <FilterToolbar
           filters={filters}
           filterOptions={filterOptions}
@@ -105,19 +105,21 @@ const ViolationList = () => {
         />
       )}
 
-      {/* HEADER */}
-      <Typography
-        variant="h6"
-        sx={{
-          fontWeight: 'bold',
-          mb: 2,
-          pb: 1,
-          borderBottom: '3px solid',
-          borderColor: 'primary.main',
-        }}
-      >
-        {hasActiveFilters ? `${filteredCount} of ${totalCount}` : totalCount} Violations Found
-      </Typography>
+      {/* HEADER - only show if not hidden */}
+      {!hideHeader && (
+        <Typography
+          variant="h6"
+          sx={{
+            fontWeight: 'bold',
+            mb: 2,
+            pb: 1,
+            borderBottom: '3px solid',
+            borderColor: 'primary.main',
+          }}
+        >
+          {hasActiveFilters ? `${filteredCount} of ${totalCount}` : totalCount} Violations Found
+        </Typography>
+      )}
 
       {/* TABS */}
       <Box sx={{ mb: 2 }}>

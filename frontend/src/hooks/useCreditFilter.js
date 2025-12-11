@@ -1,15 +1,14 @@
 /**
  * Credit Engine 2.0 - Universal Filtering Hook
  * "SQL Engine in JavaScript" - Slices violations by Bureau/Severity/Category
+ * Uses shared Zustand store for filter state sync across components
  */
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
+import { useFilterStore } from '../state';
 
 export function useCreditFilter(allViolations) {
-  const [filters, setFilters] = useState({
-    bureaus: [],    // e.g. ['TransUnion', 'Equifax']
-    severities: [], // e.g. ['High', 'Critical']
-    categories: [], // e.g. ['Missing Data', 'Metro 2 Error']
-  });
+  // Use shared filter store instead of local state
+  const { filters, toggleFilter, clearFilters } = useFilterStore();
 
   // The "Join" Logic - only runs when filters or data change
   const filteredData = useMemo(() => {
@@ -49,20 +48,6 @@ export function useCreditFilter(allViolations) {
 
     return { bureaus, severities, categories };
   }, [allViolations]);
-
-  // Toggle a filter value
-  const toggleFilter = (type, value) => {
-    setFilters((prev) => {
-      const currentList = prev[type];
-      const newList = currentList.includes(value)
-        ? currentList.filter((item) => item !== value) // Remove
-        : [...currentList, value]; // Add
-      return { ...prev, [type]: newList };
-    });
-  };
-
-  // Clear all filters
-  const clearFilters = () => setFilters({ bureaus: [], severities: [], categories: [] });
 
   // Check if any filters are active
   const hasActiveFilters = filters.bureaus.length > 0 ||

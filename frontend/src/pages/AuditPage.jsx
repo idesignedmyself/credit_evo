@@ -1,6 +1,7 @@
 /**
  * Credit Engine 2.0 - Audit Page
  * Displays audit results with bureau score dashboard and violations
+ * Layout: KPIs -> Compact Filters -> Action Bar -> Violations List
  */
 import React, { useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -14,8 +15,10 @@ import {
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import ScoreDashboard from '../components/ScoreDashboard';
 import AuditSkeleton from '../components/AuditSkeleton';
+import CompactFilterBar from '../components/CompactFilterBar';
 import { ViolationList } from '../components';
 import { useReportStore, useViolationStore } from '../state';
+import { useCreditFilter } from '../hooks/useCreditFilter';
 
 const AuditPage = () => {
   const { reportId } = useParams();
@@ -28,6 +31,17 @@ const AuditPage = () => {
     error,
     fetchAuditResults,
   } = useViolationStore();
+
+  // Use filter hook at page level for CompactFilterBar
+  const {
+    filters,
+    filterOptions,
+    toggleFilter,
+    clearFilters,
+    hasActiveFilters,
+    totalCount,
+    filteredCount,
+  } = useCreditFilter(violations);
 
   useEffect(() => {
     // Fetch data for this report - stores handle their own caching
@@ -86,16 +100,29 @@ const AuditPage = () => {
         </Alert>
       )}
 
-      {/* Score Dashboard */}
+      {/* LEVEL 1: Score Dashboard / KPIs */}
       <ScoreDashboard scores={scores} stats={stats} />
 
-      {/* Action Bar */}
+      {/* LEVEL 2: Compact Filter Bar */}
+      {violations.length > 0 && (
+        <CompactFilterBar
+          filters={filters}
+          filterOptions={filterOptions}
+          toggleFilter={toggleFilter}
+          clearFilters={clearFilters}
+          hasActiveFilters={hasActiveFilters}
+          filteredCount={filteredCount}
+          totalCount={totalCount}
+        />
+      )}
+
+      {/* LEVEL 3: Action Bar (original styling) */}
       {violations.length > 0 && (
         <Paper
           elevation={0}
           sx={{
             p: 2,
-            mb: 4,
+            mb: 3,
             bgcolor: '#e3f2fd',
             border: '1px solid #bbdefb',
             borderRadius: 2,
@@ -125,8 +152,8 @@ const AuditPage = () => {
         </Paper>
       )}
 
-      {/* Violations List */}
-      <ViolationList />
+      {/* LEVEL 4: Violations List */}
+      <ViolationList hideFilters />
     </Box>
   );
 };

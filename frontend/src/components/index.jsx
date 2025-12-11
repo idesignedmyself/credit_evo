@@ -12,3 +12,4 @@ export { default as SavedLetters } from './SavedLetters';
 export { default as AccountAccordion } from './AccountAccordion';
 export { default as AccountList } from './AccountList';
 export { default as VirtualizedViolationList } from './VirtualizedViolationList';
+export { default as CompactFilterBar } from './CompactFilterBar';
