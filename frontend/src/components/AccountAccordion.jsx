@@ -152,7 +152,10 @@ const AccountAccordion = React.memo(({ account }) => {
         transition: 'all 0.2s ease',
       }}
     >
-      <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+      <Box
+        sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, cursor: 'pointer' }}
+        onClick={() => setExpanded(!expanded)}
+      >
         <Box sx={{ flex: 1 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
             <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
@@ -175,7 +178,10 @@ const AccountAccordion = React.memo(({ account }) => {
 
         <IconButton
           size="small"
-          onClick={() => setExpanded(!expanded)}
+          onClick={(e) => {
+            e.stopPropagation();
+            setExpanded(!expanded);
+          }}
           sx={{ ml: 1 }}
         >
           {expanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}

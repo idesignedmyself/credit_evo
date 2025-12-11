@@ -57,7 +57,10 @@ const DiscrepancyToggle = React.memo(({ discrepancy, isSelected, onToggle }) => 
           color="primary"
         />
 
-        <Box sx={{ flex: 1 }}>
+        <Box
+          sx={{ flex: 1, cursor: 'pointer' }}
+          onClick={() => setExpanded(!expanded)}
+        >
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
             <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
               {formatViolationType(discrepancy.violation_type)}
@@ -67,6 +70,16 @@ const DiscrepancyToggle = React.memo(({ discrepancy, isSelected, onToggle }) => 
               size="small"
               color={severityConfig.color}
             />
+            <Box sx={{ flex: 1 }} />
+            <IconButton
+              size="small"
+              onClick={(e) => {
+                e.stopPropagation();
+                setExpanded(!expanded);
+              }}
+            >
+              {expanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+            </IconButton>
           </Box>
 
           <Typography variant="body2" color="text.secondary">
@@ -74,50 +87,42 @@ const DiscrepancyToggle = React.memo(({ discrepancy, isSelected, onToggle }) => 
             {discrepancy.account_number_masked && ` (${discrepancy.account_number_masked})`}
             {discrepancy.field_name && ` - ${discrepancy.field_name}`}
           </Typography>
-
-          <Collapse in={expanded}>
-            <Box sx={{ mt: 2, pl: 1, borderLeft: '3px solid', borderColor: 'grey.300' }}>
-              <Typography variant="body2" sx={{ mb: 1 }}>
-                {discrepancy.description}
-              </Typography>
-
-              {/* Bureau values comparison */}
-              {discrepancy.values_by_bureau && (
-                <Box sx={{ mt: 1 }}>
-                  <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold', display: 'block', mb: 0.5 }}>
-                    Values by Bureau:
-                  </Typography>
-                  {Object.entries(discrepancy.values_by_bureau).map(([bureau, value]) => (
-                    <Box key={bureau} sx={{ display: 'flex', gap: 1, mb: 0.25 }}>
-                      <Typography variant="caption" sx={{ fontWeight: 'bold', minWidth: 80 }}>
-                        {bureau.toUpperCase()}:
-                      </Typography>
-                      <Typography variant="caption">
-                        {value}
-                      </Typography>
-                    </Box>
-                  ))}
-                </Box>
-              )}
-
-              <Chip
-                label={`Cross-Bureau • ${discrepancy.field_name || 'Data Mismatch'}`}
-                size="small"
-                variant="outlined"
-                sx={{ mt: 1 }}
-              />
-            </Box>
-          </Collapse>
         </Box>
-
-        <IconButton
-          size="small"
-          onClick={() => setExpanded(!expanded)}
-          sx={{ ml: 1 }}
-        >
-          {expanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-        </IconButton>
       </Box>
+
+      <Collapse in={expanded}>
+        <Box sx={{ mt: 2, ml: 6, pl: 1, borderLeft: '3px solid', borderColor: 'grey.300' }}>
+          <Typography variant="body2" sx={{ mb: 1 }}>
+            {discrepancy.description}
+          </Typography>
+
+          {/* Bureau values comparison */}
+          {discrepancy.values_by_bureau && (
+            <Box sx={{ mt: 1 }}>
+              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold', display: 'block', mb: 0.5 }}>
+                Values by Bureau:
+              </Typography>
+              {Object.entries(discrepancy.values_by_bureau).map(([bureau, value]) => (
+                <Box key={bureau} sx={{ display: 'flex', gap: 1, mb: 0.25 }}>
+                  <Typography variant="caption" sx={{ fontWeight: 'bold', minWidth: 80 }}>
+                    {bureau.toUpperCase()}:
+                  </Typography>
+                  <Typography variant="caption">
+                    {value}
+                  </Typography>
+                </Box>
+              ))}
+            </Box>
+          )}
+
+          <Chip
+            label={`Cross-Bureau • ${discrepancy.field_name || 'Data Mismatch'}`}
+            size="small"
+            variant="outlined"
+            sx={{ mt: 1 }}
+          />
+        </Box>
+      </Collapse>
     </Paper>
   );
 });
