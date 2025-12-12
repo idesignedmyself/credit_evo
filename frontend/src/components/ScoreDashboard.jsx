@@ -1,26 +1,27 @@
 /**
  * Credit Engine 2.0 - Score Dashboard Component
- * Displays bureau scores and summary statistics
+ * Displays bureau scores
  */
 import React from 'react';
-import { Box, Grid, Card, CardContent, Typography } from '@mui/material';
-import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
-import WarningIcon from '@mui/icons-material/Warning';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import ErrorIcon from '@mui/icons-material/Error';
+import { Box, Grid, Card, CardContent, Typography, LinearProgress, Chip } from '@mui/material';
+import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import { BUREAU_COLORS } from '../theme';
 
-// Reusable stat card component
-function StatCard({ icon, value, label, color }) {
-  return (
-    <Card sx={{ display: 'flex', alignItems: 'center', p: 2, height: '100%' }}>
-      <Box sx={{ mr: 2, color: color || 'primary.main' }}>{icon}</Box>
-      <Box>
-        <Typography variant="h5" sx={{ fontWeight: 'bold' }}>{value}</Typography>
-        <Typography variant="body2" color="text.secondary">{label}</Typography>
-      </Box>
-    </Card>
-  );
+// Calculate score percentile (where score falls in 300-850 range)
+function getScorePercentile(score) {
+  if (!score || score === 0) return 0;
+  const min = 300;
+  const max = 850;
+  const percentile = Math.round(((score - min) / (max - min)) * 100);
+  return Math.max(0, Math.min(100, percentile));
+}
+
+// Get progress bar value (normalized to 0-100)
+function getProgressValue(score) {
+  if (!score || score === 0) return 0;
+  const min = 300;
+  const max = 850;
+  return Math.round(((score - min) / (max - min)) * 100);
 }
 
 // Get score status text
@@ -33,7 +34,7 @@ function getScoreStatus(score) {
   return 'Very Poor';
 }
 
-export default function ScoreDashboard({ scores = {}, stats = {} }) {
+export default function ScoreDashboard({ scores = {} }) {
   // Default scores from report data
   const bureauScores = [
     {
@@ -56,12 +57,6 @@ export default function ScoreDashboard({ scores = {}, stats = {} }) {
     }
   ];
 
-  // Calculate stats
-  const totalAccounts = stats.totalAccounts || 0;
-  const violationsFound = stats.violationsFound || 0;
-  const cleanAccounts = stats.cleanAccounts || 0;
-  const criticalViolations = stats.criticalViolations || 0;
-
   return (
     <Box sx={{ mb: 4 }}>
       <Typography variant="h5" sx={{ mb: 3, fontWeight: 'bold' }}>
@@ -70,75 +65,103 @@ export default function ScoreDashboard({ scores = {}, stats = {} }) {
 
       {/* Bureau Scores Row */}
       <Grid container spacing={3} sx={{ mb: 3 }}>
-        {bureauScores.map((bureau) => (
-          <Grid item xs={12} sm={4} key={bureau.name}>
-            <Card sx={{ borderTop: `6px solid ${bureau.color}`, height: '100%' }}>
-              <CardContent sx={{ textAlign: 'center' }}>
-                <Typography
-                  variant="h2"
-                  sx={{
-                    color: bureau.score > 0 ? bureau.color : 'text.disabled',
-                    fontWeight: 'bold'
-                  }}
-                >
-                  {bureau.score > 0 ? bureau.score : '—'}
-                </Typography>
-                <Typography variant="subtitle1" sx={{ fontWeight: 600, color: 'text.secondary' }}>
-                  {bureau.name}
-                </Typography>
-                <Typography
-                  variant="caption"
-                  sx={{
-                    color: 'text.secondary',
-                    textTransform: 'uppercase',
-                    fontWeight: 500
-                  }}
-                >
-                  {getScoreStatus(bureau.score)}
-                </Typography>
-              </CardContent>
-            </Card>
-          </Grid>
-        ))}
+        {bureauScores.map((bureau) => {
+          const percentile = getScorePercentile(bureau.score);
+          const progressValue = getProgressValue(bureau.score);
+
+          return (
+            <Grid item xs={12} sm={4} key={bureau.name}>
+              <Card
+                sx={{
+                  height: '100%',
+                  borderRadius: 3,
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+                }}
+              >
+                <CardContent sx={{ p: 3 }}>
+                  {/* Header: Bureau name and percentile badge */}
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                    <Typography
+                      variant="h6"
+                      sx={{
+                        fontWeight: 600,
+                        color: '#1a365d',
+                      }}
+                    >
+                      {bureau.name}
+                    </Typography>
+                    {bureau.score > 0 && (
+                      <Chip
+                        icon={<ArrowUpwardIcon sx={{ fontSize: 14 }} />}
+                        label={`${percentile}%`}
+                        size="small"
+                        sx={{
+                          bgcolor: '#dcfce7',
+                          color: '#166534',
+                          fontWeight: 600,
+                          fontSize: '0.75rem',
+                          '& .MuiChip-icon': {
+                            color: '#166534',
+                          },
+                        }}
+                      />
+                    )}
+                  </Box>
+
+                  {/* Large Score */}
+                  <Typography
+                    variant="h2"
+                    sx={{
+                      fontWeight: 'bold',
+                      color: bureau.score > 0 ? '#1a1a1a' : 'text.disabled',
+                      mb: 2,
+                    }}
+                  >
+                    {bureau.score > 0 ? bureau.score : '—'}
+                  </Typography>
+
+                  {/* Progress Bar */}
+                  <LinearProgress
+                    variant="determinate"
+                    value={progressValue}
+                    sx={{
+                      height: 8,
+                      borderRadius: 4,
+                      bgcolor: '#e5e7eb',
+                      mb: 2,
+                      '& .MuiLinearProgress-bar': {
+                        borderRadius: 4,
+                        bgcolor: '#22c55e',
+                      },
+                    }}
+                  />
+
+                  {/* Bottom Stats Row */}
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                    <Box>
+                      <Typography variant="h6" sx={{ fontWeight: 'bold', color: '#1a1a1a', textTransform: 'uppercase', fontSize: '0.875rem' }}>
+                        {getScoreStatus(bureau.score)}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                        VantageScore 3.0
+                      </Typography>
+                    </Box>
+                    <Box sx={{ textAlign: 'right' }}>
+                      <Typography variant="body2" sx={{ fontWeight: 'bold', color: '#1a1a1a' }}>
+                        —
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                        Score Change
+                      </Typography>
+                    </Box>
+                  </Box>
+                </CardContent>
+              </Card>
+            </Grid>
+          );
+        })}
       </Grid>
 
-      {/* Stats Row */}
-      <Grid container spacing={3}>
-        <Grid item xs={12} sm={6} md={3}>
-          <StatCard
-            icon={<AccountBalanceIcon fontSize="large" />}
-            value={totalAccounts}
-            label="Total Accounts"
-            color="primary.main"
-          />
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <StatCard
-            icon={<WarningIcon fontSize="large" />}
-            value={violationsFound}
-            label="Violations Found"
-            color="warning.main"
-          />
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <StatCard
-            icon={<ErrorIcon fontSize="large" />}
-            value={criticalViolations}
-            label="Critical Issues"
-            color="error.main"
-          />
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <StatCard
-            icon={<CheckCircleIcon fontSize="large" />}
-            value={cleanAccounts}
-            label="Clean Accounts"
-            color="success.main"
-          />
-        </Grid>
-      </Grid>
     </Box>
   );
 }
-
-export { StatCard };

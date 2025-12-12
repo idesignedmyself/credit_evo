@@ -18,6 +18,10 @@ import {
 import FilterListIcon from '@mui/icons-material/FilterList';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import CloseIcon from '@mui/icons-material/Close';
+import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
+import WarningIcon from '@mui/icons-material/Warning';
+import ErrorIcon from '@mui/icons-material/Error';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 
 const CompactFilterBar = ({
   filters,
@@ -27,7 +31,13 @@ const CompactFilterBar = ({
   hasActiveFilters,
   filteredCount,
   totalCount,
+  stats = {},
 }) => {
+  const totalAccounts = stats.totalAccounts || 0;
+  const violationsFound = stats.violationsFound || 0;
+  const criticalViolations = stats.criticalViolations || 0;
+  const cleanAccounts = stats.cleanAccounts || 0;
+
   // Menu anchor states for each dropdown
   const [bureauAnchor, setBureauAnchor] = useState(null);
   const [severityAnchor, setSeverityAnchor] = useState(null);
@@ -193,43 +203,76 @@ const CompactFilterBar = ({
           setTypeAnchor,
           'categories'
         )}
-
-        {/* Divider + Count */}
-        <Divider orientation="vertical" flexItem sx={{ mx: 1 }} />
-        <Typography variant="body2" sx={{ color: '#64748B', fontWeight: 500 }}>
-          {hasActiveFilters ? (
-            <>
-              <Box component="span" sx={{ color: '#2563EB', fontWeight: 600 }}>
-                {filteredCount}
-              </Box>
-              {' of '}
-              {totalCount}
-            </>
-          ) : (
-            `${totalCount} total`
-          )}
-        </Typography>
       </Stack>
 
-      {/* Right side: Clear button */}
-      {hasActiveFilters && (
-        <Button
-          size="small"
-          startIcon={<CloseIcon sx={{ fontSize: 14 }} />}
-          onClick={clearFilters}
-          sx={{
-            textTransform: 'none',
-            color: '#64748B',
-            fontSize: '0.75rem',
-            '&:hover': {
-              bgcolor: '#FEE2E2',
-              color: '#DC2626',
-            },
-          }}
-        >
-          Clear Filters
-        </Button>
-      )}
+      {/* Right side: Stats + Clear button */}
+      <Stack direction="row" spacing={2} alignItems="center">
+        {/* Stats */}
+        <Stack direction="row" spacing={2.5} alignItems="center">
+          <Stack direction="row" spacing={0.75} alignItems="center">
+            <AccountBalanceIcon sx={{ fontSize: 18, color: '#3b82f6' }} />
+            <Typography variant="body2" sx={{ fontWeight: 600, color: '#1a1a1a' }}>
+              {totalAccounts}
+            </Typography>
+            <Typography variant="caption" sx={{ color: '#64748B' }}>
+              Accounts
+            </Typography>
+          </Stack>
+
+          <Stack direction="row" spacing={0.75} alignItems="center">
+            <WarningIcon sx={{ fontSize: 18, color: '#f59e0b' }} />
+            <Typography variant="body2" sx={{ fontWeight: 600, color: '#1a1a1a' }}>
+              {violationsFound}
+            </Typography>
+            <Typography variant="caption" sx={{ color: '#64748B' }}>
+              Violations
+            </Typography>
+          </Stack>
+
+          <Stack direction="row" spacing={0.75} alignItems="center">
+            <ErrorIcon sx={{ fontSize: 18, color: '#ef4444' }} />
+            <Typography variant="body2" sx={{ fontWeight: 600, color: '#1a1a1a' }}>
+              {criticalViolations}
+            </Typography>
+            <Typography variant="caption" sx={{ color: '#64748B' }}>
+              Critical
+            </Typography>
+          </Stack>
+
+          <Stack direction="row" spacing={0.75} alignItems="center">
+            <CheckCircleIcon sx={{ fontSize: 18, color: '#22c55e' }} />
+            <Typography variant="body2" sx={{ fontWeight: 600, color: '#1a1a1a' }}>
+              {cleanAccounts}
+            </Typography>
+            <Typography variant="caption" sx={{ color: '#64748B' }}>
+              Clean
+            </Typography>
+          </Stack>
+        </Stack>
+
+        {/* Clear button */}
+        {hasActiveFilters && (
+          <>
+            <Divider orientation="vertical" flexItem />
+            <Button
+              size="small"
+              startIcon={<CloseIcon sx={{ fontSize: 14 }} />}
+              onClick={clearFilters}
+              sx={{
+                textTransform: 'none',
+                color: '#64748B',
+                fontSize: '0.75rem',
+                '&:hover': {
+                  bgcolor: '#FEE2E2',
+                  color: '#DC2626',
+                },
+              }}
+            >
+              Clear Filters
+            </Button>
+          </>
+        )}
+      </Stack>
     </Box>
   );
 };

@@ -100,10 +100,10 @@ const AuditPage = () => {
         </Alert>
       )}
 
-      {/* LEVEL 1: Score Dashboard / KPIs */}
-      <ScoreDashboard scores={scores} stats={stats} />
+      {/* LEVEL 1: Score Dashboard */}
+      <ScoreDashboard scores={scores} />
 
-      {/* LEVEL 2: Compact Filter Bar */}
+      {/* LEVEL 2: Compact Filter Bar with Stats */}
       {violations.length > 0 && (
         <CompactFilterBar
           filters={filters}
@@ -113,6 +113,7 @@ const AuditPage = () => {
           hasActiveFilters={hasActiveFilters}
           filteredCount={filteredCount}
           totalCount={totalCount}
+          stats={stats}
         />
       )}
 
