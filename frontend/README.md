@@ -106,3 +106,21 @@ The frontend expects these backend endpoints:
 - 3 grouping strategies (by type, by account, by bureau)
 - Letter preview with print/copy/download
 - Mobile-responsive Material UI design
+
+## Recent Changes
+
+### December 2024
+
+**Credit Score Cards Redesign (AuditPage)**
+- Redesigned bureau score cards with modern layout:
+  - Percentile badge showing score position in 300-850 range
+  - Green progress bar visualizing score percentage
+  - Score status label (Very Poor, Poor, Fair, Good, Excellent)
+  - Goal Progress showing points needed to reach next tier
+- Moved summary stats (Accounts, Violations, Critical, Clean) from ScoreDashboard to CompactFilterBar
+- Removed redundant violation count from filter bar (kept in stats section)
+
+**Components Updated:**
+- `ScoreDashboard.jsx` - New card design with percentile, progress bar, status, and goal progress
+- `CompactFilterBar.jsx` - Added summary stats on the right side
+- `AuditPage.jsx` - Updated props passing between components

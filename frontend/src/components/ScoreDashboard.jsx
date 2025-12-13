@@ -34,6 +34,16 @@ function getScoreStatus(score) {
   return 'Very Poor';
 }
 
+// Get points to next tier
+function getPointsToNextTier(score) {
+  if (!score || score === 0) return null;
+  if (score >= 750) return { points: 0, tier: 'Excellent', reached: true };
+  if (score >= 700) return { points: 750 - score, tier: 'Excellent', reached: false };
+  if (score >= 650) return { points: 700 - score, tier: 'Good', reached: false };
+  if (score >= 600) return { points: 650 - score, tier: 'Fair', reached: false };
+  return { points: 600 - score, tier: 'Poor', reached: false };
+}
+
 export default function ScoreDashboard({ scores = {} }) {
   // Default scores from report data
   const bureauScores = [
@@ -147,12 +157,20 @@ export default function ScoreDashboard({ scores = {} }) {
                       </Typography>
                     </Box>
                     <Box sx={{ textAlign: 'right' }}>
-                      <Typography variant="body2" sx={{ fontWeight: 'bold', color: '#1a1a1a' }}>
-                        —
-                      </Typography>
-                      <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                        Score Change
-                      </Typography>
+                      {(() => {
+                        const goal = getPointsToNextTier(bureau.score);
+                        if (!goal) return null;
+                        return (
+                          <>
+                            <Typography variant="body2" sx={{ fontWeight: 'bold', color: '#1a1a1a' }}>
+                              {goal.reached ? 'Top Tier!' : `${goal.points} pts to ${goal.tier}`}
+                            </Typography>
+                            <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                              Goal Progress
+                            </Typography>
+                          </>
+                        );
+                      })()}
                     </Box>
                   </Box>
                 </CardContent>
