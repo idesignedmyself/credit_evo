@@ -93,73 +93,92 @@ export default function DashboardLayout() {
     return 'U';
   };
 
-  // Sidebar content
+  // Sidebar content - floating card on background
   const drawerContent = (
-    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      {/* Logo / Brand */}
-      <Toolbar sx={{ px: 2 }}>
-        <Typography variant="h6" noWrap sx={{ fontWeight: 'bold', color: 'primary.main' }}>
-          Credit Engine
-        </Typography>
-      </Toolbar>
-      <Divider />
+    <Box sx={{
+      display: 'flex',
+      flexDirection: 'column',
+      height: '100%',
+      bgcolor: '#f1f5f9',
+      p: 1.5,
+    }}>
+      {/* Floating Card Container */}
+      <Box
+        sx={{
+          display: 'flex',
+          flexDirection: 'column',
+          flexGrow: 1,
+          bgcolor: 'background.paper',
+          borderRadius: '12px',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+          overflow: 'hidden',
+        }}
+      >
+        {/* Logo / Brand */}
+        <Toolbar sx={{ px: 2 }}>
+          <Typography variant="h6" noWrap sx={{ fontWeight: 'bold', color: 'primary.main' }}>
+            Credit Engine
+          </Typography>
+        </Toolbar>
+        <Divider />
 
-      {/* Navigation Items */}
-      <List sx={{ flexGrow: 1, px: 1 }}>
-        {menuItems.map((item) => (
-          <ListItem key={item.text} disablePadding sx={{ mb: 0.5 }}>
-            <ListItemButton
-              onClick={() => handleNavigation(item.path)}
-              selected={isActive(item.path)}
-              sx={{
-                borderRadius: 2,
-                '&.Mui-selected': {
-                  bgcolor: 'primary.main',
-                  color: 'white',
-                  '&:hover': { bgcolor: 'primary.dark' },
-                  '& .MuiListItemIcon-root': { color: 'white' },
-                },
-              }}
-            >
-              <ListItemIcon sx={{ minWidth: 40 }}>
-                {item.icon}
-              </ListItemIcon>
-              <ListItemText primary={item.text} />
-            </ListItemButton>
-          </ListItem>
-        ))}
-      </List>
+        {/* Navigation Items */}
+        <List sx={{ flexGrow: 1, px: 1, py: 1 }}>
+          {menuItems.map((item) => (
+            <ListItem key={item.text} disablePadding sx={{ mb: 0.5 }}>
+              <ListItemButton
+                onClick={() => handleNavigation(item.path)}
+                selected={isActive(item.path)}
+                sx={{
+                  borderRadius: '8px',
+                  '&.Mui-selected': {
+                    bgcolor: 'primary.main',
+                    color: 'white',
+                    '&:hover': { bgcolor: 'primary.dark' },
+                    '& .MuiListItemIcon-root': { color: 'white' },
+                  },
+                }}
+              >
+                <ListItemIcon sx={{ minWidth: 40 }}>
+                  {item.icon}
+                </ListItemIcon>
+                <ListItemText primary={item.text} />
+              </ListItemButton>
+            </ListItem>
+          ))}
+        </List>
 
-      <Divider />
+        <Divider />
 
-      {/* User Section */}
-      <Box sx={{ p: 2 }}>
-        <ListItemButton
-          onClick={() => handleNavigation('/profile')}
-          selected={isActive('/profile')}
-          sx={{ borderRadius: 2, mb: 1 }}
-        >
-          <Avatar sx={{ width: 32, height: 32, mr: 2, bgcolor: 'primary.main', fontSize: '0.875rem' }}>
-            {getInitials()}
-          </Avatar>
-          <ListItemText
-            primary={user?.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : user?.username || user?.email}
-            primaryTypographyProps={{ variant: 'body2', fontWeight: 500, noWrap: true }}
-            secondary="View Profile"
-            secondaryTypographyProps={{ variant: 'caption' }}
-          />
-        </ListItemButton>
-        <Button
-          fullWidth
-          variant="outlined"
-          color="inherit"
-          startIcon={<LogoutIcon />}
-          onClick={handleLogout}
-          size="small"
-          sx={{ borderColor: 'divider', color: 'text.secondary' }}
-        >
-          Logout
-        </Button>
+        {/* User Section */}
+        <Box sx={{ p: 2 }}>
+          <ListItemButton
+            onClick={() => handleNavigation('/profile')}
+            selected={isActive('/profile')}
+            sx={{ borderRadius: '8px', mb: 1 }}
+          >
+            <Avatar sx={{ width: 32, height: 32, mr: 2, bgcolor: 'primary.main', fontSize: '0.875rem' }}>
+              {getInitials()}
+            </Avatar>
+            <ListItemText
+              primary={user?.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : user?.username || user?.email}
+              primaryTypographyProps={{ variant: 'body2', fontWeight: 500, noWrap: true }}
+              secondary="View Profile"
+              secondaryTypographyProps={{ variant: 'caption' }}
+            />
+          </ListItemButton>
+          <Button
+            fullWidth
+            variant="outlined"
+            color="inherit"
+            startIcon={<LogoutIcon />}
+            onClick={handleLogout}
+            size="small"
+            sx={{ borderColor: 'divider', color: 'text.secondary', borderRadius: '8px' }}
+          >
+            Logout
+          </Button>
+        </Box>
       </Box>
     </Box>
   );
@@ -224,8 +243,8 @@ export default function DashboardLayout() {
             '& .MuiDrawer-paper': {
               boxSizing: 'border-box',
               width: drawerWidth,
-              borderRight: '1px solid',
-              borderColor: 'divider',
+              border: 'none',
+              bgcolor: '#f1f5f9',
             },
           }}
           open

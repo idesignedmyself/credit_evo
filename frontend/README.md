@@ -124,3 +124,9 @@ The frontend expects these backend endpoints:
 - `ScoreDashboard.jsx` - New card design with percentile, progress bar, status, and goal progress
 - `CompactFilterBar.jsx` - Added summary stats on the right side
 - `AuditPage.jsx` - Updated props passing between components
+
+**Sidebar Redesign (DashboardLayout)**
+- Redesigned sidebar with floating card style (macOS Finder-inspired)
+- Light gray background with white floating card containing all navigation
+- Rounded corners (12px) and subtle shadow on the card
+- Updated nav item border radius to 8px for cleaner look
