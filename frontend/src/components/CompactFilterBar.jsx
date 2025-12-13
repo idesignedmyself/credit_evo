@@ -15,7 +15,6 @@ import {
   Typography,
   Divider,
 } from '@mui/material';
-import FilterListIcon from '@mui/icons-material/FilterList';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import CloseIcon from '@mui/icons-material/Close';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
@@ -42,10 +41,7 @@ const CompactFilterBar = ({
   const [bureauAnchor, setBureauAnchor] = useState(null);
   const [severityAnchor, setSeverityAnchor] = useState(null);
   const [typeAnchor, setTypeAnchor] = useState(null);
-
-  const bureauOpen = Boolean(bureauAnchor);
-  const severityOpen = Boolean(severityAnchor);
-  const typeOpen = Boolean(typeAnchor);
+  const [accountAnchor, setAccountAnchor] = useState(null);
 
   // Format label for display
   const formatLabel = (str) => {
@@ -173,10 +169,8 @@ const CompactFilterBar = ({
         borderRadius: 2,
       }}
     >
-      {/* Left side: Filter icon + dropdowns */}
+      {/* Left side: Filter dropdowns */}
       <Stack direction="row" spacing={1.5} alignItems="center">
-        <FilterListIcon sx={{ color: '#64748B', fontSize: 20 }} />
-
         {renderFilterButton(
           'Bureau',
           filterOptions.bureaus,
@@ -202,6 +196,15 @@ const CompactFilterBar = ({
           typeAnchor,
           setTypeAnchor,
           'categories'
+        )}
+
+        {renderFilterButton(
+          'Account',
+          filterOptions.accounts,
+          filters.accounts,
+          accountAnchor,
+          setAccountAnchor,
+          'accounts'
         )}
       </Stack>
 

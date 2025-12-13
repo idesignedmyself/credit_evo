@@ -10,6 +10,7 @@ export const useFilterStore = create((set) => ({
     bureaus: [],
     severities: [],
     categories: [],
+    accounts: [],
   },
 
   // Toggle a filter value
@@ -23,13 +24,14 @@ export const useFilterStore = create((set) => ({
 
   // Clear all filters
   clearFilters: () => set({
-    filters: { bureaus: [], severities: [], categories: [] }
+    filters: { bureaus: [], severities: [], categories: [], accounts: [] }
   }),
 
   // Check if any filters active
   hasActiveFilters: (state) => {
     return state.filters.bureaus.length > 0 ||
            state.filters.severities.length > 0 ||
-           state.filters.categories.length > 0;
+           state.filters.categories.length > 0 ||
+           state.filters.accounts.length > 0;
   },
 }));

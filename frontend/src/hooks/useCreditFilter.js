@@ -32,6 +32,11 @@ export function useCreditFilter(allViolations) {
         return false;
       }
 
+      // 4. Account Slice (using violation.creditor_name)
+      if (filters.accounts.length > 0 && !filters.accounts.includes(violation.creditor_name)) {
+        return false;
+      }
+
       return true; // Passed all checks
     });
   }, [allViolations, filters]);
@@ -39,20 +44,22 @@ export function useCreditFilter(allViolations) {
   // Extract unique values from data for dynamic filter options
   const filterOptions = useMemo(() => {
     if (!allViolations || allViolations.length === 0) {
-      return { bureaus: [], severities: [], categories: [] };
+      return { bureaus: [], severities: [], categories: [], accounts: [] };
     }
 
     const bureaus = [...new Set(allViolations.map(v => v.bureau).filter(Boolean))];
     const severities = [...new Set(allViolations.map(v => v.severity).filter(Boolean))];
     const categories = [...new Set(allViolations.map(v => v.violation_type).filter(Boolean))];
+    const accounts = [...new Set(allViolations.map(v => v.creditor_name).filter(Boolean))].sort();
 
-    return { bureaus, severities, categories };
+    return { bureaus, severities, categories, accounts };
   }, [allViolations]);
 
   // Check if any filters are active
   const hasActiveFilters = filters.bureaus.length > 0 ||
                            filters.severities.length > 0 ||
-                           filters.categories.length > 0;
+                           filters.categories.length > 0 ||
+                           filters.accounts.length > 0;
 
   return {
     filteredData,
