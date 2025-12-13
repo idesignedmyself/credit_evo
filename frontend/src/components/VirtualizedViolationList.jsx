@@ -1,27 +1,48 @@
 /**
  * Credit Engine 2.0 - Violation List Component
- * Simple non-virtualized list (virtualization removed due to react-window compatibility issues)
+ * Simple non-virtualized list with collapsible group headers
  */
-import React from 'react';
-import { Box, Typography } from '@mui/material';
+import React, { useState } from 'react';
+import { Box, Typography, Collapse, IconButton } from '@mui/material';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ViolationToggle from './ViolationToggle';
 
 /**
- * Group header component for grouped violations
+ * Collapsible group header component for grouped violations
  */
-const GroupHeader = ({ group, count }) => (
-  <Typography
-    variant="subtitle1"
+const CollapsibleGroupHeader = ({ group, count, isExpanded, onToggle }) => (
+  <Box
+    onClick={onToggle}
     sx={{
-      fontWeight: 'bold',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      cursor: 'pointer',
       mb: 1,
       pb: 1,
       borderBottom: '2px solid',
       borderColor: 'primary.main',
+      '&:hover': {
+        bgcolor: 'action.hover',
+        borderRadius: 1,
+        mx: -1,
+        px: 1,
+      },
     }}
   >
-    {group} ({count})
-  </Typography>
+    <Typography
+      variant="subtitle1"
+      sx={{
+        fontWeight: 'bold',
+      }}
+    >
+      {group} ({count})
+    </Typography>
+    <IconButton size="small" sx={{ ml: 1 }}>
+      {isExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+    </IconButton>
+  </Box>
 );
 
 /**
@@ -61,6 +82,17 @@ const VirtualizedViolationList = ({
   toggleViolation,
   groupedData = null,
 }) => {
+  // Track expanded/collapsed state for each group (all collapsed by default)
+  const [expandedGroups, setExpandedGroups] = useState({});
+
+  // Toggle a specific group's expanded state
+  const toggleGroup = (group) => {
+    setExpandedGroups((prev) => ({
+      ...prev,
+      [group]: !prev[group],
+    }));
+  };
+
   // Guard against null/undefined
   const safeViolations = Array.isArray(violations) ? violations : [];
   const safeSelectedIds = Array.isArray(selectedViolationIds) ? selectedViolationIds : [];
@@ -75,14 +107,23 @@ const VirtualizedViolationList = ({
           const safeItems = Array.isArray(items) ? items : [];
           if (safeItems.length === 0) return null;
 
+          const isExpanded = expandedGroups[group] === true; // Default to collapsed
+
           return (
             <Box key={group} sx={{ mb: 3 }}>
-              <GroupHeader group={group} count={safeItems.length} />
-              <StandardViolationList
-                violations={safeItems}
-                selectedViolationIds={safeSelectedIds}
-                toggleViolation={toggleViolation}
+              <CollapsibleGroupHeader
+                group={group}
+                count={safeItems.length}
+                isExpanded={isExpanded}
+                onToggle={() => toggleGroup(group)}
               />
+              <Collapse in={isExpanded} timeout="auto" unmountOnExit>
+                <StandardViolationList
+                  violations={safeItems}
+                  selectedViolationIds={safeSelectedIds}
+                  toggleViolation={toggleViolation}
+                />
+              </Collapse>
             </Box>
           );
         })}
