@@ -271,10 +271,111 @@ class ViolationResponse(BaseModel):
 
 ---
 
+## Collapsible Violation Groups
+
+**Added:** December 2024
+
+### Overview
+Violation group headers (by Type, Account, Bureau) are now clickable accordions that expand/collapse for easier navigation.
+
+### Location
+`frontend/src/components/VirtualizedViolationList.jsx`
+
+### Features
+- **Clickable Headers:** Click any group header to expand/collapse that section
+- **Expand/Collapse Icons:** Visual indicators (chevron up/down) on the right side
+- **Collapsed by Default:** All groups start collapsed to reduce scrolling
+- **Smooth Animation:** Uses MUI `Collapse` component for smooth transitions
+- **Hover Effect:** Headers highlight on hover to show they're interactive
+
+### Affected Tabs
+- Group by Type
+- Group by Account
+- Group by Bureau
+
+### Usage
+Click any header like "GM FINANCIAL (6)" or "Missing Scheduled Payment (3)" to toggle visibility of violations in that group.
+
+---
+
+## Account Filter
+
+**Added:** December 2024
+
+### Overview
+Added Account filter dropdown to the compact filter bar, allowing users to filter violations by creditor/account name.
+
+### Location
+- `frontend/src/components/CompactFilterBar.jsx`
+- `frontend/src/hooks/useCreditFilter.js`
+- `frontend/src/state/filterStore.js`
+
+### Filter Bar Layout
+```
+Bureau | Severity | Type | Account
+```
+
+### Features
+- **Account Dropdown:** Filter violations by creditor name (e.g., "GM FINANCIAL", "BMW FIN SVC")
+- **Alphabetically Sorted:** Account options are sorted A-Z for easy navigation
+- **Multi-Select:** Select multiple accounts to filter
+- **Visual Feedback:** Selected count badge appears when filters are active
+- **Removed Filter Icon:** Unnecessary filter list icon removed from left side
+
+### Filter State Structure
+```javascript
+{
+  bureaus: [],     // e.g. ['TransUnion', 'Equifax']
+  severities: [],  // e.g. ['HIGH', 'MEDIUM']
+  categories: [],  // e.g. ['missing_dofd', 'obsolete_account']
+  accounts: [],    // e.g. ['GM FINANCIAL', 'BMW FIN SVC']
+}
+```
+
+---
+
+## Sidebar Styling Improvements
+
+**Added:** December 2024
+
+### Overview
+Fixed visual inconsistencies between the sidebar and main content area for a cohesive look.
+
+### Location
+`frontend/src/layouts/DashboardLayout.jsx`
+
+### Fixes Applied
+
+#### 1. Background Color Consistency
+- **Issue:** Sidebar used hardcoded `#f1f5f9` while main content used `background.default` (`#F8FAFC`)
+- **Fix:** Changed sidebar to use `background.default` from theme
+- **Result:** Sidebar and main content now have matching backgrounds
+
+#### 2. Border Matching Score Cards
+- **Issue:** Sidebar floating card had no border, while score cards had `border: 1px solid #E2E8F0`
+- **Fix:** Added matching border to sidebar card
+- **Result:** Sidebar now has same visual weight as score cards
+
+### Styling Applied
+```javascript
+// Sidebar floating card
+{
+  bgcolor: 'background.paper',
+  borderRadius: '12px',
+  boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+  border: '1px solid #E2E8F0',  // Added for consistency
+}
+```
+
+---
+
 ## Recent Commits
 
 | Commit | Description |
 |--------|-------------|
+| `9079259` | Add Account filter dropdown and remove filter icon |
+| `a8596d8` | Add collapsible accordion headers to violation groups |
+| `830c649` | Fix sidebar background color and add border for visual consistency |
 | `29f5334` | Add violation filtering engine with multi-dimensional filters |
 | `e0aa2df` | Upgrade UI to premium fintech aesthetic |
 | `d1a1ed1` | Remove description truncation in legal letter bullets |
