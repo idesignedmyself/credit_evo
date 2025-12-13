@@ -99,7 +99,7 @@ export default function DashboardLayout() {
       display: 'flex',
       flexDirection: 'column',
       height: '100%',
-      bgcolor: '#f1f5f9',
+      bgcolor: 'background.default',
       p: 1.5,
     }}>
       {/* Floating Card Container */}
@@ -111,6 +111,7 @@ export default function DashboardLayout() {
           bgcolor: 'background.paper',
           borderRadius: '12px',
           boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+          border: '1px solid #E2E8F0',
           overflow: 'hidden',
         }}
       >
@@ -244,7 +245,7 @@ export default function DashboardLayout() {
               boxSizing: 'border-box',
               width: drawerWidth,
               border: 'none',
-              bgcolor: '#f1f5f9',
+              bgcolor: 'background.default',
             },
           }}
           open
