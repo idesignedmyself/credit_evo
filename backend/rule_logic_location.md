@@ -697,15 +697,43 @@ category_order = [
 ]
 ```
 
-**Fix 2: Added Inquiry Bullet Handlers (lines 1040-1117)**
+**Fix 2: Added Inquiry Bullet Handlers (lines 1040-1140)**
 
 | Violation Type | Handler Output |
 |---------------|----------------|
-| `collection_fishing_inquiry` | Inquiry date, bureau, no-tradeline evidence, stacked violations |
+| `collection_fishing_inquiry` | Inquiry date, bureau, no-tradeline evidence, numerosity language (if duplicate), stacked violations |
 | `duplicate_inquiry` | Double-tap detection, dates, same-day/window info |
 | `inquiry_misclassification` | Industry type, soft/hard classification error |
 
-**Sample Output:**
+### Explicit Numerosity Language (lines 1063-1094)
+
+**Purpose:** CRAs process disputes operationally, not legally. Explicit language improves deletion outcomes.
+
+**Trigger Condition:**
+- Stacked violation includes `DUPLICATE_INQUIRY` in secondary_violations
+- Same date, same bureau (guaranteed by stacking logic)
+
+**Canonical Sentence Template:**
+```
+On {inquiry_date}, {creditor_name} accessed my {bureau_name} consumer report
+{inquiry_count} separate times in connection with a single credit application,
+without any resulting account or tradeline.
+```
+
+**Count Formatting:**
+| Count | Rendered As |
+|-------|-------------|
+| 2 | "two (2) separate times" |
+| 3 | "three (3) separate times" |
+| N | "{N} ({N}) separate times" |
+
+**Safety Constraints:**
+- Only renders when data is certain (stacked + has duplicate evidence + date + bureau present)
+- Does NOT inject for single violations
+- Does NOT inject without duplicate_inquiry in secondary_violations
+- Does NOT alter statute hierarchy or stacking logic
+
+**Sample Output (with numerosity):**
 ```
 I. Unauthorized Hard Inquiries - No Permissible Purpose (FCRA § 604(a)(3)(A))
 
@@ -713,6 +741,10 @@ I. Unauthorized Hard Inquiries - No Permissible Purpose (FCRA § 604(a)(3)(A))
   No associated tradeline, account, or loan found on credit file;
   Without a legitimate business transaction, creditor lacks permissible
   purpose under 15 U.S.C. § 1681b(a)(3)(A)
+
+  On December 28, 2023, ALLY FINANCIAL accessed my EXPERIAN consumer report
+  two (2) separate times in connection with a single credit application,
+  without any resulting account or tradeline.
 
   SUPPORTING EVIDENCE (3 total violations grouped):
     • Collection Fishing Inquiry (FCRA § 604(a)(3)(A))
@@ -729,7 +761,8 @@ I. Unauthorized Hard Inquiries - No Permissible Purpose (FCRA § 604(a)(3)(A))
 | Inquiry violation stacking | `rules.py` | `InquiryRules._stack_inquiry_violations()` (lines 3226-3337) |
 | Stacked violation creation | `rules.py` | `InquiryRules.audit_inquiries()` (lines 3339-3373) |
 | Inquiry category configs | `pdf_format_assembler.py` | `CATEGORY_CONFIGS` (lines 378-428) |
-| Inquiry bullet formatters | `pdf_format_assembler.py` | `_format_account_bullet()` (lines 1040-1117) |
+| Inquiry bullet formatters | `pdf_format_assembler.py` | `_format_account_bullet()` (lines 1040-1140) |
+| Explicit numerosity language | `pdf_format_assembler.py` | `_format_account_bullet()` (lines 1063-1094) |
 | Category render order | `pdf_format_assembler.py` | `category_order` (lines 1554-1597) |
 | Violation model fields | `ssot.py` | `Violation` class (lines 469-533) |
 

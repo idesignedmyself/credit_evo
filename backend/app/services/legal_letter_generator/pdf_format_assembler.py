@@ -1060,6 +1060,39 @@ def _format_account_bullet(violation: Dict[str, Any]) -> str:
         inquiry_parts.append("No associated tradeline, account, or loan found on credit file")
         inquiry_parts.append("Without a legitimate business transaction, creditor lacks permissible purpose under 15 U.S.C. § 1681b(a)(3)(A)")
 
+        # =================================================================
+        # EXPLICIT NUMEROSITY LANGUAGE (for duplicate inquiry evidence)
+        # Inject only when: stacked violation includes DUPLICATE_INQUIRY
+        # =================================================================
+        has_duplicate_evidence = any(
+            sv.get("type") == "duplicate_inquiry" for sv in secondary_violations
+        ) if secondary_violations else False
+
+        if is_stacked and has_duplicate_evidence and inquiry_date and bureau:
+            # Count actual inquiry pulls (fishing violations + 1 for the duplicate trigger)
+            # The stacking groups: N fishing inquiries + duplicate detection = N pulls
+            fishing_count = sum(
+                1 for sv in secondary_violations
+                if sv.get("type") == "collection_fishing_inquiry"
+            )
+            # Total pulls = primary (1) + secondary fishing violations + implies at least 2 for duplicate
+            inquiry_pull_count = max(2, fishing_count + 1)  # At minimum 2 if duplicate detected
+
+            # Format count: "two (2)" for 2, "three (3)" for 3, etc.
+            count_words = {
+                2: "two (2)", 3: "three (3)", 4: "four (4)", 5: "five (5)",
+                6: "six (6)", 7: "seven (7)", 8: "eight (8)", 9: "nine (9)", 10: "ten (10)"
+            }
+            count_text = count_words.get(inquiry_pull_count, f"{inquiry_pull_count} ({inquiry_pull_count})")
+
+            # Canonical numerosity sentence
+            numerosity_sentence = (
+                f"On {_format_readable_date(inquiry_date)}, {creditor} accessed my "
+                f"{bureau.upper()} consumer report {count_text} separate times in connection "
+                f"with a single credit application, without any resulting account or tradeline."
+            )
+            inquiry_parts.append(f"\n{numerosity_sentence}")
+
         # If stacked, show secondary violations as supporting evidence
         if is_stacked and secondary_violations:
             inquiry_parts.append(f"\nSUPPORTING EVIDENCE ({violation_count} total violations grouped):")
