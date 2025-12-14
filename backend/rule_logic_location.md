@@ -785,6 +785,90 @@ python3 -m pytest tests/test_statute_system.py -v
 
 ---
 
+## Frontend UI Improvements (Dec 2025)
+
+### Violation List Redesign
+
+**Purpose:** Unify the violation display with a clean table-style layout matching the Report History page design.
+
+**Files Modified:**
+```
+frontend/src/components/
+├── ViolationList.jsx           # Main violation list with integrated tabs
+├── VirtualizedViolationList.jsx # Table-style grouped violations
+└── AccountAccordion.jsx         # Added embedded prop for inline rendering
+```
+
+### Changes Made
+
+**1. Removed Redundant Header**
+- Removed "X Violations Found" header from ViolationList
+- Count already shown in CompactFilterBar stats
+- Location: `AuditPage.jsx` passes `hideHeader` prop
+
+**2. Unified Table Container**
+- All tabs now wrapped in single TableContainer with Paper
+- Tabs integrated into table header area (not separate)
+- Rounded corners, border styling matching ReportHistoryPage
+
+**3. Dynamic Column Headers**
+| Tab | Column 1 | Column 2 |
+|-----|----------|----------|
+| Group by Type | Violation Type | Count |
+| Group by Account | Violation Type | Count |
+| Group by Bureau | Violation Type | Count |
+| Cross-Bureau | Account | Issues |
+| Accounts | Account | Count |
+
+**4. Consistent Table Format for All Tabs**
+- Cross-Bureau: Groups discrepancies by creditor name
+- Accounts: Lists all accounts with bureau count
+- Same CollapsibleTableRow component used across tabs
+
+**5. CollapsibleTableRow Component** (`ViolationList.jsx` lines 48-80)
+```jsx
+const CollapsibleTableRow = ({ label, count, isExpanded, onToggle, children }) => (
+  // TableRow with expand/collapse icon
+  // Collapse section for children content
+);
+```
+
+**6. AccountAccordion Embedded Mode** (`AccountAccordion.jsx` line 52)
+```jsx
+const AccountAccordion = React.memo(({ account, embedded = false }) => {
+  // embedded=true: Returns content only (no Paper wrapper, no header)
+  // embedded=false: Full standalone card with header and collapse
+});
+```
+
+### Quick Reference - Frontend Logic Locations
+
+| Feature | File | Location |
+|---------|------|----------|
+| Unified table container | `ViolationList.jsx` | Lines 204-339 |
+| Integrated tabs | `ViolationList.jsx` | Lines 215-235 |
+| Dynamic column headers | `ViolationList.jsx` | `getColumnHeaders()` (lines 143-153) |
+| CollapsibleTableRow | `ViolationList.jsx` | Lines 48-80 |
+| Cross-Bureau table format | `ViolationList.jsx` | Lines 275-308 |
+| Accounts table format | `ViolationList.jsx` | Lines 311-338 |
+| Group header row | `VirtualizedViolationList.jsx` | `GroupHeaderRow` (lines 25-70) |
+| AccountAccordion embedded | `AccountAccordion.jsx` | Lines 238-241 |
+
+### Visual Design
+
+**Table Styling:**
+- `TableContainer` with `Paper`, `elevation={0}`, `borderRadius: 3`
+- Header bg: `#f9fafb`
+- Row hover: `#f1f5f9`
+- Expanded row bg: `#f8fafc`
+- Collapsed content bg: `#fafafa`
+
+**Icons:**
+- `ChevronRightIcon` - collapsed state
+- `ExpandMoreIcon` - expanded state
+
+---
+
 ## Related Documentation
 
 - `letter_fixes.md` - Recent fixes and Metro 2 field reference
