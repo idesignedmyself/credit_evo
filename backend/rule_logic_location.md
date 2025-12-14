@@ -541,6 +541,217 @@ Handles edge cases:
 
 ---
 
+## FDCPA Parity & Multi-Statute System (Dec 2025)
+
+### Overview
+
+The system now supports multi-statute violations with FCRA, FDCPA, and future statute types. Violations can have:
+- **Primary statute**: The main legal basis for the violation
+- **Secondary statutes**: Supporting/corroborating legal claims
+- **Stacking**: Multiple related violations grouped into one logical violation
+
+### New Files Created
+
+```
+app/services/legal_letter_generator/
+├── fdcpa_statutes.py      # FDCPA SSOT with 60+ statute entries
+├── violation_statutes.py   # Unified statute routing (StatuteType, ActorType enums)
+└── citation_utils.py       # Citation normalization to canonical format
+```
+
+### FDCPA Statute System (`fdcpa_statutes.py`)
+
+**Purpose:** Single Source of Truth for FDCPA statute definitions and resolution.
+
+**Key Components:**
+| Component | Description |
+|-----------|-------------|
+| `FDCPA_STATUTE_MAP` | 60+ statute entries with section, title, description |
+| `resolve_fdcpa_statute(section)` | Converts any format to canonical "15 U.S.C. § {section}" |
+| `FDCPA_ACTOR_SCOPE` | Defines which actors FDCPA applies to (collector, debt_buyer) |
+| `CREDIT_REPORT_DETECTABLE_SECTIONS` | FDCPA sections detectable from credit reports |
+
+**Authorized FDCPA Rules (Credit-Report-Detectable):**
+| Section | Violation Type | Description |
+|---------|---------------|-------------|
+| §1692e(5) | time_barred_debt_risk | Threat on time-barred debt |
+| §1692e(2)(A) | false_debt_status | False legal status |
+| §1692e(8) | unverified_debt_reporting | False credit reporting |
+| §1692f(1) | collection_balance_inflation | Unauthorized amounts/balance inflation |
+
+**Excluded from Automation (Not Credit-Report-Detectable):**
+- §1692g (validation timing) - requires communication analysis
+- §1692c/§1692d (communications, harassment) - requires call/letter analysis
+
+### Unified Statute Routing (`violation_statutes.py`)
+
+**Purpose:** Route violations to correct statutes based on violation type AND actor type.
+
+**Key Enums:**
+```python
+class StatuteType(str, Enum):
+    FCRA = "fcra"
+    FDCPA = "fdcpa"
+    ECOA = "ecoa"
+    STATE = "state"
+    # ... future expansion
+
+class ActorType(str, Enum):
+    BUREAU = "bureau"
+    FURNISHER = "furnisher"
+    COLLECTOR = "collector"
+    ORIGINAL_CREDITOR = "original_creditor"
+    DEBT_BUYER = "debt_buyer"
+```
+
+**Key Functions:**
+| Function | Description |
+|----------|-------------|
+| `get_primary_statute(violation_type, actor_type)` | Returns primary statute for violation |
+| `get_applicable_citations(violation_type, actor_type)` | Returns all applicable statutes |
+| `map_furnisher_type_to_actor(furnisher_type)` | Maps FurnisherType enum to actor string |
+
+### Citation Normalization (`citation_utils.py`)
+
+**Purpose:** Normalize all citation formats to canonical "15 U.S.C. § {section}" format.
+
+**Handles Input Formats:**
+- "FDCPA 1692e(5)" → "15 U.S.C. § 1692e(5)"
+- "§1692e(5)" → "15 U.S.C. § 1692e(5)"
+- "15 USC 1692e(5)" → "15 U.S.C. § 1692e(5)"
+- "611" (FCRA) → "15 U.S.C. § 1681i"
+
+**Key Functions:**
+| Function | Description |
+|----------|-------------|
+| `normalize_citation(citation)` | Converts any format to canonical |
+| `_detect_statute_type(citation)` | Detects FCRA vs FDCPA from citation |
+| `format_citation_for_letter(citation)` | Formats for consumer-facing output |
+
+### Inquiry Violation Stacking (`rules.py` lines 3226-3373)
+
+**Purpose:** Group related inquiry violations by creditor+bureau+date into ONE stacked violation.
+
+**Location:** `app/services/audit/rules.py` - `InquiryRules._stack_inquiry_violations()`
+
+**Stacking Logic:**
+1. Run all inquiry checks independently (fishing, duplicate, misclassification)
+2. Group violations by (normalized_creditor, bureau, date)
+3. Sort by priority: fishing > misclassification > duplicate
+4. Create ONE stacked violation with:
+   - Primary statute: highest priority violation
+   - Secondary statutes: other violations as supporting evidence
+   - Merged evidence: shows total violation count
+
+**Priority Order:**
+| Priority | Violation Type | Rationale |
+|----------|---------------|-----------|
+| 1 | COLLECTION_FISHING_INQUIRY | Strongest claim (no permissible purpose) |
+| 2 | INQUIRY_MISCLASSIFICATION | Industry shouldn't do hard pulls |
+| 3 | DUPLICATE_INQUIRY | Technical/procedural issue |
+
+**Example (ALLY FINANCIAL):**
+```
+Input: 2 hard inquiries on 12/28/2023, Experian, no tradeline
+  → 2 COLLECTION_FISHING_INQUIRY violations
+  → 1 DUPLICATE_INQUIRY violation
+  → Total: 3 raw violations
+
+Output: 1 stacked violation
+  → Primary: COLLECTION_FISHING_INQUIRY (15 U.S.C. § 604(a)(3)(A))
+  → Secondary: ['15 U.S.C. § 604(a)(3)'] (duplicate as supporting evidence)
+  → Evidence: stacked_violation=True, violation_count=3
+```
+
+### Violation Model Updates (`ssot.py` lines 469-533)
+
+**New Fields on Violation class:**
+```python
+@dataclass
+class Violation:
+    # ... existing fields ...
+    primary_statute: Optional[str] = None      # "15 U.S.C. § 604(a)(3)(A)"
+    primary_statute_type: Optional[str] = None # "fcra", "fdcpa", etc.
+    secondary_statutes: Optional[List[str]] = None  # Supporting statutes
+```
+
+**Backward Compatibility:**
+- `__post_init__()` auto-migrates legacy `fcra_section` to `primary_statute`
+- Uses `normalize_citation()` for consistent format
+
+### Letter Rendering Fixes (`pdf_format_assembler.py`)
+
+**Issue:** Inquiry violations weren't rendering because:
+1. Categories missing from `category_order` list
+2. No handlers in `_format_account_bullet()` for inquiry types
+
+**Fix 1: Added Categories to Render Order (lines 1554-1597)**
+```python
+category_order = [
+    # ... existing categories ...
+    # Inquiry violations (FCRA § 604)
+    ViolationCategory.UNAUTHORIZED_INQUIRY,
+    ViolationCategory.DUPLICATE_INQUIRY,
+    ViolationCategory.INQUIRY_MISCLASSIFICATION,
+    # ... rest of categories ...
+]
+```
+
+**Fix 2: Added Inquiry Bullet Handlers (lines 1040-1117)**
+
+| Violation Type | Handler Output |
+|---------------|----------------|
+| `collection_fishing_inquiry` | Inquiry date, bureau, no-tradeline evidence, stacked violations |
+| `duplicate_inquiry` | Double-tap detection, dates, same-day/window info |
+| `inquiry_misclassification` | Industry type, soft/hard classification error |
+
+**Sample Output:**
+```
+I. Unauthorized Hard Inquiries - No Permissible Purpose (FCRA § 604(a)(3)(A))
+
+• ALLY FINANCIAL: Hard Inquiry Date: December 28, 2023; Bureau: EXPERIAN;
+  No associated tradeline, account, or loan found on credit file;
+  Without a legitimate business transaction, creditor lacks permissible
+  purpose under 15 U.S.C. § 1681b(a)(3)(A)
+
+  SUPPORTING EVIDENCE (3 total violations grouped):
+    • Collection Fishing Inquiry (FCRA § 604(a)(3)(A))
+    • Duplicate Inquiry (FCRA § 604(a)(3))
+```
+
+### Quick Reference - New Logic Locations
+
+| Feature | File | Location |
+|---------|------|----------|
+| FDCPA statute definitions | `fdcpa_statutes.py` | Full file |
+| Unified statute routing | `violation_statutes.py` | Full file |
+| Citation normalization | `citation_utils.py` | Full file |
+| Inquiry violation stacking | `rules.py` | `InquiryRules._stack_inquiry_violations()` (lines 3226-3337) |
+| Stacked violation creation | `rules.py` | `InquiryRules.audit_inquiries()` (lines 3339-3373) |
+| Inquiry category configs | `pdf_format_assembler.py` | `CATEGORY_CONFIGS` (lines 378-428) |
+| Inquiry bullet formatters | `pdf_format_assembler.py` | `_format_account_bullet()` (lines 1040-1117) |
+| Category render order | `pdf_format_assembler.py` | `category_order` (lines 1554-1597) |
+| Violation model fields | `ssot.py` | `Violation` class (lines 469-533) |
+
+### Testing
+
+**Test File:** `tests/test_statute_system.py`
+
+**Test Categories:**
+1. `TestFDCPAStatutes` - FDCPA resolution and mapping
+2. `TestViolationStatutes` - Unified routing
+3. `TestCitationUtils` - Citation normalization
+4. `TestViolationModelBackwardCompat` - Legacy migration
+5. `TestInquiryStacking` - Stacking logic
+
+**Run Tests:**
+```bash
+cd backend
+python3 -m pytest tests/test_statute_system.py -v
+```
+
+---
+
 ## Related Documentation
 
 - `letter_fixes.md` - Recent fixes and Metro 2 field reference
