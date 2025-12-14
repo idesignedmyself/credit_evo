@@ -163,6 +163,52 @@ FCRA_CITATION_VARIANTS = {
     ],
 }
 
+# FDCPA citation variations to avoid repetition
+FDCPA_CITATION_VARIANTS = {
+    "1692e": [
+        "FDCPA Section 1692e",
+        "15 U.S.C. § 1692e",
+        "Section 1692e of the FDCPA",
+        "the false representations provision",
+    ],
+    "1692e(2)(A)": [
+        "Section 1692e(2)(A)",
+        "15 U.S.C. § 1692e(2)(A)",
+        "FDCPA 1692e(2)(A)",
+        "the false legal status provision",
+    ],
+    "1692e(5)": [
+        "Section 1692e(5)",
+        "15 U.S.C. § 1692e(5)",
+        "FDCPA 1692e(5)",
+        "the prohibited threats provision",
+    ],
+    "1692e(8)": [
+        "Section 1692e(8)",
+        "15 U.S.C. § 1692e(8)",
+        "FDCPA 1692e(8)",
+        "the false credit reporting provision",
+    ],
+    "1692f": [
+        "FDCPA Section 1692f",
+        "15 U.S.C. § 1692f",
+        "Section 1692f of the FDCPA",
+        "the unfair practices provision",
+    ],
+    "1692f(1)": [
+        "Section 1692f(1)",
+        "15 U.S.C. § 1692f(1)",
+        "FDCPA 1692f(1)",
+        "the unauthorized amounts provision",
+    ],
+    "1692g": [
+        "FDCPA Section 1692g",
+        "15 U.S.C. § 1692g",
+        "Section 1692g of the FDCPA",
+        "the debt validation provision",
+    ],
+}
+
 SYNONYMS = {
     "verify": ["confirm", "validate", "check", "review", "examine"],
     "inaccurate": ["incorrect", "erroneous", "false", "wrong", "mistaken"],
@@ -538,22 +584,74 @@ class DiversityEngine:
 
     def get_fcra_citation(self, section: str) -> str:
         """Get a varied FCRA citation for a section."""
-        from .fcra_statutes import resolve_statute
+        return self.get_statute_citation(section)
+
+    def get_fdcpa_citation(self, section: str) -> str:
+        """Get a varied FDCPA citation for a section."""
+        return self.get_statute_citation(section, statute_type="fdcpa")
+
+    def get_statute_citation(self, section: str, statute_type: str = None) -> str:
+        """
+        Get a varied citation for any supported statute section.
+
+        Args:
+            section: The section identifier (e.g., "611(a)", "1692e(5)")
+            statute_type: Optional hint for statute type ("fcra", "fdcpa")
+
+        Returns:
+            A varied citation string
+        """
+        from .fcra_statutes import resolve_statute as resolve_fcra
+        from .fdcpa_statutes import resolve_fdcpa_statute as resolve_fdcpa
 
         # Normalize section format
-        section_key = section.replace("(", "").replace(")", "").replace(" ", "")
+        section_clean = section.strip()
 
-        # Try exact match first
-        if section in FCRA_CITATION_VARIANTS:
-            return self.rng.choice(FCRA_CITATION_VARIANTS[section])
+        # Strip common prefixes to get raw section
+        for prefix in ["FDCPA ", "FCRA ", "15 U.S.C. § ", "Section "]:
+            if section_clean.upper().startswith(prefix.upper()):
+                section_clean = section_clean[len(prefix):].strip()
+                if prefix.upper().startswith("FDCPA"):
+                    statute_type = "fdcpa"
+                elif prefix.upper().startswith("FCRA"):
+                    statute_type = "fcra"
+                break
+
+        # Auto-detect statute type if not provided
+        if not statute_type:
+            if section_clean.startswith("1692"):
+                statute_type = "fdcpa"
+            elif section_clean.startswith("1681"):
+                statute_type = "fdcpa" if "1692" in section else "fcra"
+            else:
+                statute_type = "fcra"
+
+        # Try FDCPA variants first if FDCPA
+        if statute_type == "fdcpa":
+            if section_clean in FDCPA_CITATION_VARIANTS:
+                return self.rng.choice(FDCPA_CITATION_VARIANTS[section_clean])
+
+            # Try normalized match
+            section_key = section_clean.replace("(", "").replace(")", "").replace(" ", "")
+            for key, variants in FDCPA_CITATION_VARIANTS.items():
+                if section_key in key.replace("(", "").replace(")", ""):
+                    return self.rng.choice(variants)
+
+            # Fallback to FDCPA resolver
+            return resolve_fdcpa(section_clean)
+
+        # FCRA variants
+        if section_clean in FCRA_CITATION_VARIANTS:
+            return self.rng.choice(FCRA_CITATION_VARIANTS[section_clean])
 
         # Try normalized match
+        section_key = section_clean.replace("(", "").replace(")", "").replace(" ", "")
         for key, variants in FCRA_CITATION_VARIANTS.items():
             if section_key in key.replace("(", "").replace(")", ""):
                 return self.rng.choice(variants)
 
         # Fallback: use the authoritative SSOT resolver for correct USC citation
-        return resolve_statute(section)
+        return resolve_fcra(section_clean)
 
     def diversify(self, text: str, intensity: float = 0.3) -> str:
         """Apply synonym diversification to text."""

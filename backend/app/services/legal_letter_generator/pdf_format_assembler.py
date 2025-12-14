@@ -64,6 +64,15 @@ class ViolationCategory(str, Enum):
     # Post-Settlement & Cross-Bureau Gaps
     POST_SETTLEMENT_NEGATIVE = "post_settlement_negative"  # Late markers reported AFTER account closed/settled
     MISSING_TRADELINE_INFO = "missing_tradeline_info"  # Account missing from some bureaus (explains score gaps)
+    # FDCPA Collection violations (collectors/debt buyers only)
+    COLLECTION_BALANCE_INFLATION = "collection_balance_inflation"  # 15 U.S.C. § 1692f(1)
+    FALSE_DEBT_STATUS = "false_debt_status"  # 15 U.S.C. § 1692e(2)(A)
+    UNVERIFIED_DEBT_REPORTING = "unverified_debt_reporting"  # 15 U.S.C. § 1692e(8)
+    DUPLICATE_COLLECTION = "duplicate_collection"  # 15 U.S.C. § 1692e(2)(A)
+    # Inquiry violations (FCRA §604)
+    UNAUTHORIZED_INQUIRY = "unauthorized_inquiry"  # Fishing expedition / no permissible purpose
+    DUPLICATE_INQUIRY = "duplicate_inquiry"  # Same creditor multiple pulls
+    INQUIRY_MISCLASSIFICATION = "inquiry_misclassification"  # Soft pull coded as hard
     OTHER = "other"
 
 
@@ -112,12 +121,12 @@ CATEGORY_CONFIGS: Dict[ViolationCategory, CategoryConfig] = {
     ),
     ViolationCategory.TIME_BARRED_DEBT: CategoryConfig(
         title="Time-Barred Debt - Statute of Limitations Expired",
-        metro2_fields="State SOL Statutes / FDCPA § 1692e(5)",
+        metro2_fields="State SOL Statutes / 15 U.S.C. § 1692e(5)",
         explanation=(
             "The following collection accounts have exceeded the applicable Statute of Limitations (SOL) "
             "for the consumer's state of residence. When the SOL expires, the creditor loses the legal "
-            "right to sue for collection. Under the Fair Debt Collection Practices Act (FDCPA) Section "
-            "1692e(5), threatening to take any action that cannot legally be taken—including suing on "
+            "right to sue for collection. Under the Fair Debt Collection Practices Act, 15 U.S.C. § 1692e(5), "
+            "threatening to take any action that cannot legally be taken—including suing on "
             "time-barred debt—is a per se violation. The following accounts are time-barred:"
         ),
         resolution=(
@@ -128,7 +137,7 @@ CATEGORY_CONFIGS: Dict[ViolationCategory, CategoryConfig] = {
             "removed from the account remarks and that the collector cease any implication of legal "
             "recourse on these time-barred debts."
         ),
-        fcra_section="FDCPA 1692e(5)"
+        fcra_section="15 U.S.C. § 1692e(5)"  # Canonical format
     ),
     ViolationCategory.STALE_REPORTING: CategoryConfig(
         title="Accounts with Stale Reporting Data",
@@ -293,6 +302,129 @@ CATEGORY_CONFIGS: Dict[ViolationCategory, CategoryConfig] = {
             "the CRA fails to implement reasonable procedures to prevent them."
         ),
         fcra_section="607(b)"
+    ),
+    # FDCPA Collection Violations (Collectors/Debt Buyers Only)
+    ViolationCategory.COLLECTION_BALANCE_INFLATION: CategoryConfig(
+        title="Collection Balance Exceeds Original Debt Amount",
+        metro2_fields="Metro 2 Fields 17A (Current Balance) vs 15A (High Credit) / 15 U.S.C. § 1692f(1)",
+        explanation=(
+            "Under the Fair Debt Collection Practices Act, 15 U.S.C. § 1692f(1), debt collectors are "
+            "prohibited from collecting any amount not expressly authorized by the debt agreement or "
+            "permitted by law. The following collection accounts report a current balance that exceeds "
+            "the original debt amount (high credit), indicating unauthorized fees, interest, or charges "
+            "may have been added:"
+        ),
+        resolution=(
+            "Request itemized accounting of all fees and charges added to the original debt amount. "
+            "Any amounts not authorized by the original contract or state law must be removed. If the "
+            "collector cannot provide documentation authorizing the increased balance, the account must "
+            "be corrected to reflect only the original debt amount."
+        ),
+        fcra_section="15 U.S.C. § 1692f(1)"
+    ),
+    ViolationCategory.FALSE_DEBT_STATUS: CategoryConfig(
+        title="False Representation of Debt Status",
+        metro2_fields="Metro 2 Field 05 (Account Status) / 15 U.S.C. § 1692e(2)(A)",
+        explanation=(
+            "Under the Fair Debt Collection Practices Act, 15 U.S.C. § 1692e(2)(A), debt collectors are "
+            "prohibited from falsely representing the character, amount, or legal status of any debt. "
+            "The following collection accounts have a $0 balance but are reported as 'Open' rather than "
+            "'Paid' or 'Closed', which misrepresents the current status of the debt:"
+        ),
+        resolution=(
+            "These accounts must be updated to accurately reflect the debt status. A $0 balance "
+            "indicates the debt has been satisfied, and the account status must be updated to 'Paid' "
+            "or 'Closed' accordingly. Continued reporting of an inaccurate status violates both FDCPA "
+            "and FCRA accuracy requirements."
+        ),
+        fcra_section="15 U.S.C. § 1692e(2)(A)"
+    ),
+    ViolationCategory.UNVERIFIED_DEBT_REPORTING: CategoryConfig(
+        title="Unverified Debt Reporting",
+        metro2_fields="K1 Segment, Metro 2 Fields 17B (DOFD), 06 (Date Opened) / 15 U.S.C. § 1692e(8)",
+        explanation=(
+            "Under the Fair Debt Collection Practices Act, 15 U.S.C. § 1692e(8), debt collectors are "
+            "prohibited from communicating or threatening to communicate credit information which is "
+            "known or should be known to be false. The following collection accounts are missing critical "
+            "verification data, indicating the debt may not have been properly validated before reporting:"
+        ),
+        resolution=(
+            "These accounts lack the documentation required to verify the debt. Without the original "
+            "creditor name, date of first delinquency, or original account opening date, the debt cannot "
+            "be properly validated. Request complete verification documentation or deletion of these "
+            "unverified entries."
+        ),
+        fcra_section="15 U.S.C. § 1692e(8)"
+    ),
+    ViolationCategory.DUPLICATE_COLLECTION: CategoryConfig(
+        title="Duplicate Collection Reporting",
+        metro2_fields="K1 Segment (Original Creditor) / 15 U.S.C. § 1692e(2)(A)",
+        explanation=(
+            "Under the Fair Debt Collection Practices Act, 15 U.S.C. § 1692e(2)(A), falsely representing "
+            "the character or amount of a debt includes reporting the same underlying debt through "
+            "multiple collection accounts. The following accounts appear to represent the same original "
+            "debt being reported by multiple collectors, artificially inflating the consumer's apparent "
+            "liability:"
+        ),
+        resolution=(
+            "Only ONE collection account should report each original debt. Multiple collectors reporting "
+            "the same debt violates fair representation requirements and creates the false impression "
+            "of multiple separate debts. All duplicate entries must be removed, leaving only the current "
+            "debt holder's account."
+        ),
+        fcra_section="15 U.S.C. § 1692e(2)(A)"
+    ),
+    # Inquiry Violations
+    ViolationCategory.UNAUTHORIZED_INQUIRY: CategoryConfig(
+        title="Unauthorized Hard Inquiries - No Permissible Purpose",
+        metro2_fields="Inquiry Section / FCRA § 604(a)(3)(A)",
+        explanation=(
+            "Under FCRA Section 604(a)(3)(A), a creditor may only access your consumer report if they "
+            "have a 'permissible purpose' - typically a credit transaction initiated by you, or an "
+            "existing account relationship. The following inquiries appear to lack permissible purpose, "
+            "as the creditor has no associated tradeline, account, or legitimate business transaction "
+            "with you:"
+        ),
+        resolution=(
+            "These inquiries must be investigated and removed if permissible purpose cannot be verified. "
+            "Under FCRA Section 604(a), accessing a consumer report without permissible purpose is a "
+            "violation that may result in statutory damages. I demand that you verify the permissible "
+            "purpose for each inquiry listed below and delete any inquiry for which valid purpose "
+            "cannot be documented."
+        ),
+        fcra_section="604(a)(3)(A)"
+    ),
+    ViolationCategory.DUPLICATE_INQUIRY: CategoryConfig(
+        title="Duplicate Inquiries - Multiple Pulls by Same Creditor",
+        metro2_fields="Inquiry Section / FCRA § 604(a)(3)",
+        explanation=(
+            "The following creditors accessed my credit report multiple times within a short period. "
+            "While rate-shopping provisions allow multiple auto or mortgage inquiries to count as one "
+            "within a 14-45 day window for scoring purposes, the underlying duplicates should still "
+            "be consolidated or removed from the report itself to accurately reflect my credit-seeking "
+            "behavior:"
+        ),
+        resolution=(
+            "Duplicate inquiries from the same creditor for the same transaction should be consolidated "
+            "into a single inquiry. Multiple same-day pulls indicate a technical error or duplicate "
+            "submission. I request that you verify with the creditor and remove any duplicate entries."
+        ),
+        fcra_section="604(a)(3)"
+    ),
+    ViolationCategory.INQUIRY_MISCLASSIFICATION: CategoryConfig(
+        title="Misclassified Inquiries - Soft Pulls Recorded as Hard",
+        metro2_fields="Inquiry Section / FCRA § 604(a)(3)",
+        explanation=(
+            "The following inquiries appear to be from industries that typically perform soft inquiries "
+            "(insurance, employment screening, account reviews) but have been incorrectly recorded as "
+            "hard inquiries that negatively impact credit scores:"
+        ),
+        resolution=(
+            "These inquiries should be reclassified as soft inquiries or removed entirely. Insurance "
+            "quotes, employment background checks, and account reviews do not require hard inquiry "
+            "authorization and should not appear as hard pulls on my credit report."
+        ),
+        fcra_section="604(a)(3)"
     ),
     ViolationCategory.OTHER: CategoryConfig(
         title="Additional Accounts Requiring Investigation",
@@ -689,6 +821,23 @@ def _classify_violation(violation: Dict[str, Any]) -> ViolationCategory:
     if "ssn" in evidence and "mismatch" in evidence:
         return ViolationCategory.IDENTITY_ERROR
 
+    # Check for INQUIRY violations
+    # Collection fishing / unauthorized inquiry - no permissible purpose
+    if v_type in ["collection_fishing_inquiry", "unauthorized_hard_inquiry", "unauthorized_inquiry"]:
+        return ViolationCategory.UNAUTHORIZED_INQUIRY
+    if "fishing" in evidence or "no tradeline" in evidence or "permissible purpose" in evidence:
+        return ViolationCategory.UNAUTHORIZED_INQUIRY
+    # Duplicate inquiry from same creditor
+    if v_type == "duplicate_inquiry":
+        return ViolationCategory.DUPLICATE_INQUIRY
+    if "double tap" in evidence or "duplicate inquiry" in evidence:
+        return ViolationCategory.DUPLICATE_INQUIRY
+    # Misclassified inquiry (soft as hard)
+    if v_type == "inquiry_misclassification":
+        return ViolationCategory.INQUIRY_MISCLASSIFICATION
+    if "insurance" in evidence or "soft pull" in evidence:
+        return ViolationCategory.INQUIRY_MISCLASSIFICATION
+
     return ViolationCategory.OTHER
 
 
@@ -873,8 +1022,8 @@ def _format_account_bullet(violation: Dict[str, Any]) -> str:
     last_reported_date = _format_readable_date(last_reported_date_raw)
     dofd_date = _format_readable_date(dofd_raw)
 
-    # Build account identifier
-    if account:
+    # Build account identifier - for inquiries, creditor only (no account number)
+    if account and violation_type not in ["collection_fishing_inquiry", "duplicate_inquiry", "inquiry_misclassification"]:
         account_id = f"{creditor} (Account #{account})"
     else:
         account_id = creditor
@@ -887,6 +1036,85 @@ def _format_account_bullet(violation: Dict[str, Any]) -> str:
     payment_status = evidence_dict.get("payment_status", "") or violation.get("payment_status", "")
     balance = evidence_dict.get("balance") or evidence_dict.get("current_balance") or violation.get("balance")
     account_status = evidence_dict.get("account_status", "") or violation.get("account_status", "")
+
+    # =========================================================================
+    # INQUIRY VIOLATIONS - FCRA § 604 (Permissible Purpose)
+    # =========================================================================
+
+    # Handle Collection Fishing Inquiry (unauthorized access / no permissible purpose)
+    if violation_type == "collection_fishing_inquiry" and isinstance(evidence, dict):
+        inquiry_date = evidence.get("inquiry_date", "")
+        bureau = evidence.get("bureau", "")
+        has_tradeline = evidence.get("has_matching_tradeline", False)
+        is_stacked = evidence.get("stacked_violation", False)
+        violation_count = evidence.get("violation_count", 1)
+        secondary_violations = evidence.get("secondary_violations", [])
+
+        inquiry_parts = []
+
+        # Primary violation: unauthorized inquiry
+        if inquiry_date:
+            inquiry_parts.append(f"Hard Inquiry Date: {_format_readable_date(inquiry_date)}")
+        if bureau:
+            inquiry_parts.append(f"Bureau: {bureau.upper()}")
+        inquiry_parts.append("No associated tradeline, account, or loan found on credit file")
+        inquiry_parts.append("Without a legitimate business transaction, creditor lacks permissible purpose under 15 U.S.C. § 1681b(a)(3)(A)")
+
+        # If stacked, show secondary violations as supporting evidence
+        if is_stacked and secondary_violations:
+            inquiry_parts.append(f"\nSUPPORTING EVIDENCE ({violation_count} total violations grouped):")
+            for sv in secondary_violations:
+                sv_type = sv.get("type", "").replace("_", " ").title()
+                sv_section = sv.get("fcra_section", "")
+                inquiry_parts.append(f"  • {sv_type} (FCRA § {sv_section})")
+
+        if inquiry_parts:
+            return f"• {account_id}: {'; '.join(inquiry_parts[:4])}" + ("\n  " + "\n  ".join(inquiry_parts[4:]) if len(inquiry_parts) > 4 else "")
+
+    # Handle Duplicate Inquiry (same-day double tap or within-window)
+    if violation_type == "duplicate_inquiry" and isinstance(evidence, dict):
+        inquiry_date = evidence.get("inquiry_date", "")
+        first_inquiry_date = evidence.get("first_inquiry_date", "")
+        second_inquiry_date = evidence.get("second_inquiry_date", "")
+        days_apart = evidence.get("days_apart", 0)
+        duplicate_type = evidence.get("duplicate_type", "")
+        bureau = evidence.get("bureau", "")
+        normalized_creditor = evidence.get("normalized_creditor", "")
+
+        duplicate_parts = []
+
+        if duplicate_type == "same_day_double_tap":
+            duplicate_parts.append(f"DOUBLE TAP DETECTED: Multiple hard inquiries on same day ({_format_readable_date(inquiry_date)})")
+            duplicate_parts.append(f"Bureau: {bureau.upper()}" if bureau else "")
+            duplicate_parts.append("Single lender should only access credit file once per application per bureau")
+            duplicate_parts.append("Multiple same-day pulls indicate technical error or duplicate submission")
+        elif duplicate_type == "within_window":
+            duplicate_parts.append(f"Duplicate pulls detected: {_format_readable_date(first_inquiry_date)} and {_format_readable_date(second_inquiry_date)}")
+            duplicate_parts.append(f"Days apart: {days_apart}")
+            duplicate_parts.append("Under rate-shopping provisions, multiple inquiries within 14-45 days should be merged")
+
+        duplicate_parts = [p for p in duplicate_parts if p]  # Remove empty strings
+        if duplicate_parts:
+            return f"• {account_id}: {'; '.join(duplicate_parts)}"
+
+    # Handle Inquiry Misclassification (soft pull coded as hard)
+    if violation_type == "inquiry_misclassification" and isinstance(evidence, dict):
+        inquiry_date = evidence.get("inquiry_date", "")
+        industry_type = evidence.get("industry_type", "")
+        matched_industry = evidence.get("matched_industry", "")
+        bureau = evidence.get("bureau", "")
+
+        misclass_parts = []
+        misclass_parts.append(f"Hard Inquiry Date: {_format_readable_date(inquiry_date)}")
+        if bureau:
+            misclass_parts.append(f"Bureau: {bureau.upper()}")
+        if industry_type:
+            misclass_parts.append(f"Industry: {industry_type}")
+        misclass_parts.append(f"{industry_type or 'This industry'} typically performs soft inquiries for {matched_industry or 'non-credit purposes'}")
+        misclass_parts.append("Hard inquiry should be reclassified as soft inquiry or removed")
+
+        if misclass_parts:
+            return f"• {account_id}: {'; '.join(misclass_parts)}"
 
     # Handle Status/Payment History Mismatch violations with structured evidence
     if violation_type == "status_payment_history_mismatch" and isinstance(evidence, dict):
@@ -1324,22 +1552,47 @@ class PDFFormatAssembler:
         categories_used = []
 
         # Define category order for consistent output
+        # CRITICAL: All ViolationCategory values MUST be listed here to be rendered
         category_order = [
-            ViolationCategory.OBSOLETE_ACCOUNT,
+            # Critical/High severity - account should be deleted
+            ViolationCategory.OBSOLETE_ACCOUNT,  # >7 years from DOFD per FCRA 605(a)
             ViolationCategory.TIME_BARRED_DEBT,  # SOL expired (different from 7-year FCRA rule)
+            ViolationCategory.DECEASED_INDICATOR,  # "Death on Credit" error
+            ViolationCategory.CHILD_IDENTITY_THEFT,  # Account opened when minor
+            # Public records violations (NCAP, bankruptcy)
+            ViolationCategory.PUBLIC_RECORD_NCAP,  # Civil judgments/tax liens banned post-2017
+            ViolationCategory.PUBLIC_RECORD_JUDGMENT_BALANCE,  # Satisfied judgment still showing balance
+            ViolationCategory.PUBLIC_RECORD_BANKRUPTCY_OBSOLETE,  # Bankruptcy >10/7 years
+            # Medical debt violations (NCAP 2022/2023)
+            ViolationCategory.MEDICAL_UNDER_500,  # <$500 medical banned April 2023
+            ViolationCategory.MEDICAL_PAID_REPORTING,  # Paid medical banned July 2022
+            # Data accuracy violations
             ViolationCategory.MISSING_DOFD,
             ViolationCategory.STALE_REPORTING,
-            ViolationCategory.PHANTOM_LATE_PAYMENT,
+            ViolationCategory.ILLOGICAL_DELINQUENCY,  # Impossible payment history progression
+            ViolationCategory.DOUBLE_JEOPARDY,  # Same debt reported twice
+            ViolationCategory.PHANTOM_LATE_PAYMENT,  # Late on $0 payment / during forbearance
             ViolationCategory.POST_SETTLEMENT_NEGATIVE,  # Zombie history - late markers after closed
             ViolationCategory.PAID_COLLECTION_CONTRADICTION,
             ViolationCategory.AMOUNT_PAST_DUE_ERROR,
             ViolationCategory.BALANCE_ERROR,
             ViolationCategory.PAYMENT_STATUS_ERROR,
             ViolationCategory.MISSING_PAYMENT_HISTORY,
+            # FDCPA Collection violations (collectors/debt buyers only)
+            ViolationCategory.COLLECTION_BALANCE_INFLATION,  # 15 U.S.C. § 1692f(1)
+            ViolationCategory.FALSE_DEBT_STATUS,  # 15 U.S.C. § 1692e(2)(A)
+            ViolationCategory.UNVERIFIED_DEBT_REPORTING,  # 15 U.S.C. § 1692e(8)
+            ViolationCategory.DUPLICATE_COLLECTION,  # Same debt multiple collectors
             ViolationCategory.STUDENT_LOAN_VERIFICATION,
             ViolationCategory.COLLECTION_VERIFICATION,
+            # Inquiry violations (FCRA § 604)
+            ViolationCategory.UNAUTHORIZED_INQUIRY,  # Fishing expedition / no permissible purpose
+            ViolationCategory.DUPLICATE_INQUIRY,  # Same creditor multiple pulls
+            ViolationCategory.INQUIRY_MISCLASSIFICATION,  # Soft pull coded as hard
+            # Identity / Mixed file
             ViolationCategory.IDENTITY_ERROR,
             ViolationCategory.MISSING_TRADELINE_INFO,  # Cross-bureau gaps (informational)
+            # Fallback - MUST be last
             ViolationCategory.OTHER,
         ]
 

@@ -146,19 +146,24 @@ METRO2_FIELD_CATEGORIES = {
     },
 }
 
-# Violation type to FCRA section mapping
-# ROUTING RULES:
-# - obsolete_account (>2555 days / 7 years): § 1681c(a) - Obsolete Information deletion
-# - stale_reporting (>308 days): § 1681i(a) - Reinvestigation/update required
-# - accuracy issues: Various sections based on violation type
+# =============================================================================
+# VIOLATION TO STATUTE MAPPING
+# =============================================================================
+# NOTE: The primary mapping is now in violation_statutes.py (VIOLATION_STATUTE_MAP)
+# which supports multi-statute violations and actor-aware routing.
+#
+# This legacy VIOLATION_FCRA_MAP is kept for backward compatibility only.
+# New code should use:
+#   from .violation_statutes import get_violation_statutes, get_primary_statute
+# =============================================================================
+
+# DEPRECATED: Use violation_statutes.VIOLATION_STATUTE_MAP instead
+# This map is maintained for backward compatibility with existing code
 VIOLATION_FCRA_MAP = {
     # === TEMPORAL VIOLATIONS ===
-    # Obsolete accounts (>7 years / 2555 days) → § 1681c(a) - DELETION required
     "obsolete_account": "605(a)",
     "outdated_information": "605(a)",
-    # Stale reporting (>308 days without update) → § 1681i(a) - UPDATE required
     "stale_reporting": "611(a)",
-    # Timeline manipulation → § 1681s-2(a)(1) - Accuracy requirement
     "re_aging": "623(a)(1)",
     "dofd_replaced_with_date_opened": "623(a)(1)",
     "impossible_timeline": "623(a)(1)",
@@ -194,12 +199,21 @@ VIOLATION_FCRA_MAP = {
     "missing_account_type": "607(b)",
     "missing_payment_status": "623(a)(1)",
     "missing_current_balance": "623(a)(1)",
+    "missing_scheduled_payment": "623(a)(1)",
 
     # === REINVESTIGATION VIOLATIONS ===
     "reinsertion": "611(a)(5)",
     "failure_to_investigate": "611(a)(1)",
     "incomplete_investigation": "611(a)(1)",
     "unverifiable_information": "611(a)(5)",
+
+    # === COLLECTION-SPECIFIC (FDCPA) ===
+    # These map to FDCPA sections but use FCRA fallback for non-collectors
+    "time_barred_debt_risk": "623(a)(1)",  # FDCPA 1692e(5) for collectors
+    "collection_balance_inflation": "623(a)(1)",  # FDCPA 1692f(1) for collectors
+    "false_debt_status": "623(a)(1)",  # FDCPA 1692e(2)(A) for collectors
+    "unverified_debt_reporting": "623(a)(1)",  # FDCPA 1692e(8) for collectors
+    "duplicate_collection": "607(b)",  # FDCPA 1692e(2)(A) for collectors
 }
 
 
@@ -224,7 +238,20 @@ def get_metro2_category(field_name: str) -> str:
 
 
 def get_violation_fcra_section(violation_type: str) -> str:
-    """Map a violation type to its primary FCRA section."""
+    """
+    Map a violation type to its primary FCRA section.
+
+    DEPRECATED: Use violation_statutes.get_primary_statute() for multi-statute support.
+    This function returns FCRA sections only; for FDCPA or multi-statute
+    violations, use the violation_statutes module.
+    """
+    import warnings
+    warnings.warn(
+        "get_violation_fcra_section() is deprecated. "
+        "Use violation_statutes.get_primary_statute() for multi-statute support.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     return VIOLATION_FCRA_MAP.get(violation_type, "611")
 
 

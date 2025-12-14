@@ -115,6 +115,12 @@ class ViolationType(str, Enum):
     BANKRUPTCY_DATE_ERROR = "bankruptcy_date_error"  # Impossible dates (future filing date)
     BANKRUPTCY_OBSOLETE = "bankruptcy_obsolete"  # Ch7 > 10 years or Ch13 > 7 years
 
+    # FDCPA Collection violations (applies to collectors/debt buyers only)
+    COLLECTION_BALANCE_INFLATION = "collection_balance_inflation"  # FDCPA §1692f(1) - unauthorized amounts
+    FALSE_DEBT_STATUS = "false_debt_status"  # FDCPA §1692e(2)(A) - false legal status
+    UNVERIFIED_DEBT_REPORTING = "unverified_debt_reporting"  # FDCPA §1692e(8) - false credit reporting
+    DUPLICATE_COLLECTION = "duplicate_collection"  # FDCPA §1692e(2)(A) - same debt multiple collectors
+
     # Medical Debt violations (NCAP 2022/2023 Bureau Policy)
     MEDICAL_UNDER_500 = "medical_under_500"  # Unpaid medical collection < $500 (banned April 2023)
     MEDICAL_PAID_REPORTING = "medical_paid_reporting"  # Paid medical collection still reporting (banned July 2022)
@@ -472,6 +478,12 @@ class Violation:
     SSOT for a single detected violation.
 
     Letters MUST use this object directly - no recomputation allowed.
+
+    Statute Citation Fields:
+    - primary_statute: Canonical USC format (e.g., "15 U.S.C. § 1692e(5)")
+    - primary_statute_type: Statute identifier (fcra, fdcpa, ecoa)
+    - secondary_statutes: Additional applicable statutes for statute stacking
+    - fcra_section: DEPRECATED - Use primary_statute instead
     """
     violation_id: str = field(default_factory=lambda: str(uuid4()))
     violation_type: ViolationType = ViolationType.MISSING_DOFD
@@ -491,8 +503,16 @@ class Violation:
     expected_value: Optional[str] = None
     actual_value: Optional[str] = None
 
-    # Legal basis
+    # Legal basis - NEW unified statute fields
+    primary_statute: Optional[str] = None  # Canonical USC format: "15 U.S.C. § {section}"
+    primary_statute_type: Optional[str] = None  # fcra, fdcpa, ecoa, etc.
+    secondary_statutes: Optional[List[str]] = None  # Additional applicable statutes
+
+    # DEPRECATED: Use primary_statute instead
+    # Kept for backward compatibility - will be removed in future version
     fcra_section: Optional[str] = None
+
+    # Metro-2 field reference
     metro2_field: Optional[str] = None
 
     # Evidence for letter generation
@@ -500,6 +520,23 @@ class Violation:
 
     # User selection (for consumer-directed disputes)
     selected_for_dispute: bool = True
+
+    def __post_init__(self):
+        """Normalize citations and handle backward compatibility."""
+        # If fcra_section is set but primary_statute is not, migrate
+        if self.fcra_section and not self.primary_statute:
+            from app.services.legal_letter_generator.citation_utils import (
+                normalize_citation,
+                get_statute_abbreviation
+            )
+            self.primary_statute = normalize_citation(self.fcra_section)
+            self.primary_statute_type = get_statute_abbreviation(self.primary_statute)
+            if self.primary_statute_type:
+                self.primary_statute_type = self.primary_statute_type.lower()
+
+        # Sync fcra_section from primary_statute for backward compatibility
+        if self.primary_statute and not self.fcra_section:
+            self.fcra_section = self.primary_statute
 
 
 @dataclass

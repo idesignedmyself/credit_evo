@@ -45,8 +45,15 @@ class ViolationResponse(BaseModel):
     description: str
     expected_value: Optional[str]
     actual_value: Optional[str]
-    fcra_section: Optional[str]
-    metro2_field: Optional[str]
+
+    # New unified statute fields
+    primary_statute: Optional[str] = None  # Canonical USC format
+    primary_statute_type: Optional[str] = None  # fcra, fdcpa, ecoa
+    secondary_statutes: Optional[List[str]] = None  # Additional statutes
+
+    # DEPRECATED: Use primary_statute instead (kept for backward compatibility)
+    fcra_section: Optional[str] = None
+    metro2_field: Optional[str] = None
 
 
 class DiscrepancyResponse(BaseModel):

@@ -1388,6 +1388,7 @@ class SingleBureauRules:
             if zombie_risk:
                 description += f"\n\n{zombie_risk['warning']}"
 
+            # Dual-statute citation: FDCPA primary for collectors, FCRA secondary
             violations.append(Violation(
                 violation_type=ViolationType.TIME_BARRED_DEBT_RISK,
                 severity=severity,
@@ -1399,7 +1400,12 @@ class SingleBureauRules:
                 description=description,
                 expected_value=f"SOL expired: Cannot sue after {sol_years} years under {sol_citation}",
                 actual_value=f"{years_since_anchor:.1f} years since {anchor_source}",
-                fcra_section="FDCPA 1692e(5)",
+                # New multi-statute fields
+                primary_statute="15 U.S.C. § 1692e(5)",
+                primary_statute_type="fdcpa",
+                secondary_statutes=["15 U.S.C. § 1681s-2(a)(1)"],  # FCRA 623(a)(1)
+                # Legacy field (deprecated but maintained for compatibility)
+                fcra_section="15 U.S.C. § 1692e(5)",
                 metro2_field="N/A",
                 evidence={
                     "anchor_date": str(anchor_date),
@@ -1634,12 +1640,28 @@ class SingleBureauRules:
         """
         violations = []
 
+        # Get bureau-specific data
+        bureau_data = account.get_bureau_data(bureau)
+
         # 1. Identify Medical Accounts
         # Check Account Type detail or look for keywords in the Creditor Name
         # (Collectors often use names like "Radiology", "Ambulance", "Health", "Med")
         name = (account.creditor_name or "").lower()
-        detail = (account.account_type_detail or "").lower()
-        remarks = " ".join(account.remarks or []).lower()
+
+        # Get account_type_detail from bureau data if available
+        detail = ""
+        if bureau_data:
+            if hasattr(bureau_data, 'account_type_detail') and bureau_data.account_type_detail:
+                detail = bureau_data.account_type_detail.lower()
+
+        # Get remarks from bureau_data (it's a string, not a list)
+        remarks = ""
+        if bureau_data and bureau_data.remarks:
+            remarks = bureau_data.remarks.lower()
+
+        # Get account_type_code from raw_data if available
+        raw_data = account.raw_data or {}
+        account_type_code = raw_data.get('account_type_code', '')
 
         # Medical keywords - hospitals, clinics, and common healthcare providers
         med_keywords = [
@@ -1655,7 +1677,7 @@ class SingleBureauRules:
             any(k in name for k in med_keywords) or
             any(k in detail for k in med_keywords) or
             "medical" in remarks or
-            getattr(account, 'account_type_code', None) == "90"  # Metro 2 code for Medical
+            account_type_code == "90"  # Metro 2 code for Medical
         )
 
         if not is_medical:
@@ -1697,13 +1719,16 @@ class SingleBureauRules:
         status_text = (account.payment_status or "").lower()
         account_status = (account.account_status or "").lower()
 
+        # Get account_status_code from raw_data
+        account_status_code = str(raw_data.get('account_status_code', ''))
+
         # Check for paid/settled indicators
         is_paid = (
             "paid" in status_text or
             "settled" in status_text or
             "paid" in account_status or
             "settled" in account_status or
-            str(getattr(account, 'account_status_code', '')) in ['62', '13'] or  # Metro 2 paid codes
+            account_status_code in ['62', '13'] or  # Metro 2 paid codes
             (balance == 0 and ("collection" in detail or "collection" in name))  # Zero balance collection
         )
 
@@ -1777,7 +1802,9 @@ class SingleBureauRules:
 
         # 1. Check if the account is Closed/Settled
         status_lower = (account.payment_status or "").lower()
-        status_code = str(getattr(account, 'account_status_code', ''))
+        # Get status_code from raw_data if available
+        raw_data = account.raw_data or {}
+        status_code = str(raw_data.get('account_status_code', ''))
 
         # Metro 2 codes: 13 (Paid), 61-65 (Paid Derog variations)
         is_closed_settled = (
@@ -2204,6 +2231,309 @@ class FurnisherRules:
                         "is_sold": is_sold
                     }
                 ))
+
+        return violations
+
+    # =========================================================================
+    # FDCPA DETECTION RULES (Collectors/Debt Buyers Only)
+    # =========================================================================
+
+    @staticmethod
+    def check_collection_balance_inflation(account: Account, bureau: Bureau) -> List[Violation]:
+        """
+        Detect potential balance inflation by debt collectors.
+
+        FDCPA § 1692f(1): Debt collectors cannot collect amounts not authorized
+        by the original agreement or permitted by law (e.g., unauthorized fees,
+        interest, or inflated principal).
+
+        Detection: Balance reported by collector > Original creditor high credit
+        (indicates fees/interest added beyond original debt amount).
+
+        Applies ONLY to: Collectors and debt buyers
+        """
+        violations = []
+
+        # Only applies to collectors
+        if account.furnisher_type not in [FurnisherType.COLLECTOR]:
+            return violations
+
+        bureau_data = account.get_bureau_data(bureau)
+        if not bureau_data:
+            return violations
+
+        # Get current balance and high credit (original debt amount)
+        balance = account.balance or 0
+        high_credit = account.high_credit or account.credit_limit or 0
+
+        # Only flag if we have both values and balance exceeds high credit
+        if high_credit > 0 and balance > high_credit:
+            inflation_amount = balance - high_credit
+            inflation_pct = (inflation_amount / high_credit) * 100
+
+            # Only flag significant inflation (>10%)
+            if inflation_pct > 10:
+                violations.append(Violation(
+                    violation_type=ViolationType.COLLECTION_BALANCE_INFLATION,
+                    severity=Severity.HIGH,
+                    account_id=account.account_id,
+                    creditor_name=account.creditor_name,
+                    account_number_masked=account.account_number_masked,
+                    furnisher_type=account.furnisher_type,
+                    bureau=bureau,
+                    description=(
+                        f"Collection balance (${balance:,.2f}) exceeds original debt amount "
+                        f"(${high_credit:,.2f}) by ${inflation_amount:,.2f} ({inflation_pct:.1f}%). "
+                        f"Under FDCPA § 1692f(1), debt collectors cannot collect amounts not "
+                        f"expressly authorized by the original agreement or permitted by law. "
+                        f"Request itemization of all fees and charges added to original balance."
+                    ),
+                    expected_value=f"Balance ≤ ${high_credit:,.2f} (original debt)",
+                    actual_value=f"${balance:,.2f} ({inflation_pct:.1f}% above original)",
+                    # Multi-statute: FDCPA primary, FCRA secondary
+                    primary_statute="15 U.S.C. § 1692f(1)",
+                    primary_statute_type="fdcpa",
+                    secondary_statutes=["15 U.S.C. § 1681s-2(a)(1)"],
+                    fcra_section="15 U.S.C. § 1692f(1)",  # Legacy field
+                    metro2_field="17A (Current Balance) vs 15A (High Credit)",
+                    evidence={
+                        "balance": balance,
+                        "high_credit": high_credit,
+                        "inflation_amount": round(inflation_amount, 2),
+                        "inflation_pct": round(inflation_pct, 2),
+                        "furnisher_type": account.furnisher_type.value
+                    }
+                ))
+
+        return violations
+
+    @staticmethod
+    def check_false_debt_status(account: Account, bureau: Bureau) -> List[Violation]:
+        """
+        Detect false representation of debt legal status.
+
+        FDCPA § 1692e(2)(A): Prohibits falsely representing the character,
+        amount, or legal status of any debt.
+
+        Detection: Collection showing "open" status for a paid/settled debt,
+        or reporting inaccurate account status that misrepresents debt character.
+
+        Applies ONLY to: Collectors and debt buyers
+        """
+        violations = []
+
+        # Only applies to collectors
+        if account.furnisher_type not in [FurnisherType.COLLECTOR]:
+            return violations
+
+        bureau_data = account.get_bureau_data(bureau)
+        if not bureau_data:
+            return violations
+
+        balance = account.balance or 0
+        payment_status = (account.payment_status or "").lower()
+        account_status = account.account_status
+
+        # Case 1: $0 balance but still showing as "open" or active status
+        # (suggests paid but not updated to reflect settlement)
+        is_zero_balance = balance == 0
+        is_marked_open = account_status in [AccountStatus.OPEN]
+        is_paid_status = any(x in payment_status for x in ["paid", "settled", "satisfied"])
+
+        if is_zero_balance and is_marked_open and not is_paid_status:
+            violations.append(Violation(
+                violation_type=ViolationType.FALSE_DEBT_STATUS,
+                severity=Severity.HIGH,
+                account_id=account.account_id,
+                creditor_name=account.creditor_name,
+                account_number_masked=account.account_number_masked,
+                furnisher_type=account.furnisher_type,
+                bureau=bureau,
+                description=(
+                    f"Collection account shows $0 balance but is marked as '{account_status.value}' "
+                    f"rather than 'Paid' or 'Closed'. Under FDCPA § 1692e(2)(A), collectors cannot "
+                    f"falsely represent the character or legal status of a debt. A $0 balance "
+                    f"should reflect paid/settled status."
+                ),
+                expected_value="Paid/Closed status for $0 balance",
+                actual_value=f"Status: {account_status.value}, Balance: $0",
+                primary_statute="15 U.S.C. § 1692e(2)(A)",
+                primary_statute_type="fdcpa",
+                secondary_statutes=["15 U.S.C. § 1681s-2(a)(1)"],
+                fcra_section="15 U.S.C. § 1692e(2)(A)",
+                metro2_field="05 (Account Status)",
+                evidence={
+                    "balance": balance,
+                    "account_status": account_status.value,
+                    "payment_status": payment_status,
+                    "furnisher_type": account.furnisher_type.value
+                }
+            ))
+
+        return violations
+
+    @staticmethod
+    def check_unverified_debt_reporting(account: Account, bureau: Bureau) -> List[Violation]:
+        """
+        Detect potentially unverified debt reporting.
+
+        FDCPA § 1692e(8): Prohibits communicating or threatening to communicate
+        credit information which is known or should be known to be false.
+
+        Detection: Missing critical verification fields (original creditor,
+        date of first delinquency, original loan date) suggesting unverified debt.
+
+        Applies ONLY to: Collectors and debt buyers
+        """
+        violations = []
+
+        # Only applies to collectors
+        if account.furnisher_type not in [FurnisherType.COLLECTOR]:
+            return violations
+
+        bureau_data = account.get_bureau_data(bureau)
+        if not bureau_data:
+            return violations
+
+        # Track missing verification fields
+        missing_fields = []
+
+        # Check for missing original creditor (chain of title)
+        oc_name = (account.original_creditor or "").strip()
+        if not oc_name:
+            missing_fields.append("Original Creditor (K1 Segment)")
+
+        # Check for missing DOFD (required for collections)
+        if not account.date_of_first_delinquency:
+            missing_fields.append("Date of First Delinquency")
+
+        # Check for missing original loan date
+        if not account.date_opened:
+            missing_fields.append("Original Account Opening Date")
+
+        # Only flag if multiple verification fields are missing
+        if len(missing_fields) >= 2:
+            violations.append(Violation(
+                violation_type=ViolationType.UNVERIFIED_DEBT_REPORTING,
+                severity=Severity.HIGH,
+                account_id=account.account_id,
+                creditor_name=account.creditor_name,
+                account_number_masked=account.account_number_masked,
+                furnisher_type=account.furnisher_type,
+                bureau=bureau,
+                description=(
+                    f"Collection account is missing critical verification data: "
+                    f"{', '.join(missing_fields)}. Under FDCPA § 1692e(8), collectors cannot "
+                    f"report credit information known or which should be known to be false. "
+                    f"Without this data, the debt cannot be properly verified and should not "
+                    f"be reported until validated."
+                ),
+                expected_value="Complete verification data for reported debt",
+                actual_value=f"Missing: {', '.join(missing_fields)}",
+                primary_statute="15 U.S.C. § 1692e(8)",
+                primary_statute_type="fdcpa",
+                secondary_statutes=["15 U.S.C. § 1681s-2(a)(1)"],
+                fcra_section="15 U.S.C. § 1692e(8)",
+                metro2_field="K1 Segment, 17B (DOFD), 06 (Date Opened)",
+                evidence={
+                    "missing_fields": missing_fields,
+                    "original_creditor": oc_name or None,
+                    "dofd": str(account.date_of_first_delinquency) if account.date_of_first_delinquency else None,
+                    "date_opened": str(account.date_opened) if account.date_opened else None,
+                    "furnisher_type": account.furnisher_type.value
+                }
+            ))
+
+        return violations
+
+    @staticmethod
+    def check_duplicate_collection(
+        account: Account,
+        bureau: Bureau,
+        all_accounts: List[Account]
+    ) -> List[Violation]:
+        """
+        Detect duplicate collection reporting (same debt collected twice).
+
+        FDCPA § 1692e(2)(A): Falsely representing character/amount of debt
+        includes reporting the same underlying debt multiple times.
+
+        Detection: Multiple collection accounts with same original creditor
+        and similar balance/dates suggesting duplicate collection.
+
+        Applies ONLY to: Collectors
+        """
+        violations = []
+
+        # Only check collectors
+        if account.furnisher_type not in [FurnisherType.COLLECTOR]:
+            return violations
+
+        bureau_data = account.get_bureau_data(bureau)
+        if not bureau_data:
+            return violations
+
+        # Get this account's identifying info
+        oc_name = (account.original_creditor or "").strip().lower()
+        if not oc_name:
+            return violations  # Can't match without original creditor
+
+        balance = account.balance or 0
+        dofd = account.date_of_first_delinquency
+
+        # Look for other collection accounts with same original creditor
+        duplicates = []
+        for other in all_accounts:
+            if other.account_id == account.account_id:
+                continue
+            if other.furnisher_type != FurnisherType.COLLECTOR:
+                continue
+
+            other_oc = (other.original_creditor or "").strip().lower()
+            if not other_oc or other_oc != oc_name:
+                continue
+
+            # Check if balances are similar (within 20%)
+            other_balance = other.balance or 0
+            if balance > 0 and other_balance > 0:
+                balance_diff = abs(balance - other_balance) / max(balance, other_balance)
+                if balance_diff <= 0.20:  # Within 20%
+                    duplicates.append({
+                        "collector": other.creditor_name,
+                        "balance": other_balance,
+                        "account_id": other.account_id
+                    })
+
+        if duplicates:
+            violations.append(Violation(
+                violation_type=ViolationType.DUPLICATE_COLLECTION,
+                severity=Severity.CRITICAL,
+                account_id=account.account_id,
+                creditor_name=account.creditor_name,
+                account_number_masked=account.account_number_masked,
+                furnisher_type=account.furnisher_type,
+                bureau=bureau,
+                description=(
+                    f"Multiple collection accounts from different collectors for the same "
+                    f"original debt ({oc_name.upper()}). Under FDCPA § 1692e(2)(A), reporting "
+                    f"the same debt through multiple collectors falsely inflates the "
+                    f"consumer's apparent liability and violates fair representation requirements. "
+                    f"Only ONE collector should report this debt."
+                ),
+                expected_value="One collection account per original debt",
+                actual_value=f"{len(duplicates) + 1} collectors reporting same debt",
+                primary_statute="15 U.S.C. § 1692e(2)(A)",
+                primary_statute_type="fdcpa",
+                secondary_statutes=["15 U.S.C. § 1681e(b)"],  # Bureau accuracy
+                fcra_section="15 U.S.C. § 1692e(2)(A)",
+                metro2_field="K1 Segment (Original Creditor)",
+                evidence={
+                    "original_creditor": oc_name,
+                    "this_balance": balance,
+                    "duplicate_collectors": duplicates,
+                    "total_collectors": len(duplicates) + 1
+                }
+            ))
 
         return violations
 
@@ -2894,32 +3224,153 @@ class InquiryRules:
         return violations
 
     @staticmethod
+    def _stack_inquiry_violations(violations: List[Violation]) -> List[Violation]:
+        """
+        Stack related inquiry violations by creditor + bureau + date.
+
+        When one creditor action violates multiple statutory duties simultaneously,
+        they must be GROUPED, not disputed separately.
+
+        Priority (primary statute):
+        1. COLLECTION_FISHING_INQUIRY (unauthorized - strongest claim)
+        2. INQUIRY_MISCLASSIFICATION (soft pull coded as hard)
+        3. DUPLICATE_INQUIRY (technical/procedural)
+
+        Returns:
+            List of stacked violations (one per creditor+bureau+date group)
+        """
+        if not violations:
+            return []
+
+        # Group violations by normalized creditor + bureau + date
+        groups: Dict[tuple, List[Violation]] = {}
+
+        for v in violations:
+            norm_name = InquiryRules._normalize_creditor_name(v.creditor_name or "")
+            bureau_val = v.bureau.value if v.bureau else "unknown"
+
+            # Extract date from evidence
+            ev = v.evidence or {}
+            date_str = ev.get("inquiry_date") or ev.get("first_inquiry_date") or ""
+
+            key = (norm_name, bureau_val, date_str)
+            if key not in groups:
+                groups[key] = []
+            groups[key].append(v)
+
+        # Stack each group into one violation
+        stacked = []
+
+        for (norm_name, bureau_val, date_str), group in groups.items():
+            if len(group) == 1:
+                # Single violation - no stacking needed
+                stacked.append(group[0])
+                continue
+
+            # Priority order for primary statute
+            priority_order = [
+                ViolationType.COLLECTION_FISHING_INQUIRY,
+                ViolationType.INQUIRY_MISCLASSIFICATION,
+                ViolationType.DUPLICATE_INQUIRY,
+            ]
+
+            # Sort by priority
+            group.sort(key=lambda v: (
+                priority_order.index(v.violation_type)
+                if v.violation_type in priority_order
+                else len(priority_order)
+            ))
+
+            primary = group[0]
+            secondary_violations = group[1:]
+
+            # Build merged evidence
+            merged_evidence = dict(primary.evidence or {})
+            merged_evidence["stacked_violation"] = True
+            merged_evidence["violation_count"] = len(group)
+            merged_evidence["secondary_violations"] = [
+                {
+                    "type": v.violation_type.value,
+                    "fcra_section": v.fcra_section,
+                    "description": v.description
+                }
+                for v in secondary_violations
+            ]
+
+            # Build secondary statutes list
+            secondary_statutes = []
+            for v in secondary_violations:
+                if v.fcra_section and v.fcra_section != primary.fcra_section:
+                    # Normalize to canonical format
+                    section = v.fcra_section
+                    if not section.startswith("15 U.S.C."):
+                        section = f"15 U.S.C. § {section}"
+                    secondary_statutes.append(section)
+
+            # Build stacked description
+            stacked_desc = (
+                f"{primary.description}\n\n"
+                f"SUPPORTING EVIDENCE - This creditor also triggered {len(secondary_violations)} "
+                f"additional violation(s) on the same date:\n"
+            )
+            for sv in secondary_violations:
+                stacked_desc += f"• {sv.violation_type.value.replace('_', ' ').title()}: {sv.description[:200]}...\n"
+
+            # Create the stacked violation
+            stacked.append(Violation(
+                violation_type=primary.violation_type,
+                severity=Severity.HIGH,  # Stacked violations are high severity
+                account_id=primary.account_id,
+                creditor_name=primary.creditor_name,
+                bureau=primary.bureau,
+                description=stacked_desc,
+                expected_value=primary.expected_value,
+                actual_value=f"{primary.actual_value} + {len(secondary_violations)} secondary violation(s)",
+                fcra_section=primary.fcra_section,
+                primary_statute=f"15 U.S.C. § {primary.fcra_section}" if primary.fcra_section else None,
+                primary_statute_type="fcra",
+                secondary_statutes=secondary_statutes if secondary_statutes else None,
+                metro2_field=primary.metro2_field,
+                evidence=merged_evidence
+            ))
+
+        return stacked
+
+    @staticmethod
     def audit_inquiries(
         inquiries: List[Inquiry],
         accounts: List[Account]
     ) -> List[Violation]:
         """
-        Run all inquiry audits and return combined violations.
+        Run all inquiry audits and return combined, STACKED violations.
+
+        Implements violation stacking logic per compliance engine requirements:
+        - One creditor action may violate multiple statutory duties simultaneously
+        - These must be GROUPED, not disputed separately
+        - Primary statute: unauthorized inquiry (fishing) when no permissible purpose
+        - Secondary statutes: duplicate inquiry / reporting integrity as supporting evidence
 
         Args:
             inquiries: List of parsed credit inquiries
             accounts: List of parsed accounts (for fishing expedition check)
 
         Returns:
-            Combined list of all inquiry-related violations
+            Combined and stacked list of all inquiry-related violations
         """
-        violations = []
+        raw_violations = []
 
         # Check for soft-pull industries doing hard pulls
-        violations.extend(InquiryRules.check_inquiry_misclassification(inquiries))
+        raw_violations.extend(InquiryRules.check_inquiry_misclassification(inquiries))
 
         # Check for collection fishing expeditions
-        violations.extend(InquiryRules.check_collection_fishing_inquiry(inquiries, accounts))
+        raw_violations.extend(InquiryRules.check_collection_fishing_inquiry(inquiries, accounts))
 
         # Check for duplicate inquiries
-        violations.extend(InquiryRules.check_duplicate_inquiries(inquiries))
+        raw_violations.extend(InquiryRules.check_duplicate_inquiries(inquiries))
 
-        return violations
+        # Stack related violations by creditor + bureau + date
+        # This ensures ONE dispute per creditor conduct, not per appearance
+        return InquiryRules._stack_inquiry_violations(raw_violations)
 
 
 # =============================================================================
