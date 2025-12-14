@@ -49,8 +49,8 @@ const getBureauValue = (account, bureau, field) => {
   return bureauData[field];
 };
 
-const AccountAccordion = React.memo(({ account }) => {
-  const [expanded, setExpanded] = React.useState(false);
+const AccountAccordion = React.memo(({ account, embedded = false }) => {
+  const [expanded, setExpanded] = React.useState(embedded);
 
   const rows = [
     { label: 'Account #:', field: 'account_number_masked', isAccountLevel: true },
@@ -83,12 +83,10 @@ const AccountAccordion = React.memo(({ account }) => {
     return raw;
   };
 
-  // Get payment history for a bureau
   const getPaymentHistory = (bureau) => {
     return account.bureaus?.[bureau]?.payment_history || [];
   };
 
-  // Build unified payment history timeline
   const buildPaymentTimeline = () => {
     const allMonths = new Set();
     BUREAUS.forEach(bureau => {
@@ -99,7 +97,6 @@ const AccountAccordion = React.memo(({ account }) => {
       });
     });
 
-    // Sort by year and month
     const monthOrder = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const sorted = Array.from(allMonths).sort((a, b) => {
       const [monthA, yearA] = a.split('-');
@@ -108,7 +105,7 @@ const AccountAccordion = React.memo(({ account }) => {
       return monthOrder.indexOf(monthB) - monthOrder.indexOf(monthA);
     });
 
-    return sorted.slice(0, 24); // Last 24 months
+    return sorted.slice(0, 24);
   };
 
   const paymentTimeline = buildPaymentTimeline();
@@ -130,7 +127,6 @@ const AccountAccordion = React.memo(({ account }) => {
     return '#9E9E9E';
   };
 
-  // Get account type from any bureau
   const getAccountType = () => {
     for (const bureau of BUREAUS) {
       const type = account.bureaus?.[bureau]?.account_type;
@@ -141,6 +137,110 @@ const AccountAccordion = React.memo(({ account }) => {
 
   const accountType = getAccountType();
 
+  // Content section (bureau table + payment history)
+  const contentSection = (
+    <Box>
+      <TableContainer>
+        <Table size="small" sx={{ tableLayout: 'fixed' }}>
+          <TableHead>
+            <TableRow>
+              <TableCell sx={{ width: '25%', fontWeight: 'bold', backgroundColor: 'grey.50' }} />
+              {BUREAUS.map(bureau => (
+                <TableCell
+                  key={bureau}
+                  align="center"
+                  sx={{
+                    width: '25%',
+                    fontWeight: 'bold',
+                    color: 'white',
+                    backgroundColor: BUREAU_COLORS[bureau],
+                    textTransform: 'capitalize',
+                  }}
+                >
+                  {bureau.charAt(0).toUpperCase() + bureau.slice(1)}
+                </TableCell>
+              ))}
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {rows.map((row, idx) => (
+              <TableRow key={row.field} sx={{ backgroundColor: idx % 2 === 0 ? 'white' : 'grey.50' }}>
+                <TableCell sx={{ fontWeight: 'medium', fontSize: '0.85rem' }}>
+                  {row.label}
+                </TableCell>
+                {BUREAUS.map(bureau => (
+                  <TableCell key={bureau} align="center" sx={{ fontSize: '0.85rem' }}>
+                    {getValue(bureau, row)}
+                  </TableCell>
+                ))}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </TableContainer>
+
+      {paymentTimeline.length > 0 && (
+        <Box sx={{ p: 2, borderTop: '1px solid', borderColor: 'grey.200' }}>
+          <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>
+            Two-Year Payment History
+          </Typography>
+          <Box sx={{ overflowX: 'auto' }}>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell sx={{ minWidth: 80, fontSize: '0.75rem' }}>Month</TableCell>
+                  {paymentTimeline.map(monthKey => {
+                    const [month, year] = monthKey.split('-');
+                    return (
+                      <TableCell key={monthKey} align="center" sx={{ minWidth: 40, p: 0.5, fontSize: '0.7rem' }}>
+                        {month}
+                        <br />
+                        {year?.slice(-2)}
+                      </TableCell>
+                    );
+                  })}
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {BUREAUS.map(bureau => (
+                  <TableRow key={bureau}>
+                    <TableCell sx={{ fontSize: '0.75rem', textTransform: 'capitalize' }}>
+                      {bureau}
+                    </TableCell>
+                    {paymentTimeline.map(monthKey => {
+                      const status = getStatusForMonth(bureau, monthKey);
+                      return (
+                        <TableCell
+                          key={monthKey}
+                          align="center"
+                          sx={{
+                            p: 0.5,
+                            fontSize: '0.65rem',
+                            backgroundColor: getStatusColor(status),
+                            color: status && getStatusColor(status) !== 'transparent' ? 'white' : 'inherit',
+                            fontWeight: 'bold',
+                          }}
+                        >
+                          {status || ''}
+                        </TableCell>
+                      );
+                    })}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Box>
+        </Box>
+      )}
+    </Box>
+  );
+
+  // Embedded mode: just return content directly
+  if (embedded) {
+    return contentSection;
+  }
+
+  // Standalone mode: full Paper with header
   return (
     <Paper
       sx={{
@@ -170,7 +270,6 @@ const AccountAccordion = React.memo(({ account }) => {
               />
             )}
           </Box>
-
           <Typography variant="body2" color="text.secondary">
             {account.account_number_masked || 'Account'}
           </Typography>
@@ -190,100 +289,7 @@ const AccountAccordion = React.memo(({ account }) => {
 
       <Collapse in={expanded}>
         <Box sx={{ mt: 2, pl: 1, borderLeft: '3px solid', borderColor: 'grey.300' }}>
-          {/* Bureau Headers */}
-          <TableContainer>
-            <Table size="small" sx={{ tableLayout: 'fixed' }}>
-              <TableHead>
-                <TableRow>
-                  <TableCell sx={{ width: '25%', fontWeight: 'bold', backgroundColor: 'grey.50' }} />
-                  {BUREAUS.map(bureau => (
-                    <TableCell
-                      key={bureau}
-                      align="center"
-                      sx={{
-                        width: '25%',
-                        fontWeight: 'bold',
-                        color: 'white',
-                        backgroundColor: BUREAU_COLORS[bureau],
-                        textTransform: 'capitalize',
-                      }}
-                    >
-                      {bureau.charAt(0).toUpperCase() + bureau.slice(1)}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {rows.map((row, idx) => (
-                  <TableRow key={row.field} sx={{ backgroundColor: idx % 2 === 0 ? 'white' : 'grey.50' }}>
-                    <TableCell sx={{ fontWeight: 'medium', fontSize: '0.85rem' }}>
-                      {row.label}
-                    </TableCell>
-                    {BUREAUS.map(bureau => (
-                      <TableCell key={bureau} align="center" sx={{ fontSize: '0.85rem' }}>
-                        {getValue(bureau, row)}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
-
-          {/* Payment History */}
-          {paymentTimeline.length > 0 && (
-            <Box sx={{ p: 2, borderTop: '1px solid', borderColor: 'grey.200' }}>
-              <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>
-                Two-Year Payment History
-              </Typography>
-              <Box sx={{ overflowX: 'auto' }}>
-                <Table size="small">
-                  <TableHead>
-                    <TableRow>
-                      <TableCell sx={{ minWidth: 80, fontSize: '0.75rem' }}>Month</TableCell>
-                      {paymentTimeline.map(monthKey => {
-                        const [month, year] = monthKey.split('-');
-                        return (
-                          <TableCell key={monthKey} align="center" sx={{ minWidth: 40, p: 0.5, fontSize: '0.7rem' }}>
-                            {month}
-                            <br />
-                            {year?.slice(-2)}
-                          </TableCell>
-                        );
-                      })}
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {BUREAUS.map(bureau => (
-                      <TableRow key={bureau}>
-                        <TableCell sx={{ fontSize: '0.75rem', textTransform: 'capitalize' }}>
-                          {bureau}
-                        </TableCell>
-                        {paymentTimeline.map(monthKey => {
-                          const status = getStatusForMonth(bureau, monthKey);
-                          return (
-                            <TableCell
-                              key={monthKey}
-                              align="center"
-                              sx={{
-                                p: 0.5,
-                                fontSize: '0.65rem',
-                                backgroundColor: getStatusColor(status),
-                                color: status && getStatusColor(status) !== 'transparent' ? 'white' : 'inherit',
-                                fontWeight: 'bold',
-                              }}
-                            >
-                              {status || ''}
-                            </TableCell>
-                          );
-                        })}
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </Box>
-            </Box>
-          )}
+          {contentSection}
         </Box>
       </Collapse>
     </Paper>

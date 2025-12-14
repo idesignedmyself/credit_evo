@@ -1,6 +1,6 @@
 /**
  * Credit Engine 2.0 - Violation List Component (Clean SPA Version)
- * Instant tab switching with live filtering engine
+ * Unified table layout with integrated tabs
  */
 
 import React, { useState, useMemo } from 'react';
@@ -10,9 +10,19 @@ import {
   Paper,
   Tabs,
   Tab,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Collapse,
+  IconButton,
   CircularProgress,
   Alert
 } from '@mui/material';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 
 import {
   useViolationStore,
@@ -32,8 +42,46 @@ import AccountAccordion from './AccountAccordion';
 import FilterToolbar from './FilterToolbar';
 import VirtualizedViolationList from './VirtualizedViolationList';
 
+/**
+ * Collapsible row for Cross-Bureau and Accounts tabs
+ */
+const CollapsibleTableRow = ({ label, count, isExpanded, onToggle, children }) => (
+  <>
+    <TableRow
+      onClick={onToggle}
+      sx={{
+        cursor: 'pointer',
+        bgcolor: isExpanded ? '#f8fafc' : 'transparent',
+        '&:hover': { bgcolor: '#f1f5f9' },
+      }}
+    >
+      <TableCell sx={{ py: 2, fontWeight: 600, borderBottom: '1px solid', borderColor: 'divider' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <IconButton size="small" sx={{ p: 0 }}>
+            {isExpanded ? <ExpandMoreIcon fontSize="small" /> : <ChevronRightIcon fontSize="small" />}
+          </IconButton>
+          {label}
+        </Box>
+      </TableCell>
+      <TableCell align="right" sx={{ py: 2, fontWeight: 500, color: 'text.secondary', width: 80, borderBottom: '1px solid', borderColor: 'divider' }}>
+        {count}
+      </TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell colSpan={2} sx={{ p: 0, border: 'none' }}>
+        <Collapse in={isExpanded} timeout="auto" unmountOnExit>
+          <Box sx={{ pl: 4, pr: 2, py: 2, bgcolor: '#fafafa' }}>
+            {children}
+          </Box>
+        </Collapse>
+      </TableCell>
+    </TableRow>
+  </>
+);
+
 const ViolationList = ({ hideFilters = false, hideHeader = false }) => {
   const [groupBy, setGroupBy] = useState("type");
+  const [expandedItems, setExpandedItems] = useState({});
 
   const {
     violations,
@@ -62,17 +110,49 @@ const ViolationList = ({ hideFilters = false, hideHeader = false }) => {
   } = useCreditFilter(violations);
 
   // PRE-COMPUTE GROUPINGS ONCE (using filtered data)
-  const groupedByType = useMemo(() => {
-    return groupViolationsByType(filteredData);
-  }, [filteredData]);
+  const groupedByType = useMemo(() => groupViolationsByType(filteredData), [filteredData]);
+  const groupedByAccount = useMemo(() => groupViolationsByAccount(filteredData), [filteredData]);
+  const groupedByBureau = useMemo(() => groupViolationsByBureau(filteredData), [filteredData]);
 
-  const groupedByAccount = useMemo(() => {
-    return groupViolationsByAccount(filteredData);
-  }, [filteredData]);
+  // Group discrepancies by account
+  const groupedDiscrepancies = useMemo(() => {
+    if (!discrepancies?.length) return {};
+    return discrepancies.reduce((acc, d) => {
+      const key = d.creditor_name || 'Unknown';
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(d);
+      return acc;
+    }, {});
+  }, [discrepancies]);
 
-  const groupedByBureau = useMemo(() => {
-    return groupViolationsByBureau(filteredData);
-  }, [filteredData]);
+  // Group accounts by first letter or type
+  const groupedAccounts = useMemo(() => {
+    if (!accounts?.length) return {};
+    return accounts.reduce((acc, a) => {
+      const key = a.creditor_name?.[0]?.toUpperCase() || '#';
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(a);
+      return acc;
+    }, {});
+  }, [accounts]);
+
+  const toggleExpanded = (key) => {
+    setExpandedItems(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  // Get column headers based on current tab
+  const getColumnHeaders = () => {
+    switch (groupBy) {
+      case 'crossbureau':
+        return { col1: 'Account', col2: 'Issues' };
+      case 'accounts':
+        return { col1: 'Account', col2: 'Count' };
+      default:
+        return { col1: 'Violation Type', col2: 'Count' };
+    }
+  };
+
+  const headers = getColumnHeaders();
 
   if (isLoading) {
     return (
@@ -121,128 +201,142 @@ const ViolationList = ({ hideFilters = false, hideHeader = false }) => {
         </Typography>
       )}
 
-      {/* TABS */}
-      <Box sx={{ mb: 2 }}>
-        <Tabs
-          value={groupBy}
-          onChange={(e, v) => setGroupBy(v)}
-          sx={{
-            '& .MuiTab-root': {
-              fontWeight: 'bold',
-            },
-          }}
-        >
-          <Tab value="type" label="Group by Type" />
-          <Tab value="account" label="Group by Account" />
-          <Tab value="bureau" label="Group by Bureau" />
-          <Tab value="crossbureau" label={`Cross-Bureau (${discrepancies?.length || 0})`} />
-          <Tab value="accounts" label={`Accounts (${accounts.length})`} />
-        </Tabs>
-      </Box>
+      {/* UNIFIED TABLE CONTAINER */}
+      <TableContainer
+        component={Paper}
+        elevation={0}
+        sx={{
+          border: '1px solid',
+          borderColor: 'divider',
+          borderRadius: 3,
+          overflow: 'hidden',
+        }}
+      >
+        {/* TABS IN HEADER */}
+        <Box sx={{ bgcolor: '#f9fafb', borderBottom: '1px solid', borderColor: 'divider' }}>
+          <Tabs
+            value={groupBy}
+            onChange={(e, v) => setGroupBy(v)}
+            sx={{
+              minHeight: 48,
+              '& .MuiTab-root': {
+                fontWeight: 600,
+                minHeight: 48,
+                textTransform: 'none',
+              },
+            }}
+          >
+            <Tab value="type" label="Group by Type" />
+            <Tab value="account" label="Group by Account" />
+            <Tab value="bureau" label="Group by Bureau" />
+            <Tab value="crossbureau" label={`Cross-Bureau (${discrepancies?.length || 0})`} />
+            <Tab value="accounts" label={`Accounts (${accounts.length})`} />
+          </Tabs>
+        </Box>
 
-      {/* ------- TAB PANELS (conditional render for AutoSizer compatibility) ------- */}
+        {/* COLUMN HEADERS */}
+        <Table>
+          <TableHead sx={{ bgcolor: '#f9fafb' }}>
+            <TableRow>
+              <TableCell sx={{ fontWeight: 'bold', py: 1.5 }}>{headers.col1}</TableCell>
+              <TableCell align="right" sx={{ fontWeight: 'bold', py: 1.5, width: 80 }}>{headers.col2}</TableCell>
+            </TableRow>
+          </TableHead>
+        </Table>
 
-      {/* TYPE TAB */}
-      {groupBy === "type" && (
-        <VirtualizedViolationList
-          violations={filteredData}
-          selectedViolationIds={selectedViolationIds}
-          toggleViolation={toggleViolation}
-          groupedData={groupedByType}
-        />
-      )}
+        {/* TAB CONTENT */}
+        {groupBy === "type" && (
+          <VirtualizedViolationList
+            violations={filteredData}
+            selectedViolationIds={selectedViolationIds}
+            toggleViolation={toggleViolation}
+            groupedData={groupedByType}
+          />
+        )}
 
-      {/* ACCOUNT TAB */}
-      {groupBy === "account" && (
-        <VirtualizedViolationList
-          violations={filteredData}
-          selectedViolationIds={selectedViolationIds}
-          toggleViolation={toggleViolation}
-          groupedData={groupedByAccount}
-        />
-      )}
+        {groupBy === "account" && (
+          <VirtualizedViolationList
+            violations={filteredData}
+            selectedViolationIds={selectedViolationIds}
+            toggleViolation={toggleViolation}
+            groupedData={groupedByAccount}
+          />
+        )}
 
-      {/* BUREAU TAB */}
-      {groupBy === "bureau" && (
-        <VirtualizedViolationList
-          violations={filteredData}
-          selectedViolationIds={selectedViolationIds}
-          toggleViolation={toggleViolation}
-          groupedData={groupedByBureau}
-        />
-      )}
+        {groupBy === "bureau" && (
+          <VirtualizedViolationList
+            violations={filteredData}
+            selectedViolationIds={selectedViolationIds}
+            toggleViolation={toggleViolation}
+            groupedData={groupedByBureau}
+          />
+        )}
 
-      {/* CROSS-BUREAU TAB */}
-      {groupBy === "crossbureau" && (
-        <>
-          {(!discrepancies || discrepancies.length === 0) ? (
-            <Paper sx={{ p: 3, textAlign: 'center' }}>
-              <Typography variant="body1" color="text.secondary">
-                No cross-bureau discrepancies found. This means the same accounts are being reported consistently across all bureaus.
-              </Typography>
-            </Paper>
-          ) : (
-            <Box sx={{ mb: 3 }}>
-              <Typography
-                variant="subtitle1"
-                sx={{
-                  fontWeight: 'bold',
-                  mb: 1,
-                  pb: 1,
-                  borderBottom: '2px solid',
-                  borderColor: 'primary.main',
-                }}
-              >
-                Cross-Bureau Discrepancies ({discrepancies.length})
-              </Typography>
+        {/* CROSS-BUREAU TAB */}
+        {groupBy === "crossbureau" && (
+          <>
+            {(!discrepancies || discrepancies.length === 0) ? (
+              <Box sx={{ p: 4, textAlign: 'center' }}>
+                <Typography variant="body1" color="text.secondary">
+                  No cross-bureau discrepancies found. Accounts are reported consistently across all bureaus.
+                </Typography>
+              </Box>
+            ) : (
+              <Table>
+                <TableBody>
+                  {Object.entries(groupedDiscrepancies).map(([creditor, items]) => (
+                    <CollapsibleTableRow
+                      key={creditor}
+                      label={creditor}
+                      count={items.length}
+                      isExpanded={expandedItems[`disc-${creditor}`]}
+                      onToggle={() => toggleExpanded(`disc-${creditor}`)}
+                    >
+                      {items.map((discrepancy, index) => (
+                        <DiscrepancyToggle
+                          key={discrepancy.discrepancy_id || index}
+                          discrepancy={discrepancy}
+                          isSelected={selectedDiscrepancyIds.includes(discrepancy.discrepancy_id)}
+                          onToggle={toggleDiscrepancy}
+                        />
+                      ))}
+                    </CollapsibleTableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </>
+        )}
 
-              {discrepancies.map((discrepancy, index) => (
-                <DiscrepancyToggle
-                  key={discrepancy.discrepancy_id || index}
-                  discrepancy={discrepancy}
-                  isSelected={selectedDiscrepancyIds.includes(discrepancy.discrepancy_id)}
-                  onToggle={toggleDiscrepancy}
-                />
-              ))}
-            </Box>
-          )}
-        </>
-      )}
-
-      {/* ACCOUNTS TAB */}
-      {groupBy === "accounts" && (
-        <>
-          {accounts.length === 0 ? (
-            <Paper sx={{ p: 3, textAlign: 'center' }}>
-              <Typography variant="body1" color="text.secondary">
-                No accounts found in this report.
-              </Typography>
-            </Paper>
-          ) : (
-            <Box sx={{ mb: 3 }}>
-              <Typography
-                variant="subtitle1"
-                sx={{
-                  fontWeight: 'bold',
-                  mb: 1,
-                  pb: 1,
-                  borderBottom: '2px solid',
-                  borderColor: 'primary.main',
-                }}
-              >
-                All Accounts ({accounts.length})
-              </Typography>
-
-              {accounts.map((account, index) => (
-                <AccountAccordion
-                  key={account.account_id || index}
-                  account={account}
-                />
-              ))}
-            </Box>
-          )}
-        </>
-      )}
+        {/* ACCOUNTS TAB */}
+        {groupBy === "accounts" && (
+          <>
+            {accounts.length === 0 ? (
+              <Box sx={{ p: 4, textAlign: 'center' }}>
+                <Typography variant="body1" color="text.secondary">
+                  No accounts found in this report.
+                </Typography>
+              </Box>
+            ) : (
+              <Table>
+                <TableBody>
+                  {accounts.map((account, index) => (
+                    <CollapsibleTableRow
+                      key={account.account_id || index}
+                      label={account.creditor_name || 'Unknown Account'}
+                      count={account.bureaus ? Object.keys(account.bureaus).length : 1}
+                      isExpanded={expandedItems[`acc-${account.account_id}`]}
+                      onToggle={() => toggleExpanded(`acc-${account.account_id}`)}
+                    >
+                      <AccountAccordion account={account} embedded />
+                    </CollapsibleTableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </>
+        )}
+      </TableContainer>
     </Box>
   );
 };
