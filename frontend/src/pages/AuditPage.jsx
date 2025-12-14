@@ -154,7 +154,7 @@ const AuditPage = () => {
       )}
 
       {/* LEVEL 4: Violations List */}
-      <ViolationList hideFilters />
+      <ViolationList hideFilters hideHeader />
     </Box>
   );
 };
