@@ -12,7 +12,11 @@ import {
   Button,
   Alert,
   Link,
+  InputAdornment,
+  IconButton,
 } from '@mui/material';
+import Visibility from '@mui/icons-material/Visibility';
+import VisibilityOff from '@mui/icons-material/VisibilityOff';
 import useAuthStore from '../state/authStore';
 import { register, login, getMe } from '../api/authApi';
 
@@ -24,6 +28,8 @@ function RegisterPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e) => {
@@ -130,7 +136,7 @@ function RegisterPage() {
             <TextField
               id="password"
               name="password"
-              type="password"
+              type={showPassword ? 'text' : 'password'}
               label="Password"
               autoComplete="new-password"
               required
@@ -138,11 +144,24 @@ function RegisterPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               sx={{ mb: 2 }}
+              InputProps={{
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton
+                      onClick={() => setShowPassword(!showPassword)}
+                      edge="end"
+                      size="small"
+                    >
+                      {showPassword ? <VisibilityOff /> : <Visibility />}
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              }}
             />
             <TextField
               id="confirm-password"
               name="confirm-password"
-              type="password"
+              type={showConfirmPassword ? 'text' : 'password'}
               label="Confirm password"
               autoComplete="new-password"
               required
@@ -150,6 +169,19 @@ function RegisterPage() {
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               sx={{ mb: 3 }}
+              InputProps={{
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      edge="end"
+                      size="small"
+                    >
+                      {showConfirmPassword ? <VisibilityOff /> : <Visibility />}
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              }}
             />
             <Button
               type="submit"
