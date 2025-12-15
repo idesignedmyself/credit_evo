@@ -24,24 +24,24 @@ function getProgressValue(score) {
   return Math.round(((score - min) / (max - min)) * 100);
 }
 
-// Get score status text
-function getScoreStatus(score) {
-  if (!score || score === 0) return 'No Score';
-  if (score >= 750) return 'Excellent';
-  if (score >= 700) return 'Good';
-  if (score >= 650) return 'Fair';
-  if (score >= 600) return 'Poor';
-  return 'Very Poor';
+// Get lender tier based on score
+function getLenderTier(score) {
+  if (!score || score === 0) return { tier: null, name: 'No Score' };
+  if (score >= 720) return { tier: 1, name: 'Prime / Super Prime' };
+  if (score >= 680) return { tier: 2, name: 'Prime / Near-Prime' };
+  if (score >= 630) return { tier: 3, name: 'Subprime Tier 3' };
+  if (score >= 550) return { tier: 4, name: 'Subprime Tier 4' };
+  return { tier: 5, name: 'Deep Subprime' };
 }
 
 // Get points to next tier
 function getPointsToNextTier(score) {
   if (!score || score === 0) return null;
-  if (score >= 750) return { points: 0, tier: 'Excellent', reached: true };
-  if (score >= 700) return { points: 750 - score, tier: 'Excellent', reached: false };
-  if (score >= 650) return { points: 700 - score, tier: 'Good', reached: false };
-  if (score >= 600) return { points: 650 - score, tier: 'Fair', reached: false };
-  return { points: 600 - score, tier: 'Poor', reached: false };
+  if (score >= 720) return { points: 0, tier: 'Prime', reached: true };
+  if (score >= 680) return { points: 720 - score, tier: 'Prime', reached: false };
+  if (score >= 630) return { points: 680 - score, tier: 'Near-Prime', reached: false };
+  if (score >= 550) return { points: 630 - score, tier: 'Tier 3', reached: false };
+  return { points: 550 - score, tier: 'Tier 4', reached: false };
 }
 
 export default function ScoreDashboard({ scores = {} }) {
@@ -149,11 +149,11 @@ export default function ScoreDashboard({ scores = {} }) {
                   {/* Bottom Stats Row */}
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
                     <Box>
-                      <Typography variant="h6" sx={{ fontWeight: 'bold', color: '#1a1a1a', textTransform: 'uppercase', fontSize: '0.875rem' }}>
-                        {getScoreStatus(bureau.score)}
+                      <Typography variant="body1" sx={{ fontWeight: 'bold', color: '#1a1a1a' }}>
+                        {getLenderTier(bureau.score).name}
                       </Typography>
-                      <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                        VantageScore 3.0
+                      <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.75rem' }}>
+                        Estimated Lender Tier
                       </Typography>
                     </Box>
                     <Box sx={{ textAlign: 'right' }}>

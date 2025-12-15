@@ -880,6 +880,27 @@ Applied to:
 - `ChevronRightIcon` - collapsed state
 - `ExpandMoreIcon` - expanded state
 
+### Score Card Lender Tiers
+
+Score cards display "Estimated Lender Tier" based on credit score ranges:
+
+| Tier | Name | Score Range |
+|------|------|-------------|
+| 1 | Prime / Super Prime | 720+ |
+| 2 | Prime / Near-Prime | 680-719 |
+| 3 | Subprime Tier 3 | 630-679 |
+| 4 | Subprime Tier 4 | 550-629 |
+| 5 | Deep Subprime | <550 |
+
+**Implementation:** `ScoreDashboard.jsx` - `getLenderTier()` function (lines 27-35)
+
+**Goal Progress** shows points needed to reach next tier:
+- From Deep Subprime: X pts to Tier 4
+- From Tier 4: X pts to Tier 3
+- From Tier 3: X pts to Near-Prime
+- From Near-Prime: X pts to Prime
+- At Prime: "Top Tier!"
+
 ### Violation List Tabs Header
 
 The violation list uses a unified tabs header with count label:
