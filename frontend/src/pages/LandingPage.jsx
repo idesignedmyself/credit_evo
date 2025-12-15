@@ -39,35 +39,33 @@ const Navbar = () => (
       bgcolor: 'transparent',
     }}
   >
-    <Container maxWidth="lg">
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 2.5 }}>
-        <Link
-          href="#"
-          onClick={(e) => {
-            e.preventDefault();
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-          }}
-          underline="none"
-          sx={{ display: 'flex', alignItems: 'center', gap: 1.5, cursor: 'pointer' }}
-        >
-          <DescriptionIcon sx={{ color: '#60A5FA', fontSize: 28 }} />
-          <Typography variant="h6" fontWeight="bold" sx={{ color: 'white' }}>
-            Credit Copilot
-          </Typography>
+    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 2.5, px: { xs: 3, md: 6 } }}>
+      <Link
+        href="#"
+        onClick={(e) => {
+          e.preventDefault();
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+        underline="none"
+        sx={{ display: 'flex', alignItems: 'center', gap: 1.5, cursor: 'pointer' }}
+      >
+        <DescriptionIcon sx={{ color: '#60A5FA', fontSize: 28 }} />
+        <Typography variant="h6" fontWeight="bold" sx={{ color: 'white' }}>
+          Credit Copilot
+        </Typography>
+      </Link>
+      <Stack direction="row" spacing={5} sx={{ display: { xs: 'none', md: 'flex' } }}>
+        <Link href="#features" underline="none" sx={{ color: '#94A3B8', fontWeight: 500, '&:hover': { color: 'white' } }}>
+          Features
         </Link>
-        <Stack direction="row" spacing={4} sx={{ display: { xs: 'none', md: 'flex' } }}>
-          <Link href="#features" underline="none" sx={{ color: '#94A3B8', fontWeight: 500, '&:hover': { color: 'white' } }}>
-            Features
-          </Link>
-          <Link href="#pricing" underline="none" sx={{ color: '#94A3B8', fontWeight: 500, '&:hover': { color: 'white' } }}>
-            Pricing
-          </Link>
-          <Link href="#about" underline="none" sx={{ color: '#94A3B8', fontWeight: 500, '&:hover': { color: 'white' } }}>
-            About
-          </Link>
-        </Stack>
-      </Box>
-    </Container>
+        <Link href="#pricing" underline="none" sx={{ color: '#94A3B8', fontWeight: 500, '&:hover': { color: 'white' } }}>
+          Pricing
+        </Link>
+        <Link href="#about" underline="none" sx={{ color: '#94A3B8', fontWeight: 500, '&:hover': { color: 'white' } }}>
+          About
+        </Link>
+      </Stack>
+    </Box>
   </Box>
 );
 

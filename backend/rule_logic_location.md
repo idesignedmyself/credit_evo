@@ -856,6 +856,19 @@ const AccountAccordion = React.memo(({ account, embedded = false }) => {
 
 ### Visual Design
 
+**Consistent Shadow Styling:**
+All card-like components use the same shadow for visual consistency:
+```javascript
+boxShadow: '0 2px 8px rgba(0,0,0,0.08)'
+borderRadius: 3
+```
+
+Applied to:
+- `ScoreDashboard.jsx` - Score cards (line 88)
+- `CompactFilterBar.jsx` - Filter bar (line 169)
+- `AuditPage.jsx` - Action bar (line 129)
+- `ViolationList.jsx` - Table container (line 210)
+
 **Table Styling:**
 - `TableContainer` with `Paper`, `elevation={0}`, `borderRadius: 3`
 - Header bg: `#f9fafb`
@@ -866,6 +879,56 @@ const AccountAccordion = React.memo(({ account, embedded = false }) => {
 **Icons:**
 - `ChevronRightIcon` - collapsed state
 - `ExpandMoreIcon` - expanded state
+
+### Violation List Tabs Header
+
+The violation list uses a unified tabs header with count label:
+- Tabs on left, "Count" label on right
+- No separate column header row
+- Dynamic content based on selected tab
+
+```javascript
+// ViolationList.jsx - Tabs header with count (lines 214-230)
+<Box sx={{
+  bgcolor: '#f9fafb',
+  borderBottom: '1px solid',
+  borderColor: 'divider',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  pr: 2,
+}}>
+  <Tabs>...</Tabs>
+  <Typography variant="body2" sx={{ fontWeight: 600 }}>Count</Typography>
+</Box>
+```
+
+### Filter Bar Stats
+
+The filter bar displays only essential stats:
+- Accounts count (with AccountBalanceIcon)
+- Violations count (with WarningIcon)
+
+Removed: Critical count, Clean count (not actionable)
+
+### Landing Page Navbar
+
+Full-width navbar with edge-to-edge positioning:
+```javascript
+// LandingPage.jsx - Navbar (lines 42-68)
+<Box sx={{
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  py: 2.5,
+  px: { xs: 3, md: 6 }  // Pushes logo left, links right
+}}>
+  {/* Logo on left */}
+  <Stack direction="row" spacing={5}>  {/* spacing={5} for more gap between links */}
+    {/* Nav links on right */}
+  </Stack>
+</Box>
+```
 
 ---
 
