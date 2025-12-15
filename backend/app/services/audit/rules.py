@@ -1299,7 +1299,7 @@ class SingleBureauRules:
         # =====================================================================
         # STATE & CATEGORY LOOKUP
         # =====================================================================
-        state_upper = user_state.upper()
+        state_upper = (user_state or "NY").upper()
         if state_upper not in SOL_DATA["states"]:
             logger.warning(f"Unknown state '{user_state}' for SOL lookup, defaulting to NY")
             state_upper = "NY"

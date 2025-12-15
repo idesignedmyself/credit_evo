@@ -78,8 +78,8 @@ class AuditEngine:
         all_violations.extend(double_jeopardy_violations)
 
         # Run time-barred debt checks (SOL expired)
-        # Use user profile state for SOL calculations if available
-        user_state = user_profile.get("state", "NY") if user_profile else "NY"
+        # Use user profile state for SOL calculations if available (default NY if not set)
+        user_state = (user_profile.get("state") if user_profile else None) or "NY"
         time_barred_violations = self._check_time_barred_debts(report.accounts, user_state)
         all_violations.extend(time_barred_violations)
 
