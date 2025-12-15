@@ -19,8 +19,6 @@ import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import CloseIcon from '@mui/icons-material/Close';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import WarningIcon from '@mui/icons-material/Warning';
-import ErrorIcon from '@mui/icons-material/Error';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 
 const CompactFilterBar = ({
   filters,
@@ -34,8 +32,6 @@ const CompactFilterBar = ({
 }) => {
   const totalAccounts = stats.totalAccounts || 0;
   const violationsFound = stats.violationsFound || 0;
-  const criticalViolations = stats.criticalViolations || 0;
-  const cleanAccounts = stats.cleanAccounts || 0;
 
   // Menu anchor states for each dropdown
   const [bureauAnchor, setBureauAnchor] = useState(null);
@@ -232,25 +228,6 @@ const CompactFilterBar = ({
             </Typography>
           </Stack>
 
-          <Stack direction="row" spacing={0.75} alignItems="center">
-            <ErrorIcon sx={{ fontSize: 18, color: '#ef4444' }} />
-            <Typography variant="body2" sx={{ fontWeight: 600, color: '#1a1a1a' }}>
-              {criticalViolations}
-            </Typography>
-            <Typography variant="caption" sx={{ color: '#64748B' }}>
-              Critical
-            </Typography>
-          </Stack>
-
-          <Stack direction="row" spacing={0.75} alignItems="center">
-            <CheckCircleIcon sx={{ fontSize: 18, color: '#22c55e' }} />
-            <Typography variant="body2" sx={{ fontWeight: 600, color: '#1a1a1a' }}>
-              {cleanAccounts}
-            </Typography>
-            <Typography variant="caption" sx={{ color: '#64748B' }}>
-              Clean
-            </Typography>
-          </Stack>
         </Stack>
 
         {/* Clear button */}
