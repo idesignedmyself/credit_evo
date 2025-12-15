@@ -14,7 +14,6 @@ import {
   TableBody,
   TableCell,
   TableContainer,
-  TableHead,
   TableRow,
   Collapse,
   IconButton,
@@ -140,20 +139,6 @@ const ViolationList = ({ hideFilters = false, hideHeader = false }) => {
     setExpandedItems(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
-  // Get column headers based on current tab
-  const getColumnHeaders = () => {
-    switch (groupBy) {
-      case 'crossbureau':
-        return { col1: 'Account', col2: 'Issues' };
-      case 'accounts':
-        return { col1: 'Account', col2: 'Count' };
-      default:
-        return { col1: 'Violation Type', col2: 'Count' };
-    }
-  };
-
-  const headers = getColumnHeaders();
-
   if (isLoading) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
@@ -211,8 +196,16 @@ const ViolationList = ({ hideFilters = false, hideHeader = false }) => {
           overflow: 'hidden',
         }}
       >
-        {/* TABS IN HEADER */}
-        <Box sx={{ bgcolor: '#f9fafb', borderBottom: '1px solid', borderColor: 'divider' }}>
+        {/* TABS IN HEADER WITH COUNT */}
+        <Box sx={{
+          bgcolor: '#f9fafb',
+          borderBottom: '1px solid',
+          borderColor: 'divider',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          pr: 2,
+        }}>
           <Tabs
             value={groupBy}
             onChange={(e, v) => setGroupBy(v)}
@@ -231,17 +224,10 @@ const ViolationList = ({ hideFilters = false, hideHeader = false }) => {
             <Tab value="crossbureau" label={`Cross-Bureau (${discrepancies?.length || 0})`} />
             <Tab value="accounts" label={`Accounts (${accounts.length})`} />
           </Tabs>
+          <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
+            {hasActiveFilters ? `${filteredCount} of ${totalCount}` : totalCount} violations
+          </Typography>
         </Box>
-
-        {/* COLUMN HEADERS */}
-        <Table>
-          <TableHead sx={{ bgcolor: '#f9fafb' }}>
-            <TableRow>
-              <TableCell sx={{ fontWeight: 'bold', py: 1.5 }}>{headers.col1}</TableCell>
-              <TableCell align="right" sx={{ fontWeight: 'bold', py: 1.5, width: 80 }}>{headers.col2}</TableCell>
-            </TableRow>
-          </TableHead>
-        </Table>
 
         {/* TAB CONTENT */}
         {groupBy === "type" && (
