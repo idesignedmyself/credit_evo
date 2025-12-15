@@ -109,7 +109,7 @@ const HeroSection = () => {
         pt: 8, // Account for navbar
       }}
     >
-      <Box sx={{ width: '100%', px: { xs: 3, md: 6 } }}>
+      <Container maxWidth="lg">
         <Grid container spacing={8} alignItems="center">
           {/* Left Side - Marketing Copy (hidden on mobile) */}
           <Grid item xs={12} md={6} sx={{ display: { xs: 'none', md: 'block' }, color: 'white' }}>
@@ -145,7 +145,7 @@ const HeroSection = () => {
           </Grid>
 
           {/* Right Side - Login Form (matching LoginPage exactly) */}
-          <Grid item xs={12} md={6} sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <Grid item xs={12} md={6}>
             <Paper
               elevation={0}
               sx={{
@@ -153,7 +153,7 @@ const HeroSection = () => {
                 borderRadius: 4,
                 bgcolor: 'white',
                 maxWidth: '500px',
-                width: '100%',
+                mx: 'auto'
               }}
             >
               <Box sx={{ mb: 4 }}>
@@ -267,7 +267,7 @@ const HeroSection = () => {
             </Paper>
           </Grid>
         </Grid>
-      </Box>
+      </Container>
     </Box>
   );
 };
