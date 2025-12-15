@@ -206,9 +206,8 @@ const ViolationList = ({ hideFilters = false, hideHeader = false }) => {
         component={Paper}
         elevation={0}
         sx={{
-          border: '1px solid',
-          borderColor: 'divider',
           borderRadius: 3,
+          boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
           overflow: 'hidden',
         }}
       >

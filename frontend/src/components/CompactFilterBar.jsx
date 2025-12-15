@@ -164,9 +164,9 @@ const CompactFilterBar = ({
         py: 1.5,
         px: 2,
         mb: 2,
-        bgcolor: '#FAFBFC',
-        border: '1px solid #E2E8F0',
-        borderRadius: 2,
+        bgcolor: 'white',
+        borderRadius: 3,
+        boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
       }}
     >
       {/* Left side: Filter dropdowns */}

@@ -117,16 +117,16 @@ const AuditPage = () => {
         />
       )}
 
-      {/* LEVEL 3: Action Bar (original styling) */}
+      {/* LEVEL 3: Action Bar */}
       {violations.length > 0 && (
         <Paper
           elevation={0}
           sx={{
             p: 2,
             mb: 3,
-            bgcolor: '#e3f2fd',
-            border: '1px solid #bbdefb',
-            borderRadius: 2,
+            bgcolor: 'white',
+            borderRadius: 3,
+            boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
