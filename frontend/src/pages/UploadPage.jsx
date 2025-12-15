@@ -1,6 +1,6 @@
 /**
  * Credit Engine 2.0 - Upload Page
- * New modern upload flow with stepper and dropzone
+ * Modern upload flow with dropzone
  */
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -9,14 +9,8 @@ import {
   Box,
   Typography,
   Paper,
-  Stepper,
-  Step,
-  StepLabel,
 } from '@mui/material';
-import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import { FileUploader } from '../components';
-
-const steps = ['Upload Report', 'Review Violations', 'Generate Letter'];
 
 const UploadPage = () => {
   const navigate = useNavigate();
@@ -35,17 +29,6 @@ const UploadPage = () => {
         <Typography variant="body1" color="text.secondary">
           Upload your credit report to identify and dispute inaccuracies
         </Typography>
-      </Box>
-
-      {/* Stepper */}
-      <Box sx={{ width: '100%', mb: 6 }}>
-        <Stepper activeStep={0} alternativeLabel>
-          {steps.map((label) => (
-            <Step key={label}>
-              <StepLabel>{label}</StepLabel>
-            </Step>
-          ))}
-        </Stepper>
       </Box>
 
       {/* File Uploader with Dropzone Styling */}
