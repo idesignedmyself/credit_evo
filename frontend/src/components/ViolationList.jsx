@@ -224,8 +224,8 @@ const ViolationList = ({ hideFilters = false, hideHeader = false }) => {
             <Tab value="crossbureau" label={`Cross-Bureau (${discrepancies?.length || 0})`} />
             <Tab value="accounts" label={`Accounts (${accounts.length})`} />
           </Tabs>
-          <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
-            {hasActiveFilters ? `${filteredCount} of ${totalCount}` : totalCount} violations
+          <Typography variant="body2" sx={{ fontWeight: 600, color: 'text.primary' }}>
+            Count
           </Typography>
         </Box>
 
