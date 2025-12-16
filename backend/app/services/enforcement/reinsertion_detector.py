@@ -191,7 +191,7 @@ class ReinsertionDetector:
             event_type="reinsertion_detected",
             actor=ActorType.SYSTEM,
             description=f"Reinsertion detected for account {watch.account_fingerprint}. {len(violations_created)} violations created.",
-            metadata={
+            event_metadata={
                 "watch_id": watch.id,
                 "violations_created": len(violations_created),
                 "notice_received": watch.notice_received,
@@ -266,7 +266,7 @@ class ReinsertionDetector:
                     event_type="reinsertion_notice_logged",
                     actor=ActorType.USER,
                     description=f"Valid reinsertion notice received dated {notice_date.isoformat()}",
-                    metadata={
+                    event_metadata={
                         "watch_id": watch_id,
                         "notice_date": notice_date.isoformat(),
                         "notice_timely": True,
@@ -298,7 +298,7 @@ class ReinsertionDetector:
                     event_type="late_reinsertion_notice",
                     actor=ActorType.USER,
                     description=f"Late reinsertion notice logged. Notice date: {notice_date.isoformat()}, Reinsertion date: {watch.reinsertion_date.isoformat()}",
-                    metadata={
+                    event_metadata={
                         "watch_id": watch_id,
                         "notice_date": notice_date.isoformat(),
                         "reinsertion_date": watch.reinsertion_date.isoformat(),

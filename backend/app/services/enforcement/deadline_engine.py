@@ -162,7 +162,7 @@ class DeadlineEngine:
             event_type="deadline_breach",
             actor=ActorType.SYSTEM,
             description=f"Deadline breach detected. Entity {dispute.entity_name} failed to respond within {breach_info['days_overdue']} days of deadline.",
-            metadata=breach_info,
+            event_metadata=breach_info,
         )
         self.db.add(paper_trail)
 
@@ -246,7 +246,7 @@ class DeadlineEngine:
             event_type="deadline_recalculated",
             actor=ActorType.SYSTEM,
             description=f"Deadline recalculated: {reason}",
-            metadata={
+            event_metadata={
                 "old_deadline": old_deadline.isoformat(),
                 "new_deadline": new_deadline.isoformat(),
                 "reason": reason,

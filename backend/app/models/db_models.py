@@ -374,8 +374,8 @@ class PaperTrailDB(Base):
     artifact_type = Column(String(50), nullable=True)  # initial_letter, cure_letter, mov_demand, etc.
     artifact_path = Column(String(500), nullable=True)
 
-    # Metadata
-    metadata = Column(JSON, nullable=True)  # Additional context
+    # Event Metadata (renamed from 'metadata' which is reserved in SQLAlchemy)
+    event_metadata = Column(JSON, nullable=True)  # Additional context
 
     # Timestamps (immutable)
     created_at = Column(DateTime, default=datetime.utcnow)

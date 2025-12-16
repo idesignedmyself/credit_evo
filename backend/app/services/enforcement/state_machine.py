@@ -244,7 +244,7 @@ class EscalationStateMachine:
             event_type="state_transition",
             actor=actor,
             description=f"State changed from {from_state.value} to {to_state.value}. Trigger: {trigger}",
-            metadata={
+            event_metadata={
                 "from_state": from_state.value,
                 "to_state": to_state.value,
                 "trigger": trigger,

@@ -121,7 +121,7 @@ class DisputeService:
             event_type="dispute_created",
             actor=ActorType.USER,
             description=f"Dispute created against {entity_name} ({entity_type.value}). Deadline: {deadline_date.isoformat()}",
-            metadata={
+            event_metadata={
                 "entity_type": entity_type.value,
                 "entity_name": entity_name,
                 "source": source.value,
@@ -202,7 +202,7 @@ class DisputeService:
             actor=ActorType.USER,
             description=f"Response logged: {response_type.value}",
             evidence_hash=response.evidence_hash,
-            metadata={
+            event_metadata={
                 "response_type": response_type.value,
                 "response_date": (response_date or date.today()).isoformat(),
             }
@@ -287,7 +287,7 @@ class DisputeService:
             event_type="mailing_confirmed",
             actor=ActorType.USER,
             description=f"Dispute letter mailed on {mailed_date.isoformat()}",
-            metadata={
+            event_metadata={
                 "mailed_date": mailed_date.isoformat(),
                 "tracking_number": tracking_number,
                 "deadline_date": dispute.deadline_date.isoformat(),
@@ -327,7 +327,7 @@ class DisputeService:
                 "timestamp": e.created_at.isoformat(),
                 "evidence_hash": e.evidence_hash,
                 "artifact_type": e.artifact_type,
-                "metadata": e.metadata,
+                "metadata": e.event_metadata,
             }
             for e in entries
         ]
@@ -460,7 +460,7 @@ class DisputeService:
             actor=ActorType.USER,
             description=f"Artifact requested: {artifact_type}",
             artifact_type=artifact_type,
-            metadata={
+            event_metadata={
                 "artifact_type": artifact_type,
                 "state_at_request": dispute.current_state.value,
             }

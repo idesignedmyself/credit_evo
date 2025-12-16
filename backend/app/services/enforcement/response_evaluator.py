@@ -711,7 +711,7 @@ class ResponseEvaluator:
             event_type="response_evaluated",
             actor=ActorType.SYSTEM,
             description=f"Response type {response.response_type.value} evaluated. {len(result['violations_created'])} violations created.",
-            metadata={
+            event_metadata={
                 "response_id": response.id,
                 "response_type": response.response_type.value,
                 "violations_created": len(result["violations_created"]),

@@ -422,7 +422,7 @@ class CrossEntityIntelligence:
             event_type="cross_entity_pattern_detected",
             actor=ActorType.SYSTEM,
             description=f"Cross-entity pattern detected: {pattern_name}. {len(violations)} violations created.",
-            metadata={
+            event_metadata={
                 "pattern": pattern_name,
                 "violations_count": len(violations),
                 "violation_ids": [v["id"] for v in violations],
