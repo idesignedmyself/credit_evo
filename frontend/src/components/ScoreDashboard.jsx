@@ -149,11 +149,11 @@ export default function ScoreDashboard({ scores = {} }) {
                   {/* Bottom Stats Row */}
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
                     <Box>
-                      <Typography variant="body1" sx={{ fontWeight: 'bold', color: '#1a1a1a' }}>
-                        {getLenderTier(bureau.score).name}
-                      </Typography>
                       <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.75rem' }}>
                         Estimated Lender Tier
+                      </Typography>
+                      <Typography variant="body1" sx={{ fontWeight: 'bold', color: '#1a1a1a' }}>
+                        {getLenderTier(bureau.score).name}
                       </Typography>
                     </Box>
                     <Box sx={{ textAlign: 'right' }}>
@@ -162,11 +162,11 @@ export default function ScoreDashboard({ scores = {} }) {
                         if (!goal) return null;
                         return (
                           <>
-                            <Typography variant="body2" sx={{ fontWeight: 'bold', color: '#1a1a1a' }}>
-                              {goal.reached ? 'Top Tier!' : `${goal.points} pts to ${goal.tier}`}
-                            </Typography>
                             <Typography variant="caption" sx={{ color: 'text.secondary' }}>
                               Goal Progress
+                            </Typography>
+                            <Typography variant="body2" sx={{ fontWeight: 'bold', color: '#1a1a1a' }}>
+                              {goal.reached ? 'Top Tier!' : `${goal.points} pts to ${goal.tier}`}
                             </Typography>
                           </>
                         );
