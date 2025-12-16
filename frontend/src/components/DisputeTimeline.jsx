@@ -15,13 +15,6 @@ import {
   Box,
   Paper,
   Typography,
-  Timeline,
-  TimelineItem,
-  TimelineSeparator,
-  TimelineConnector,
-  TimelineContent,
-  TimelineDot,
-  TimelineOppositeContent,
   Chip,
   Skeleton,
   Alert,
@@ -36,6 +29,7 @@ import {
   CheckCircle as SuccessIcon,
   Error as ErrorIcon,
   SmartToy as AutomatedIcon,
+  FiberManualRecord as DotIcon,
 } from '@mui/icons-material';
 import { getDisputeTimeline } from '../api/disputeApi';
 
@@ -165,35 +159,70 @@ const DisputeTimeline = ({ disputeId }) => {
         Immutable record of all dispute events. This timeline cannot be modified.
       </Typography>
 
-      <Timeline position="right">
-        {timeline.map((event, index) => (
-          <TimelineItem key={event.id}>
-            <TimelineOppositeContent sx={{ flex: 0.2, minWidth: 100 }}>
-              <Typography variant="caption" color="text.secondary">
-                {new Date(event.timestamp).toLocaleDateString()}
-              </Typography>
-              <Typography variant="caption" display="block" color="text.secondary">
-                {new Date(event.timestamp).toLocaleTimeString()}
-              </Typography>
-            </TimelineOppositeContent>
+      <Box sx={{ position: 'relative', pl: 3 }}>
+        {/* Vertical line */}
+        <Box
+          sx={{
+            position: 'absolute',
+            left: 12,
+            top: 0,
+            bottom: 0,
+            width: 2,
+            bgcolor: 'divider',
+          }}
+        />
 
-            <TimelineSeparator>
-              <TimelineDot color={EVENT_COLORS[event.event_type] || 'grey'}>
-                {EVENT_ICONS[event.event_type] || <SystemIcon />}
-              </TimelineDot>
-              {index < timeline.length - 1 && <TimelineConnector />}
-            </TimelineSeparator>
+        {timeline.map((event, index) => {
+          const colorMap = {
+            primary: '#1976d2',
+            info: '#0288d1',
+            error: '#d32f2f',
+            warning: '#ed6c02',
+            secondary: '#9c27b0',
+          };
+          const eventColor = colorMap[EVENT_COLORS[event.event_type]] || '#757575';
 
-            <TimelineContent>
+          return (
+            <Box key={event.id} sx={{ position: 'relative', mb: 3 }}>
+              {/* Dot on the line */}
+              <Box
+                sx={{
+                  position: 'absolute',
+                  left: -24,
+                  top: 4,
+                  width: 24,
+                  height: 24,
+                  borderRadius: '50%',
+                  bgcolor: eventColor,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'white',
+                  fontSize: 14,
+                }}
+              >
+                {EVENT_ICONS[event.event_type] ? (
+                  React.cloneElement(EVENT_ICONS[event.event_type], { sx: { fontSize: 14 } })
+                ) : (
+                  <DotIcon sx={{ fontSize: 10 }} />
+                )}
+              </Box>
+
+              {/* Content card */}
               <Paper
                 elevation={1}
                 sx={{
                   p: 2,
+                  ml: 2,
                   borderLeft: event.actor === 'SYSTEM' ? '3px solid #1976d2' : '3px solid #757575',
                   bgcolor: event.actor === 'SYSTEM' ? 'rgba(25, 118, 210, 0.04)' : 'inherit',
                 }}
               >
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                {/* Time and actor row */}
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                  <Typography variant="caption" color="text.secondary">
+                    {new Date(event.timestamp).toLocaleString()}
+                  </Typography>
                   <Tooltip title={ACTOR_TOOLTIPS[event.actor] || ''} arrow>
                     <Chip
                       label={ACTOR_LABELS[event.actor] || event.actor}
@@ -203,14 +232,6 @@ const DisputeTimeline = ({ disputeId }) => {
                       icon={event.actor === 'SYSTEM' ? <AutomatedIcon fontSize="small" /> : <UserIcon fontSize="small" />}
                     />
                   </Tooltip>
-                  {event.artifact_type && (
-                    <Chip
-                      label={event.artifact_type}
-                      size="small"
-                      color="secondary"
-                      icon={<ArtifactIcon />}
-                    />
-                  )}
                 </Box>
 
                 <Typography variant="body1">
@@ -223,18 +244,20 @@ const DisputeTimeline = ({ disputeId }) => {
                   </Typography>
                 )}
 
-                {event.metadata && Object.keys(event.metadata).length > 0 && (
-                  <Box sx={{ mt: 1, p: 1, bgcolor: 'action.hover', borderRadius: 1 }}>
-                    <Typography variant="caption" color="text.secondary">
-                      {JSON.stringify(event.metadata, null, 2)}
-                    </Typography>
-                  </Box>
+                {event.artifact_type && (
+                  <Chip
+                    label={event.artifact_type}
+                    size="small"
+                    color="secondary"
+                    icon={<ArtifactIcon />}
+                    sx={{ mt: 1 }}
+                  />
                 )}
               </Paper>
-            </TimelineContent>
-          </TimelineItem>
-        ))}
-      </Timeline>
+            </Box>
+          );
+        })}
+      </Box>
     </Paper>
   );
 };

@@ -20,20 +20,26 @@ import {
   Collapse,
   CircularProgress,
 } from '@mui/material';
-import { DatePicker } from '@mui/x-date-pickers/DatePicker';
-import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
-import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
-import dayjs from 'dayjs';
 import {
   ENTITY_TYPES,
   RESPONSE_TYPES,
   logResponse,
 } from '../api/disputeApi';
 
+// Helper to format date as YYYY-MM-DD
+const formatDate = (date) => {
+  if (!date) return '';
+  const d = new Date(date);
+  return d.toISOString().split('T')[0];
+};
+
+// Get today's date in YYYY-MM-DD format
+const getTodayString = () => formatDate(new Date());
+
 const ResponseInputForm = ({ disputeId, onResponseLogged, onCancel }) => {
   const [formData, setFormData] = useState({
     response_type: '',
-    response_date: dayjs(),
+    response_date: getTodayString(),
     updated_fields: null,
     rejection_reason: '',
     has_5_day_notice: null,
@@ -61,7 +67,7 @@ const ResponseInputForm = ({ disputeId, onResponseLogged, onCancel }) => {
     try {
       const payload = {
         response_type: formData.response_type,
-        response_date: formData.response_date?.format('YYYY-MM-DD'),
+        response_date: formData.response_date,
       };
 
       // Add rejection fields if applicable
@@ -88,7 +94,6 @@ const ResponseInputForm = ({ disputeId, onResponseLogged, onCancel }) => {
   const showRejectionFields = formData.response_type === 'REJECTED';
 
   return (
-    <LocalizationProvider dateAdapter={AdapterDayjs}>
       <Paper sx={{ p: 3 }}>
         <Typography variant="h6" gutterBottom>
           Log Entity Response
@@ -134,17 +139,15 @@ const ResponseInputForm = ({ disputeId, onResponseLogged, onCancel }) => {
             </FormControl>
 
             {/* Response Date */}
-            <DatePicker
+            <TextField
               label="Response Date"
+              type="date"
               value={formData.response_date}
-              onChange={handleChange('response_date')}
-              maxDate={dayjs()}
-              slotProps={{
-                textField: {
-                  fullWidth: true,
-                  required: true,
-                },
-              }}
+              onChange={(e) => handleChange('response_date')(e.target.value)}
+              InputLabelProps={{ shrink: true }}
+              inputProps={{ max: getTodayString() }}
+              fullWidth
+              required
             />
 
             {/* Rejection-specific fields */}
@@ -229,7 +232,6 @@ const ResponseInputForm = ({ disputeId, onResponseLogged, onCancel }) => {
           </Box>
         </form>
       </Paper>
-    </LocalizationProvider>
   );
 };
 
