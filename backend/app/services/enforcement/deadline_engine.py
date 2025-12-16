@@ -1,8 +1,19 @@
 """
 Deadline Engine
 
+AUTHORITY: SYSTEM
 Calculates and tracks response deadlines.
-Automatically detects breaches and triggers state transitions.
+Automatically detects breaches and triggers state transitions WITHOUT user confirmation.
+
+Key behaviors:
+- Calculate initial deadlines based on dispute source (30/45 days)
+- Auto-detect deadline breaches via daily scheduler
+- Auto-create NO_RESPONSE violations on deadline breach
+- Auto-convert INVESTIGATING responses to NO_RESPONSE after stall timeout
+- Track REINSERTION_WATCH_PERIOD (90 days) after DELETED responses
+
+All deadline breaches are SYSTEM-DETECTED violations.
+User cannot extend or override deadlines.
 """
 from datetime import date, datetime, timedelta
 from typing import Optional, List, Dict, Any, Tuple
@@ -89,6 +100,9 @@ class DeadlineEngine:
         """
         Check if a dispute deadline has been breached.
 
+        AUTHORITY: SYSTEM - Called by daily scheduler.
+        Detection is automatic. User cannot suppress breach detection.
+
         Returns (is_breached, breach_info)
         """
         # Only check disputes in DISPUTED state
@@ -123,7 +137,10 @@ class DeadlineEngine:
     ) -> Dict[str, Any]:
         """
         Process a deadline breach - create violations and transition state.
-        System-automatic, no user confirmation required.
+
+        AUTHORITY: SYSTEM - Executes automatically without user confirmation.
+        Creates NO_RESPONSE response record, violations, and state transition.
+        User cannot cancel or delay breach processing.
         """
         from .state_machine import EscalationStateMachine, AutomaticTransitionTriggers
         from .response_evaluator import ResponseEvaluator
@@ -261,13 +278,22 @@ class DeadlineEngine:
 
 
 # =============================================================================
-# DEADLINE SCHEDULER
+# DEADLINE SCHEDULER (SYSTEM-AUTHORITATIVE)
+# =============================================================================
+#
+# This scheduler runs AUTOMATICALLY via cron/scheduled job.
+# User cannot disable or override scheduled deadline checks.
+# All breach detections trigger automatic violation creation.
+#
 # =============================================================================
 
 class DeadlineScheduler:
     """
     Daily scheduler for deadline-related tasks.
-    Runs automatically, no user intervention required.
+
+    AUTHORITY: SYSTEM - Runs automatically, no user intervention required.
+    All detected breaches result in automatic violation creation and state transitions.
+    User is notified via Paper Trail only.
     """
 
     def __init__(self, db_session: Session):
@@ -279,9 +305,14 @@ class DeadlineScheduler:
         """
         Run daily deadline check.
 
+        AUTHORITY: SYSTEM - Called automatically via scheduler endpoint.
+        No user confirmation required for breach processing.
+
+        Actions:
         - Scans all open disputes
-        - Detects breaches
-        - Processes violations automatically
+        - Detects deadline breaches
+        - Creates NO_RESPONSE violations automatically
+        - Triggers state transitions to NO_RESPONSE
         """
         breaches_found = []
         breaches_processed = []

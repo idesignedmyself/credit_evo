@@ -194,55 +194,159 @@ RESPONSE_VIOLATION_MAP = {
 # =============================================================================
 # FDCPA §1692g(b) GUARDRAIL
 # =============================================================================
+#
+# MANDATORY PRECONDITIONS FOR §1692g(b) CITATION:
+#
+# This guardrail MUST be applied before citing §1692g(b) in any context.
+# The statute governs debt validation requirements and applies ONLY when
+# ALL three preconditions are satisfied:
+#
+# 1. ENTITY TYPE: Must be a third-party debt collector (not original creditor)
+#    - Original creditors are NOT subject to FDCPA
+#    - Furnishers who are also collectors must be properly classified
+#
+# 2. VALIDATION REQUEST: Consumer must have sent written validation request
+#    - Request must be within 30 days of initial collector communication
+#    - Verbal requests do NOT trigger §1692g(b) protections
+#
+# 3. CONTINUED COLLECTION: Collector must have continued collection activity
+#    - This includes credit reporting, phone calls, letters, or legal action
+#    - Continuation must occur BEFORE providing validation
+#
+# If ANY precondition is NOT met, §1692g(b) MUST NOT be cited.
+# System will automatically substitute appropriate alternative statutes.
+#
+# =============================================================================
 
 class FDCPA1692gGuardrail:
     """
-    Guardrail for FDCPA §1692g(b) application.
+    EXPLICIT GUARDRAIL for FDCPA §1692g(b) application.
 
-    This statute applies ONLY when ALL conditions are met:
-    1. Entity is a Debt Collector (not original creditor)
-    2. Consumer sent written validation request within 30 days
-    3. Collector continued collection before providing validation
+    THIS GUARDRAIL IS MANDATORY - the system MUST call can_cite_1692g_b()
+    before creating any violation that references §1692g(b).
+
+    If preconditions are not met, use get_alternative_statutes() instead.
     """
 
     @staticmethod
-    def can_cite_1692g_b(dispute: DisputeDB) -> Tuple[bool, str]:
+    def can_cite_1692g_b(dispute: DisputeDB) -> Tuple[bool, str, Dict[str, Any]]:
         """
         Check if §1692g(b) can be cited for this dispute.
 
-        Returns (can_cite, reason)
+        Returns (can_cite, reason, precondition_status)
+
+        MUST be called before ANY §1692g(b) citation.
         """
-        # Precondition 1: Must be debt collector
-        if dispute.entity_type != EntityType.COLLECTOR:
-            return False, "Entity is not a debt collector"
+        preconditions = {
+            "is_debt_collector": False,
+            "has_validation_request": False,
+            "collection_continued": False,
+        }
 
-        # Precondition 2: Must have validation request
-        if not dispute.has_validation_request:
-            return False, "No validation request exists"
+        # Precondition 1: Must be debt collector (NOT original creditor)
+        if dispute.entity_type == EntityType.COLLECTOR:
+            preconditions["is_debt_collector"] = True
+        else:
+            return (
+                False,
+                f"GUARDRAIL BLOCK: Entity type is {dispute.entity_type.value}, not COLLECTOR. §1692g(b) does not apply.",
+                preconditions
+            )
 
-        # Precondition 3: Collection must have continued
-        if not dispute.collection_continued:
-            return False, "Collection did not continue before validation"
+        # Precondition 2: Must have written validation request within 30 days
+        if dispute.has_validation_request:
+            preconditions["has_validation_request"] = True
+        else:
+            return (
+                False,
+                "GUARDRAIL BLOCK: No validation request exists. §1692g(b) requires consumer to have sent written validation request.",
+                preconditions
+            )
 
-        return True, "All preconditions met"
+        # Precondition 3: Collection must have continued before validation
+        if dispute.collection_continued:
+            preconditions["collection_continued"] = True
+        else:
+            return (
+                False,
+                "GUARDRAIL BLOCK: Collection did not continue before validation. §1692g(b) requires collector to have continued collection activities.",
+                preconditions
+            )
+
+        # ALL PRECONDITIONS MET
+        return (
+            True,
+            "All §1692g(b) preconditions satisfied. Statute may be cited.",
+            preconditions
+        )
 
     @staticmethod
     def get_alternative_statutes() -> List[Dict[str, str]]:
-        """Get alternative statutes when §1692g(b) doesn't apply."""
+        """
+        Get alternative FDCPA statutes when §1692g(b) preconditions are NOT met.
+
+        These statutes may apply to debt collector misconduct even when
+        §1692g(b) validation requirements are not triggered.
+        """
         return [
             {
                 "statute": "FDCPA § 1692e(8)",
                 "description": "False representation of credit information",
+                "use_when": "Collector reported inaccurate information to CRA",
             },
             {
                 "statute": "FDCPA § 1692f",
                 "description": "Unfair practices",
+                "use_when": "Collector engaged in unfair collection methods",
             },
             {
                 "statute": "FDCPA § 1692e",
                 "description": "False or misleading representations",
+                "use_when": "Collector made false statements about debt",
+            },
+            {
+                "statute": "FDCPA § 1692d",
+                "description": "Harassment or abuse",
+                "use_when": "Collector engaged in harassing behavior",
             },
         ]
+
+    @staticmethod
+    def select_appropriate_statute(
+        dispute: DisputeDB,
+        violation_context: str
+    ) -> Dict[str, Any]:
+        """
+        Select the appropriate FDCPA statute based on guardrail check.
+
+        Returns the statute to cite and the reason for selection.
+        """
+        can_cite, reason, preconditions = FDCPA1692gGuardrail.can_cite_1692g_b(dispute)
+
+        if can_cite:
+            return {
+                "statute": "FDCPA § 1692g(b)",
+                "can_cite": True,
+                "reason": reason,
+                "preconditions": preconditions,
+            }
+        else:
+            # Select best alternative based on context
+            alternatives = FDCPA1692gGuardrail.get_alternative_statutes()
+            # Default to §1692e(8) for reporting violations
+            if "report" in violation_context.lower() or "credit" in violation_context.lower():
+                selected = alternatives[0]  # §1692e(8)
+            else:
+                selected = alternatives[1]  # §1692f
+
+            return {
+                "statute": selected["statute"],
+                "can_cite": False,
+                "reason": reason,
+                "preconditions": preconditions,
+                "alternative_used": True,
+                "alternative_reason": selected["use_when"],
+            }
 
 
 # =============================================================================
@@ -357,18 +461,25 @@ class ResponseEvaluator:
         entity_violations = config.get("violations_by_entity", {}).get(dispute.entity_type, [])
 
         for v in entity_violations:
-            # Check guardrail for collector
+            # Check guardrail for collector - MANDATORY for §1692g(b)
             if v.get("guardrail") == "1692g_b_preconditions":
-                can_cite, reason = FDCPA1692gGuardrail.can_cite_1692g_b(dispute)
+                can_cite, reason, preconditions = FDCPA1692gGuardrail.can_cite_1692g_b(dispute)
                 if not can_cite:
-                    # Use alternative statute
-                    alternatives = FDCPA1692gGuardrail.get_alternative_statutes()
+                    # GUARDRAIL ACTIVE: Use alternative statute
+                    statute_selection = FDCPA1692gGuardrail.select_appropriate_statute(
+                        dispute,
+                        violation_context="credit reporting verification"
+                    )
                     violations.append({
                         "id": str(uuid4()),
                         "type": "false_representation",
-                        "statute": alternatives[0]["statute"],
-                        "description": f"Collector verified disputed debt. {reason}. Using alternative statute.",
+                        "statute": statute_selection["statute"],
+                        "description": f"Collector verified disputed debt. {reason}",
                         "severity": "HIGH",
+                        "guardrail_applied": True,
+                        "guardrail_reason": reason,
+                        "preconditions_checked": preconditions,
+                        "authority": "SYSTEM",  # System determined statute selection
                     })
                     continue
 
@@ -379,9 +490,10 @@ class ResponseEvaluator:
                 "description": f"Entity verified disputed information without proper investigation",
                 "severity": "HIGH",
                 "willful_indicator": True,  # Verification of known inaccuracy suggests willfulness
+                "authority": "SYSTEM",  # System created violation
             })
 
-        # Add willful noncompliance if original violation was provably false
+        # Add willful noncompliance if original violation was provably false (SYSTEM determination)
         if dispute.original_violation_data:
             violations.append({
                 "id": str(uuid4()),
@@ -390,6 +502,7 @@ class ResponseEvaluator:
                 "description": "Verification of provably false data indicates willful noncompliance",
                 "severity": "CRITICAL",
                 "damages_range": "$100 - $1,000 per violation",
+                "authority": "SYSTEM",  # System elevates to willful based on evidence
             })
 
         result["violations_created"] = violations
@@ -425,10 +538,16 @@ class ResponseEvaluator:
         response: DisputeResponseDB,
         result: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Handle INVESTIGATING response - start stall timer."""
+        """
+        Handle INVESTIGATING response - start stall timer.
+
+        AUTHORITY: USER reports "investigating" response.
+        AUTHORITY: SYSTEM creates violation if received after deadline.
+        AUTHORITY: SYSTEM starts stall timer automatically.
+        """
         violations = []
 
-        # Check if received after deadline (stall tactic)
+        # Check if received after deadline (stall tactic) - SYSTEM evaluation
         if response.response_date and dispute.deadline_date:
             if response.response_date > dispute.deadline_date:
                 violations.append({
@@ -437,13 +556,15 @@ class ResponseEvaluator:
                     "statute": "FCRA § 611(a)(1)",
                     "description": "Investigation notice received after statutory deadline",
                     "severity": "HIGH",
+                    "authority": "SYSTEM",  # System detected deadline breach
                 })
 
         result["violations_created"] = violations
         result["actions"].append({
             "type": "stall_timer_started",
             "expires_in_days": 15,
-            "description": "Will auto-convert to NO_RESPONSE if no final response in 15 days",
+            "description": "SYSTEM: Will auto-convert to NO_RESPONSE if no final response in 15 days",
+            "authority": "SYSTEM",  # System schedules automatic conversion
         })
 
         return result
@@ -466,10 +587,15 @@ class ResponseEvaluator:
         response: DisputeResponseDB,
         result: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Handle REJECTED response - check procedural compliance."""
+        """
+        Handle REJECTED response - check procedural compliance.
+
+        AUTHORITY: SYSTEM - Procedural violation detection is automatic.
+        User reports rejection; system evaluates §611(a)(3) compliance.
+        """
         violations = []
 
-        # Check procedural requirements
+        # Check procedural requirements (SYSTEM evaluates user-reported data)
         if not response.has_5_day_notice:
             violations.append({
                 "id": str(uuid4()),
@@ -477,6 +603,7 @@ class ResponseEvaluator:
                 "statute": "FCRA § 611(a)(3)(A)",
                 "description": "No 5-day notice provided for frivolous determination",
                 "severity": "HIGH",
+                "authority": "SYSTEM",
             })
 
         if not response.has_specific_reason:
@@ -486,6 +613,7 @@ class ResponseEvaluator:
                 "statute": "FCRA § 611(a)(3)(B)",
                 "description": "No specific reason stated for rejection",
                 "severity": "HIGH",
+                "authority": "SYSTEM",
             })
 
         if not response.has_missing_info_request:
@@ -495,9 +623,10 @@ class ResponseEvaluator:
                 "statute": "FCRA § 611(a)(3)(B)",
                 "description": "No cure opportunity provided - missing information not identified",
                 "severity": "HIGH",
+                "authority": "SYSTEM",
             })
 
-        # If all procedural requirements violated, likely willful
+        # If all procedural requirements violated, likely willful (SYSTEM determination)
         if len(violations) >= 2:
             violations.append({
                 "id": str(uuid4()),
@@ -505,6 +634,7 @@ class ResponseEvaluator:
                 "statute": "FCRA § 616",
                 "description": "Pattern of procedural violations indicates willful refusal to investigate",
                 "severity": "CRITICAL",
+                "authority": "SYSTEM",
             })
 
         result["violations_created"] = violations
@@ -523,25 +653,37 @@ class ResponseEvaluator:
         return result
 
     def create_no_response_violations(self, dispute: DisputeDB) -> List[Dict[str, Any]]:
-        """Create violations for NO_RESPONSE based on entity type."""
+        """
+        Create violations for NO_RESPONSE based on entity type.
+
+        AUTHORITY: SYSTEM - Violations are created automatically by deadline engine.
+        No user input required.
+        """
         violations = []
         config = RESPONSE_VIOLATION_MAP[ResponseType.NO_RESPONSE]
 
         entity_violations = config.get("violations_by_entity", {}).get(dispute.entity_type, [])
 
         for v in entity_violations:
-            # Check guardrail for collector
+            # Check guardrail for collector - MANDATORY for §1692g(b)
             if v.get("guardrail") == "1692g_b_preconditions":
-                can_cite, reason = FDCPA1692gGuardrail.can_cite_1692g_b(dispute)
+                can_cite, reason, preconditions = FDCPA1692gGuardrail.can_cite_1692g_b(dispute)
                 if not can_cite:
-                    # Use alternative statute
-                    alternatives = FDCPA1692gGuardrail.get_alternative_statutes()
+                    # GUARDRAIL ACTIVE: Use alternative statute
+                    statute_selection = FDCPA1692gGuardrail.select_appropriate_statute(
+                        dispute,
+                        violation_context="debt collection no response"
+                    )
                     violations.append({
                         "id": str(uuid4()),
                         "type": "unfair_practices",
-                        "statute": alternatives[1]["statute"],  # 1692f
-                        "description": f"Collector failed to respond. {reason}. Using alternative statute.",
+                        "statute": statute_selection["statute"],
+                        "description": f"Collector failed to respond to dispute. {reason}",
                         "severity": "HIGH",
+                        "guardrail_applied": True,
+                        "guardrail_reason": reason,
+                        "preconditions_checked": preconditions,
+                        "authority": "SYSTEM",  # System created violation
                     })
                     continue
 
@@ -551,6 +693,7 @@ class ResponseEvaluator:
                 "statute": v["statute"],
                 "description": f"Entity failed to respond within statutory deadline",
                 "severity": "HIGH",
+                "authority": "SYSTEM",  # System created violation
             })
 
         return violations

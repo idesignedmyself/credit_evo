@@ -18,6 +18,17 @@ from ...models.db_models import (
 # =============================================================================
 # STATE CONFIGURATION
 # =============================================================================
+#
+# AUTHORITY MODEL:
+# Each state indicates which actor can trigger transitions INTO that state:
+# - USER: User-authorized action (initiate dispute, log response)
+# - SYSTEM: System-authoritative action (deadline breach, reinsertion, escalation)
+#
+# The distinction is CRITICAL:
+# - User actions require explicit user confirmation
+# - System actions execute automatically without user approval
+#
+# =============================================================================
 
 STATE_CONFIG = {
     EscalationState.DETECTED: {
@@ -27,6 +38,7 @@ STATE_CONFIG = {
         "outputs": ["initial_dispute_letter"],
         "statutes": [],  # Underlying violation statute
         "reversible": True,
+        "entry_authority": "SYSTEM",  # Audit engine detects violation
     },
     EscalationState.DISPUTED: {
         "description": "Dispute sent, awaiting response",
@@ -38,6 +50,7 @@ STATE_CONFIG = {
         "outputs": [],
         "statutes": ["FCRA § 611(a)(1)", "FCRA § 623(b)(1)"],
         "reversible": False,
+        "entry_authority": "USER",  # User initiates dispute
     },
     EscalationState.RESPONDED: {
         "description": "Response received from entity",
@@ -50,6 +63,7 @@ STATE_CONFIG = {
         "outputs": ["validation_prompts"],
         "statutes": [],
         "reversible": False,
+        "entry_authority": "USER",  # User logs entity response
     },
     EscalationState.NO_RESPONSE: {
         "description": "Entity failed to respond within deadline",
@@ -58,6 +72,7 @@ STATE_CONFIG = {
         "outputs": ["escalation_notice"],
         "statutes": ["FCRA § 611(a)(1)(A)", "FCRA § 623(b)(1)(A)"],
         "reversible": False,
+        "entry_authority": "SYSTEM",  # Deadline engine detects no response
     },
     EscalationState.EVALUATED: {
         "description": "Response evaluated, determination made",
@@ -69,6 +84,7 @@ STATE_CONFIG = {
         "outputs": ["evaluation_summary"],
         "statutes": [],
         "reversible": False,
+        "entry_authority": "SYSTEM",  # System evaluates response
     },
     EscalationState.NON_COMPLIANT: {
         "description": "Entity failed statutory duty",
@@ -80,6 +96,7 @@ STATE_CONFIG = {
         "outputs": ["escalation_notice", "procedural_cure_letter"],
         "statutes": ["FCRA § 611(a)", "FCRA § 623(b)"],
         "reversible": False,
+        "entry_authority": "SYSTEM",  # System determines non-compliance
     },
     EscalationState.PROCEDURAL_ENFORCEMENT: {
         "description": "Procedural remedies in progress",
@@ -91,6 +108,7 @@ STATE_CONFIG = {
         "outputs": ["mov_demand", "procedural_cure_letter"],
         "statutes": ["FCRA § 611(a)(6)(B)(iii)", "FCRA § 623(b)(1)(B)"],
         "reversible": False,
+        "entry_authority": "SYSTEM",  # System escalates automatically
     },
     EscalationState.SUBSTANTIVE_ENFORCEMENT: {
         "description": "Substantive enforcement in progress",
@@ -102,6 +120,7 @@ STATE_CONFIG = {
         "outputs": ["failure_to_investigate_letter", "formal_demand"],
         "statutes": ["FCRA § 616", "FCRA § 617", "FDCPA § 1692k"],
         "reversible": False,
+        "entry_authority": "SYSTEM",  # System escalates after procedural failure
     },
     EscalationState.REGULATORY_ESCALATION: {
         "description": "Regulatory complaint preparation",
@@ -110,6 +129,7 @@ STATE_CONFIG = {
         "outputs": ["cfpb_complaint_packet", "ag_referral_letter"],
         "statutes": ["FCRA § 621"],
         "reversible": False,
+        "entry_authority": "SYSTEM",  # System escalates (incl. reinsertion auto-trigger)
     },
     EscalationState.LITIGATION_READY: {
         "description": "All remedies exhausted, litigation ready",
@@ -118,6 +138,7 @@ STATE_CONFIG = {
         "outputs": ["attorney_evidence_bundle"],
         "statutes": ["FCRA § 616", "FCRA § 617", "FDCPA § 1692k"],
         "reversible": False,
+        "entry_authority": "SYSTEM",  # System determines litigation readiness
     },
     EscalationState.RESOLVED_DELETED: {
         "description": "Dispute resolved - item deleted",
@@ -126,6 +147,7 @@ STATE_CONFIG = {
         "outputs": [],
         "statutes": [],
         "reversible": False,
+        "entry_authority": "USER",  # User confirms deletion
     },
     EscalationState.RESOLVED_CURED: {
         "description": "Dispute resolved - entity cured violation",
@@ -134,6 +156,7 @@ STATE_CONFIG = {
         "outputs": [],
         "statutes": [],
         "reversible": False,
+        "entry_authority": "USER",  # User confirms cure
     },
 }
 
@@ -258,13 +281,28 @@ class EscalationStateMachine:
 
 
 # =============================================================================
-# AUTOMATIC TRANSITION TRIGGERS
+# AUTOMATIC TRANSITION TRIGGERS (SYSTEM-AUTHORITATIVE)
+# =============================================================================
+#
+# These triggers execute WITHOUT user confirmation.
+# The system has full authority to:
+# - Detect deadline breaches
+# - Detect reinsertions (via report ingestion)
+# - Convert stalled investigations to NO_RESPONSE
+# - Escalate to NON_COMPLIANT based on response evaluation
+#
+# User cannot override or cancel system-triggered transitions.
+# User can only observe results via Paper Trail.
+#
 # =============================================================================
 
 class AutomaticTransitionTriggers:
     """
     System-authoritative actions that trigger state transitions
-    without user confirmation.
+    WITHOUT user confirmation.
+
+    AUTHORITY: SYSTEM - All methods in this class execute automatically.
+    No user approval required. User is notified via Paper Trail only.
     """
 
     @staticmethod

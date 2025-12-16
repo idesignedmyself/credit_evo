@@ -1,6 +1,17 @@
 /**
  * Dispute State Indicator
- * Shows current position in the escalation state machine
+ *
+ * Shows current position in the escalation state machine.
+ *
+ * AUTHORITY MODEL:
+ * - USER-ENTRY states: DISPUTED, RESPONDED, RESOLVED_DELETED, RESOLVED_CURED
+ *   (User actions like initiating disputes or logging responses)
+ * - SYSTEM-ENTRY states: DETECTED, NO_RESPONSE, EVALUATED, NON_COMPLIANT,
+ *   PROCEDURAL_ENFORCEMENT, SUBSTANTIVE_ENFORCEMENT, REGULATORY_ESCALATION, LITIGATION_READY
+ *   (System detects conditions and triggers automatic transitions)
+ *
+ * User can VIEW all state info but cannot manually change state.
+ * State transitions are controlled by the state machine based on events.
  */
 import React, { useEffect, useState } from 'react';
 import {
@@ -16,6 +27,7 @@ import {
   Skeleton,
   Alert,
   Divider,
+  Tooltip,
 } from '@mui/material';
 import {
   CheckCircle as CheckIcon,
@@ -25,6 +37,8 @@ import {
   Schedule as DeadlineIcon,
   Description as ArtifactIcon,
   ArrowForward as NextIcon,
+  Person as UserIcon,
+  SmartToy as SystemIcon,
 } from '@mui/icons-material';
 import { getDisputeState, ESCALATION_STATES } from '../api/disputeApi';
 
@@ -33,6 +47,21 @@ const STATE_ORDER = [
   'DETECTED',
   'DISPUTED',
   'RESPONDED',
+  'EVALUATED',
+  'NON_COMPLIANT',
+  'PROCEDURAL_ENFORCEMENT',
+  'SUBSTANTIVE_ENFORCEMENT',
+  'REGULATORY_ESCALATION',
+  'LITIGATION_READY',
+];
+
+// States where USER triggers entry
+const USER_ENTRY_STATES = ['DISPUTED', 'RESPONDED', 'RESOLVED_DELETED', 'RESOLVED_CURED'];
+
+// States where SYSTEM triggers entry (no user confirmation)
+const SYSTEM_ENTRY_STATES = [
+  'DETECTED',
+  'NO_RESPONSE',
   'EVALUATED',
   'NON_COMPLIANT',
   'PROCEDURAL_ENFORCEMENT',
@@ -93,6 +122,9 @@ const DisputeStateIndicator = ({ disputeId }) => {
     return 'primary';
   };
 
+  const isUserEntryState = USER_ENTRY_STATES.includes(state.current_state);
+  const isSystemEntryState = SYSTEM_ENTRY_STATES.includes(state.current_state);
+
   return (
     <Paper sx={{ p: 3 }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
@@ -102,6 +134,23 @@ const DisputeStateIndicator = ({ disputeId }) => {
           color={getStateColor()}
           size="medium"
         />
+        {/* Authority indicator */}
+        <Tooltip
+          title={
+            isUserEntryState
+              ? 'This state was entered due to your action (e.g., initiating dispute, logging response)'
+              : 'This state was entered automatically by the system (e.g., deadline breach, evaluation)'
+          }
+          arrow
+        >
+          <Chip
+            icon={isUserEntryState ? <UserIcon fontSize="small" /> : <SystemIcon fontSize="small" />}
+            label={isUserEntryState ? 'User Action' : 'System (Auto)'}
+            size="small"
+            variant="outlined"
+            color={isUserEntryState ? 'default' : 'info'}
+          />
+        </Tooltip>
       </Box>
 
       {/* Progress Bar */}

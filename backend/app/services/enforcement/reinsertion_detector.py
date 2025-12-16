@@ -1,8 +1,19 @@
 """
 Reinsertion Detector
 
-System-detected violations for deleted items that reappear.
-Operates automatically during report ingestion.
+AUTHORITY: SYSTEM
+This module creates violations AUTOMATICALLY without user confirmation.
+User's only role is uploading reports - detection and escalation are system-authoritative.
+
+Key behaviors:
+- Scans for previously deleted items during report ingestion
+- Creates FCRA § 611(a)(5)(B) violation if reinsertion detected without notice
+- Creates FCRA § 623(a)(6) violation against furnisher if applicable
+- Auto-escalates to REGULATORY_ESCALATION without user confirmation
+- Treats reinsertion without notice as willful noncompliance (§616 exposure)
+
+The 90-day monitoring window starts when an item is DELETED.
+If the item reappears without 5-day advance notice, it's an automatic violation.
 """
 from datetime import date, datetime, timedelta
 from typing import Optional, List, Dict, Any, Tuple
@@ -115,8 +126,13 @@ class ReinsertionDetector:
         """
         Process a detected reinsertion.
 
-        Creates violations and triggers escalation.
-        System-automatic, no user confirmation required.
+        AUTHORITY: SYSTEM - Creates violations and triggers escalation AUTOMATICALLY.
+        No user confirmation required. User cannot override or cancel escalation.
+
+        Statutory basis:
+        - FCRA § 611(a)(5)(B): CRA must provide 5-day notice before reinsertion
+        - FCRA § 623(a)(6): Furnisher must not report deleted info without certification
+        - FCRA § 616: Willful noncompliance (applies when reinsertion without notice)
         """
         from .state_machine import EscalationStateMachine, AutomaticTransitionTriggers
 
@@ -130,6 +146,7 @@ class ReinsertionDetector:
 
         if not watch.notice_received:
             # REINSERTION WITHOUT NOTICE - FCRA § 611(a)(5)(B)
+            # AUTHORITY: SYSTEM - Violation created automatically without user confirmation
             violation = {
                 "id": str(uuid4()),
                 "type": "reinsertion_without_notice",
@@ -138,6 +155,7 @@ class ReinsertionDetector:
                 "severity": "CRITICAL",
                 "willful_indicator": True,
                 "statute_616_exposure": True,
+                "authority": "SYSTEM",  # System-created, not user-reported
                 "evidence": {
                     "original_deletion_date": watch.monitoring_start.isoformat(),
                     "reinsertion_date": date.today().isoformat(),
@@ -148,6 +166,7 @@ class ReinsertionDetector:
             violations_created.append(violation)
 
             # Create furnisher violation if applicable
+            # AUTHORITY: SYSTEM - Furnisher violation created automatically
             if watch.furnisher_name:
                 furnisher_violation = {
                     "id": str(uuid4()),
@@ -156,6 +175,7 @@ class ReinsertionDetector:
                     "description": f"Furnisher {watch.furnisher_name} re-reported previously deleted information",
                     "severity": "CRITICAL",
                     "willful_indicator": True,
+                    "authority": "SYSTEM",  # System-created, not user-reported
                 }
                 violations_created.append(furnisher_violation)
 
@@ -312,7 +332,11 @@ class ReinsertionDetector:
         """
         Run reinsertion scan for a user's new report.
 
-        Called during report ingestion.
+        AUTHORITY: SYSTEM - Called automatically during report ingestion.
+        User uploads report; system detects reinsertions and creates violations.
+        No user confirmation required for violation creation or escalation.
+
+        Called during report ingestion (reports.py upload_report endpoint).
         """
         active_watches = self.get_active_watches(user_id)
 

@@ -4,6 +4,21 @@ Dispute Service
 Main orchestration service for the enforcement system.
 Coordinates state machine, deadline engine, response evaluation,
 reinsertion detection, and cross-entity intelligence.
+
+AUTHORITY MODEL:
+- USER-AUTHORIZED: create_dispute, log_response, confirm_mailing
+- SYSTEM-AUTHORITATIVE: deadline breaches, reinsertion detection, escalation, violation creation
+
+The user is a FACTUAL REPORTER only. The user:
+- Initiates disputes (provides facts about what was sent)
+- Logs entity responses (reports what was received)
+- Uploads reports (provides data for reinsertion detection)
+
+The system is the LEGAL DECISION-MAKER. The system:
+- Creates violations based on statutory requirements
+- Escalates disputes based on entity conduct
+- Detects reinsertions and creates automatic violations
+- Applies FDCPA guardrails to ensure correct statute citation
 """
 from datetime import date, datetime, timedelta
 from typing import Optional, List, Dict, Any, Tuple
@@ -150,7 +165,13 @@ class DisputeService:
         """
         Log a response from an entity.
 
-        User-authorized action - user reports response received.
+        AUTHORITY: USER - User reports factual information about response received.
+        AUTHORITY: SYSTEM - After user logs response, system:
+        - Evaluates response against statutory requirements
+        - Creates violations automatically if warranted
+        - Triggers state transitions based on evaluation
+        - Starts REINSERTION WATCH if response is DELETED (90-day monitoring)
+        - Runs cross-entity analysis for pattern detection
         """
         dispute = self.db.query(DisputeDB).get(dispute_id)
         if not dispute:
@@ -346,7 +367,11 @@ class DisputeService:
         """
         Get system-triggered events for a dispute.
 
-        Shows pending deadlines, reinsertion watches, and escalations.
+        AUTHORITY: READ-ONLY - User can VIEW system events but cannot modify them.
+        Shows:
+        - Pending deadlines (SYSTEM will auto-create violations on breach)
+        - Reinsertion watches (SYSTEM monitors for 90 days after DELETED)
+        - Escalation history (SYSTEM-triggered state transitions)
         """
         dispute = self.db.query(DisputeDB).get(dispute_id)
         if not dispute:

@@ -25,6 +25,7 @@ from ..services.parsing import parse_identityiq_html
 from ..services.audit import audit_report
 from ..models import NormalizedReport, AuditResult, Violation, ViolationType, Severity
 from ..auth import get_current_user
+from ..services.enforcement import ReinsertionDetector
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +103,13 @@ class ReportSummaryResponse(BaseModel):
     credit_scores: Optional[CreditScoreResponse] = None
 
 
+class ReinsertionScanResult(BaseModel):
+    """Result of system-automatic reinsertion detection."""
+    reinsertions_found: int = 0
+    reinsertions_processed: int = 0
+    watches_checked: int = 0
+
+
 class UploadResponse(BaseModel):
     report_id: str
     message: str
@@ -109,6 +117,7 @@ class UploadResponse(BaseModel):
     total_violations: int
     accounts: List[dict]
     credit_scores: Optional[CreditScoreResponse] = None
+    reinsertion_scan: Optional[ReinsertionScanResult] = None  # System-detected reinsertions
 
 
 class ReportListItem(BaseModel):
@@ -295,6 +304,39 @@ async def upload_report(
 
         logger.info(f"Audit saved: {audit_result.total_violations_found} violations, {len(discrepancies_data)} cross-bureau discrepancies")
 
+        # =================================================================
+        # REINSERTION DETECTION (SYSTEM-AUTOMATIC)
+        # Scans for previously deleted items that have reappeared.
+        # This is a system-detected violation, not user-reported.
+        # =================================================================
+        reinsertion_result = None
+        try:
+            reinsertion_detector = ReinsertionDetector(db)
+
+            # Build account fingerprints from current report for comparison
+            current_accounts = []
+            for account in serialized_report.get('accounts', []):
+                current_accounts.append({
+                    "creditor_name": account.get('creditor_name', ''),
+                    "account_number_partial": account.get('account_number', '')[-4:] if account.get('account_number') else None,
+                    "bureau": report.bureau.value,
+                })
+
+            # Run reinsertion scan (system-automatic, no user input required)
+            reinsertion_result = reinsertion_detector.run_reinsertion_scan(
+                user_id=current_user.id,
+                current_accounts=current_accounts,
+            )
+
+            if reinsertion_result.get('reinsertions_found', 0) > 0:
+                logger.warning(
+                    f"REINSERTION DETECTED: {reinsertion_result['reinsertions_found']} "
+                    f"previously deleted items have reappeared (SYSTEM-DETECTED)"
+                )
+        except Exception as e:
+            logger.error(f"Reinsertion scan failed: {e}")
+            # Don't fail the upload if reinsertion scan fails
+
         # Extract credit scores for response
         credit_scores_data = serialized_report.get('credit_scores')
         credit_scores_response = None
@@ -309,13 +351,23 @@ async def upload_report(
                 score_scale=credit_scores_data.get('score_scale', '300-850')
             )
 
+        # Build reinsertion scan result for response
+        reinsertion_scan_response = None
+        if reinsertion_result:
+            reinsertion_scan_response = ReinsertionScanResult(
+                reinsertions_found=reinsertion_result.get('reinsertions_found', 0),
+                reinsertions_processed=reinsertion_result.get('reinsertions_processed', 0),
+                watches_checked=reinsertion_result.get('watches_checked', 0),
+            )
+
         return UploadResponse(
             report_id=report.report_id,
             message="Report uploaded and processed successfully",
             total_accounts=len(report.accounts),
             total_violations=audit_result.total_violations_found,
             accounts=serialized_report.get('accounts', []),
-            credit_scores=credit_scores_response
+            credit_scores=credit_scores_response,
+            reinsertion_scan=reinsertion_scan_response
         )
 
     except Exception as e:
