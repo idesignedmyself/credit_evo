@@ -957,4 +957,6 @@ Full-width navbar with edge-to-edge positioning:
 
 - `letter_fixes.md` - Recent fixes and Metro 2 field reference
 - `system_checklist.md` - Full violation coverage checklist
+- `docs/UNIFIED_RESPONSE_SYSTEM.md` - Complete response tracking and escalation framework
+- `docs/RESPONSE_SYSTEM_OVERVIEW.md` - High-level system explainer
 - `violation_comparison.xlsx` - Comparison with industry standards
