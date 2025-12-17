@@ -484,10 +484,77 @@ Both filter components now use `getViolationLabel`:
 
 ---
 
+## UI Semantic Layer (Violations vs Advisories)
+
+**Added:** December 2024
+
+### Overview
+Dynamic UI layer that distinguishes between hard violations (actionable) and soft advisories (informational) based on severity. This prevents LOW severity items from being presented with alarming "DISCREPANCY DETECTED" language.
+
+### Problem Solved
+**Before:** All items displayed with "DISCREPANCY DETECTED", "EXPECTED vs ACTUAL" language, creating unnecessary user alarm for informational review items.
+
+**After:** LOW severity items use neutral advisory language; MEDIUM/HIGH use violation language.
+
+### UI Modes
+
+| Severity | UI Mode   | Header Text                  | Column Labels            |
+|----------|-----------|------------------------------|--------------------------|
+| LOW      | advisory  | ℹ️ ACCOUNT REVIEW SIGNAL     | REFERENCE / REPORTED     |
+| MEDIUM   | violation | ⚠️ DISCREPANCY DETECTED      | EXPECTED / ACTUAL        |
+| HIGH     | violation | ⛔ POTENTIAL LEGAL VIOLATION | EXPECTED / ACTUAL        |
+
+### Implementation
+
+#### 1. UI Configuration Function
+**Location:** `frontend/src/utils/formatViolation.js`
+
+```javascript
+export const getViolationUI = (violationType, severity) => {
+  const isAdvisory = severity?.toUpperCase() === 'LOW';
+
+  if (isAdvisory) {
+    return {
+      mode: 'advisory',
+      boxTitle: 'Review Details',
+      expectedLabel: 'Reference',
+      actualLabel: 'Reported',
+      // Neutral gray colors, no dispute CTA
+    };
+  }
+  // Returns violation mode with actionable language
+};
+```
+
+#### 2. Type-Specific Overrides
+Special violation types get custom titles:
+- `student_loan_capitalized_interest` → "ℹ️ BALANCE REVIEW (CAPITALIZED INTEREST)"
+- `collection_balance_inflation` → "⛔ POTENTIAL FDCPA VIOLATION"
+- `obsolete_account` → "⛔ OBSOLETE ACCOUNT (7-YEAR LIMIT)"
+
+#### 3. Component Integration
+**Location:** `frontend/src/components/ViolationToggle.jsx`
+
+The component reads `uiConfig = getViolationUI(violation.violation_type, violation.severity)` and renders:
+- Dynamic box titles
+- Dynamic column labels (Reference/Reported vs Expected/Actual)
+- Dynamic colors (neutral gray vs green/red)
+- "Reference Standards" vs "Cited Statutes" based on mode
+
+### Design Principles
+- ❌ Does NOT change backend detection logic
+- ❌ Does NOT reclassify severity
+- ❌ Does NOT infer legality
+- ✅ ONLY controls presentation/rendering
+- ✅ Fail-safe defaults to advisory mode for unknown types
+
+---
+
 ## Recent Commits
 
 | Commit | Description |
 |--------|-------------|
+| `TBD` | UI Semantic Layer - Violations vs Advisories |
 | `TBD` | B6: Bureau Ghost Guard - prevent cross-bureau data bleed |
 | `TBD` | Unify violation type labels between dropdown and tabs |
 | `9079259` | Add Account filter dropdown and remove filter icon |

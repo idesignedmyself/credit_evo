@@ -17,7 +17,7 @@ import {
   Grid,
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import { formatViolation, getSeverityConfig } from '../utils';
+import { formatViolation, getSeverityConfig, getViolationUI } from '../utils';
 
 const ViolationToggle = React.memo(({ violation, isSelected, onToggle }) => {
   // Guard against undefined/null violation
@@ -25,6 +25,8 @@ const ViolationToggle = React.memo(({ violation, isSelected, onToggle }) => {
 
   const formatted = formatViolation(violation);
   const severityConfig = getSeverityConfig(violation.severity);
+  // Get UI semantic configuration (violations vs advisories)
+  const uiConfig = getViolationUI(violation.violation_type, violation.severity);
 
   const handleCheckboxClick = (e) => {
     e.stopPropagation();
@@ -114,15 +116,15 @@ const ViolationToggle = React.memo(({ violation, isSelected, onToggle }) => {
 
         {/* Technical Details Grid */}
         <Grid container spacing={2}>
-          {/* Expected vs Actual Box */}
+          {/* Expected vs Actual Box - Uses semantic labels based on severity */}
           {(violation.expected_value || violation.actual_value) && (
             <Grid item xs={12} md={6}>
               <Paper
                 variant="outlined"
                 sx={{
                   p: 2.5,
-                  bgcolor: '#fff',
-                  borderColor: '#E2E8F0',
+                  bgcolor: uiConfig.mode === 'advisory' ? uiConfig.bgColor : '#fff',
+                  borderColor: uiConfig.mode === 'advisory' ? uiConfig.borderColor : '#E2E8F0',
                   borderRadius: 2,
                 }}
               >
@@ -130,13 +132,13 @@ const ViolationToggle = React.memo(({ violation, isSelected, onToggle }) => {
                   variant="caption"
                   sx={{
                     textTransform: 'uppercase',
-                    color: 'text.secondary',
+                    color: uiConfig.mode === 'advisory' ? uiConfig.iconColor : 'text.secondary',
                     fontWeight: 700,
                     letterSpacing: '0.05em',
                     fontSize: '0.65rem',
                   }}
                 >
-                  Discrepancy Detected
+                  {uiConfig.boxTitle}
                 </Typography>
                 <Box sx={{ mt: 2, display: 'flex', justifyContent: 'space-between', gap: 2 }}>
                   {violation.expected_value && (
@@ -145,13 +147,13 @@ const ViolationToggle = React.memo(({ violation, isSelected, onToggle }) => {
                         variant="caption"
                         sx={{
                           fontWeight: 700,
-                          color: '#10B981',
+                          color: uiConfig.expectedColor,
                           fontSize: '0.65rem',
                           textTransform: 'uppercase',
                           letterSpacing: '0.03em',
                         }}
                       >
-                        Expected
+                        {uiConfig.expectedLabel}
                       </Typography>
                       <Typography variant="body2" sx={{ fontWeight: 500, mt: 0.5, color: 'text.primary' }}>
                         {violation.expected_value}
@@ -167,13 +169,13 @@ const ViolationToggle = React.memo(({ violation, isSelected, onToggle }) => {
                         variant="caption"
                         sx={{
                           fontWeight: 700,
-                          color: '#EF4444',
+                          color: uiConfig.actualColor,
                           fontSize: '0.65rem',
                           textTransform: 'uppercase',
                           letterSpacing: '0.03em',
                         }}
                       >
-                        Actual Reporting
+                        {uiConfig.actualLabel}
                       </Typography>
                       <Typography variant="body2" sx={{ fontWeight: 500, mt: 0.5, color: 'text.primary' }}>
                         {violation.actual_value}
@@ -185,16 +187,16 @@ const ViolationToggle = React.memo(({ violation, isSelected, onToggle }) => {
             </Grid>
           )}
 
-          {/* Legal Codes Box */}
+          {/* Legal Codes Box - Uses semantic labels based on severity */}
           {(formatted.fcraDisplay || formatted.metroDisplay) && (
             <Grid item xs={12} md={(violation.expected_value || violation.actual_value) ? 6 : 12}>
               <Paper
                 variant="outlined"
                 sx={{
                   p: 2.5,
-                  bgcolor: '#fff',
+                  bgcolor: uiConfig.mode === 'advisory' ? uiConfig.bgColor : '#fff',
                   height: '100%',
-                  borderColor: '#E2E8F0',
+                  borderColor: uiConfig.mode === 'advisory' ? uiConfig.borderColor : '#E2E8F0',
                   borderRadius: 2,
                 }}
               >
@@ -202,13 +204,13 @@ const ViolationToggle = React.memo(({ violation, isSelected, onToggle }) => {
                   variant="caption"
                   sx={{
                     textTransform: 'uppercase',
-                    color: 'text.secondary',
+                    color: uiConfig.mode === 'advisory' ? uiConfig.iconColor : 'text.secondary',
                     fontWeight: 700,
                     letterSpacing: '0.05em',
                     fontSize: '0.65rem',
                   }}
                 >
-                  Cited Statutes
+                  {uiConfig.mode === 'advisory' ? 'Reference Standards' : 'Cited Statutes'}
                 </Typography>
                 <Stack direction="row" spacing={1} sx={{ mt: 1.5, flexWrap: 'wrap', gap: 1 }}>
                   {formatted.fcraDisplay && (

@@ -96,6 +96,138 @@ const SEVERITY_CONFIG = {
   LOW: { color: 'info', label: 'Low Priority' },
 };
 
+// =============================================================================
+// UI SEMANTIC LAYER - Violations vs Advisories (B6)
+// =============================================================================
+// This layer controls HOW items are presented to users without changing
+// backend detection logic, severity, or legal rules.
+//
+// UI Modes:
+// - "violation" → MEDIUM/HIGH severity → actionable, dispute-ready
+// - "advisory"  → LOW severity → informational, review-only
+// =============================================================================
+
+/**
+ * Type-specific UI overrides for special violation types.
+ * These provide custom titles/icons for specific scenarios.
+ * Types not listed here use default severity-based rendering.
+ */
+const UI_TYPE_OVERRIDES = {
+  // Balance review types (typically LOW severity, advisory mode)
+  student_loan_capitalized_interest: {
+    title: 'Balance Review (Capitalized Interest)',
+    icon: 'ℹ️',
+  },
+  mortgage_balance_review: {
+    title: 'Mortgage Balance Check',
+    icon: 'ℹ️',
+  },
+
+  // Legal violation types (typically HIGH severity)
+  collection_balance_inflation: {
+    title: 'Potential FDCPA Violation',
+    icon: '⛔',
+  },
+  false_debt_status: {
+    title: 'Potential FDCPA Violation',
+    icon: '⛔',
+  },
+  unverified_debt_reporting: {
+    title: 'Potential FDCPA Violation',
+    icon: '⛔',
+  },
+  re_aging: {
+    title: 'Re-Aging Violation (FCRA)',
+    icon: '⛔',
+  },
+  obsolete_account: {
+    title: 'Obsolete Account (7-Year Limit)',
+    icon: '⛔',
+  },
+  child_identity_theft: {
+    title: 'Potential Identity Theft',
+    icon: '⛔',
+  },
+  deceased_indicator_error: {
+    title: 'Critical Identity Error',
+    icon: '⛔',
+  },
+};
+
+/**
+ * Get UI rendering configuration based on violation type and severity.
+ * Implements semantic layer that distinguishes violations from advisories.
+ *
+ * @param {string} violationType - The violation_type from backend
+ * @param {string} severity - HIGH, MEDIUM, or LOW
+ * @returns {Object} UI configuration for rendering
+ */
+export const getViolationUI = (violationType, severity) => {
+  const normalizedSeverity = severity?.toUpperCase() || 'MEDIUM';
+  const typeOverride = UI_TYPE_OVERRIDES[violationType] || {};
+
+  // Determine UI mode based on severity
+  const isAdvisory = normalizedSeverity === 'LOW';
+
+  if (isAdvisory) {
+    // ADVISORY MODE - Informational, review-only
+    return {
+      mode: 'advisory',
+      headerText: typeOverride.title
+        ? `${typeOverride.icon || 'ℹ️'} ${typeOverride.title.toUpperCase()}`
+        : 'ℹ️ ACCOUNT REVIEW SIGNAL',
+      boxTitle: 'Review Details',
+      expectedLabel: 'Reference',
+      actualLabel: 'Reported',
+      expectedColor: '#6B7280',  // Gray - neutral
+      actualColor: '#6B7280',    // Gray - neutral
+      ctaText: 'Verify Accuracy',
+      ctaShow: false,  // Don't encourage disputes for advisories
+      borderColor: '#E5E7EB',
+      bgColor: '#F9FAFB',
+      iconColor: '#6B7280',
+    };
+  }
+
+  if (normalizedSeverity === 'HIGH') {
+    // HIGH SEVERITY - Potential legal violation
+    return {
+      mode: 'violation',
+      headerText: typeOverride.title
+        ? `${typeOverride.icon || '⛔'} ${typeOverride.title.toUpperCase()}`
+        : '⛔ POTENTIAL LEGAL VIOLATION',
+      boxTitle: 'Discrepancy Detected',
+      expectedLabel: 'Expected',
+      actualLabel: 'Actual Reporting',
+      expectedColor: '#10B981',  // Green
+      actualColor: '#EF4444',    // Red
+      ctaText: 'Dispute Immediately',
+      ctaShow: true,
+      borderColor: '#FCA5A5',
+      bgColor: '#FEF2F2',
+      iconColor: '#DC2626',
+    };
+  }
+
+  // MEDIUM SEVERITY - Standard discrepancy
+  return {
+    mode: 'violation',
+    headerText: typeOverride.title
+      ? `${typeOverride.icon || '⚠️'} ${typeOverride.title.toUpperCase()}`
+      : '⚠️ DISCREPANCY DETECTED',
+    boxTitle: 'Discrepancy Detected',
+    expectedLabel: 'Expected',
+    actualLabel: 'Actual Reporting',
+    expectedColor: '#10B981',  // Green
+    actualColor: '#EF4444',    // Red
+    ctaText: 'Dispute This Item',
+    ctaShow: true,
+    borderColor: '#FCD34D',
+    bgColor: '#FFFBEB',
+    iconColor: '#D97706',
+  };
+};
+
 /**
  * Get human-readable label for violation type
  * @param {string} violationType - The violation type enum value
@@ -213,6 +345,7 @@ export const groupViolationsByBureau = (violations) => {
 
 export default {
   getViolationLabel,
+  getViolationUI,
   getSeverityConfig,
   formatViolation,
   groupViolationsByType,
