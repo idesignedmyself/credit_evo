@@ -130,7 +130,7 @@ class SingleBureauRules:
                 expected_value="Non-negative balance",
                 actual_value=f"${account.balance:,.2f}",
                 fcra_section="611(a)",
-                metro2_field="17A",
+                metro2_field="Field 21 (Current Balance)",
                 evidence={"balance": account.balance}
             ))
 
@@ -341,32 +341,195 @@ class SingleBureauRules:
 
     @staticmethod
     def check_balance_exceeds_high_credit(account: Account, bureau: Bureau) -> List[Violation]:
-        """Check if balance exceeds high credit (invalid)."""
+        """
+        Check if balance exceeds high credit (Original Loan Amount).
+
+        ACCOUNT TYPE SCOPING (Metro 2 / CRRG 2024-2025 Compliant):
+
+        1. REVOLVING ACCOUNTS (Credit Cards):
+           - Balance > High Credit IS a violation
+           - Severity: MEDIUM
+           - Field Citation: Field 12 (High Credit) & Field 21 (Current Balance)
+
+        2. INSTALLMENT ACCOUNTS (Auto Loans, Personal Loans):
+           - Balance > Original Loan Amount MAY occur due to late fees/interest
+           - Severity: LOW (Review Only)
+           - Not automatically a Metro 2 violation
+
+        3. EDUCATION/STUDENT LOANS (Account Type 12):
+           - Balance > Original Loan Amount is COMMON and EXPECTED
+           - Capitalized interest during deferment/forbearance grows the balance
+           - Severity: LOW (Informational Review)
+           - Label: "Check for Capitalized Interest"
+           - Only dispute if the balance is factually wrong (duplicate, etc.)
+
+        IMPORTANT: Field 17A (Account Status Code) is NEVER cited for monetary
+        discrepancies. The correct fields are:
+        - Field 12: High Credit / Original Loan Amount
+        - Field 21: Current Balance
+        """
         violations = []
 
-        if account.balance is not None and account.high_credit is not None:
-            if account.balance > account.high_credit and account.high_credit > 0:
-                violations.append(Violation(
-                    violation_type=ViolationType.BALANCE_EXCEEDS_HIGH_CREDIT,
-                    severity=Severity.MEDIUM,
-                    account_id=account.account_id,
-                    creditor_name=account.creditor_name,
-                    account_number_masked=account.account_number_masked,
-                    furnisher_type=account.furnisher_type,
-                    bureau=bureau,
-                    description=(
-                        f"Current balance (${account.balance:,.2f}) exceeds high credit "
-                        f"(${account.high_credit:,.2f}), which is inconsistent."
-                    ),
-                    expected_value=f"Balance ≤ ${account.high_credit:,.2f}",
-                    actual_value=f"${account.balance:,.2f}",
-                    fcra_section="611(a)",
-                    metro2_field="17A",
-                    evidence={
-                        "balance": account.balance,
-                        "high_credit": account.high_credit
-                    }
-                ))
+        if account.balance is None or account.high_credit is None:
+            return violations
+
+        if account.balance <= account.high_credit or account.high_credit <= 0:
+            return violations
+
+        # Determine account type for scoping
+        account_type = (account.account_type or "").lower()
+        creditor_text = (account.creditor_name or "").lower()
+
+        # Get account_type_detail from bureau data if available
+        account_type_detail = ""
+        bureau_data = account.get_bureau_data(bureau)
+        if bureau_data:
+            if hasattr(bureau_data, 'account_type_detail') and bureau_data.account_type_detail:
+                account_type_detail = bureau_data.account_type_detail.lower()
+
+        # Student loan identifiers (Account Type 12 in Metro 2)
+        student_loan_keywords = [
+            "educational", "student loan", "student", "dept of ed", "dept ed",
+            "nelnet", "navient", "mohela", "fedloan", "sallie mae", "great lakes",
+            "acs education", "edfinancial", "pheaa", "ecmc", "department of education",
+            "education loan", "federal student", "private student"
+        ]
+
+        is_student_loan = any(k in account_type_detail for k in student_loan_keywords) or \
+                          any(k in creditor_text for k in student_loan_keywords) or \
+                          any(k in account_type for k in student_loan_keywords)
+
+        # Installment account identifiers
+        installment_keywords = ["installment", "auto loan", "car loan", "personal loan", "mortgage"]
+        is_installment = any(k in account_type for k in installment_keywords)
+
+        # Revolving account identifiers
+        revolving_keywords = ["revolving", "credit card", "line of credit", "heloc"]
+        is_revolving = any(k in account_type for k in revolving_keywords)
+
+        # Calculate over-limit amount
+        over_amount = account.balance - account.high_credit
+
+        # CASE 1: Student Loans - Informational Review Only (Capitalized Interest)
+        if is_student_loan:
+            violations.append(Violation(
+                violation_type=ViolationType.STUDENT_LOAN_CAPITALIZED_INTEREST,
+                severity=Severity.LOW,  # Informational, not a hard violation
+                account_id=account.account_id,
+                creditor_name=account.creditor_name,
+                account_number_masked=account.account_number_masked,
+                furnisher_type=account.furnisher_type,
+                bureau=bureau,
+                description=(
+                    f"Student Loan Balance Check: Current balance (${account.balance:,.2f}) exceeds "
+                    f"original loan amount (${account.high_credit:,.2f}) by ${over_amount:,.2f}. "
+                    f"This is COMMON for student loans due to capitalized interest "
+                    f"(interest added to principal during deferment/forbearance periods). "
+                    f"Review for accuracy - only dispute if the balance is factually incorrect "
+                    f"(e.g., duplicate reporting, wrong account, payments not credited)."
+                ),
+                expected_value=f"Original Loan: ${account.high_credit:,.2f}",
+                actual_value=f"Current Balance: ${account.balance:,.2f}",
+                fcra_section="611(a)",
+                metro2_field="Field 12 (High Credit / Original Loan Amount) & Field 21 (Current Balance)",
+                evidence={
+                    "balance": account.balance,
+                    "high_credit": account.high_credit,
+                    "over_amount": over_amount,
+                    "account_type": account.account_type,
+                    "account_type_detail": account_type_detail,
+                    "classification": "student_loan",
+                    "review_reason": "capitalized_interest_common"
+                }
+            ))
+
+        # CASE 2: Non-Student Installment Accounts - Review Only
+        elif is_installment:
+            violations.append(Violation(
+                violation_type=ViolationType.BALANCE_EXCEEDS_HIGH_CREDIT,
+                severity=Severity.LOW,  # Lower severity for installment accounts
+                account_id=account.account_id,
+                creditor_name=account.creditor_name,
+                account_number_masked=account.account_number_masked,
+                furnisher_type=account.furnisher_type,
+                bureau=bureau,
+                description=(
+                    f"Installment Account Review: Current balance (${account.balance:,.2f}) exceeds "
+                    f"original loan amount (${account.high_credit:,.2f}) by ${over_amount:,.2f}. "
+                    f"While unusual for installment loans, this may occur due to late fees or "
+                    f"accrued interest. Review for accuracy before disputing."
+                ),
+                expected_value=f"Balance ≤ ${account.high_credit:,.2f}",
+                actual_value=f"${account.balance:,.2f}",
+                fcra_section="611(a)",
+                metro2_field="Field 12 (High Credit / Original Loan Amount) & Field 21 (Current Balance)",
+                evidence={
+                    "balance": account.balance,
+                    "high_credit": account.high_credit,
+                    "over_amount": over_amount,
+                    "account_type": account.account_type,
+                    "classification": "installment",
+                    "review_reason": "fees_or_interest_possible"
+                }
+            ))
+
+        # CASE 3: Revolving Accounts - Hard Violation
+        elif is_revolving:
+            violations.append(Violation(
+                violation_type=ViolationType.BALANCE_EXCEEDS_HIGH_CREDIT,
+                severity=Severity.MEDIUM,  # Hard violation for revolving accounts
+                account_id=account.account_id,
+                creditor_name=account.creditor_name,
+                account_number_masked=account.account_number_masked,
+                furnisher_type=account.furnisher_type,
+                bureau=bureau,
+                description=(
+                    f"Current balance (${account.balance:,.2f}) exceeds high credit "
+                    f"(${account.high_credit:,.2f}) by ${over_amount:,.2f}. For revolving accounts, "
+                    f"the high credit represents the highest balance ever carried. A current balance "
+                    f"exceeding this is inconsistent and suggests inaccurate reporting."
+                ),
+                expected_value=f"Balance ≤ ${account.high_credit:,.2f}",
+                actual_value=f"${account.balance:,.2f}",
+                fcra_section="611(a)",
+                metro2_field="Field 12 (High Credit) & Field 21 (Current Balance)",
+                evidence={
+                    "balance": account.balance,
+                    "high_credit": account.high_credit,
+                    "over_amount": over_amount,
+                    "account_type": account.account_type,
+                    "classification": "revolving"
+                }
+            ))
+
+        # CASE 4: Unknown Account Type - Default to Review
+        else:
+            violations.append(Violation(
+                violation_type=ViolationType.BALANCE_EXCEEDS_HIGH_CREDIT,
+                severity=Severity.LOW,  # Conservative - default to review
+                account_id=account.account_id,
+                creditor_name=account.creditor_name,
+                account_number_masked=account.account_number_masked,
+                furnisher_type=account.furnisher_type,
+                bureau=bureau,
+                description=(
+                    f"Balance Review: Current balance (${account.balance:,.2f}) exceeds high credit "
+                    f"(${account.high_credit:,.2f}) by ${over_amount:,.2f}. Unable to determine "
+                    f"account type from available data. Review for accuracy - this may be normal "
+                    f"for installment/student loans, but inconsistent for revolving accounts."
+                ),
+                expected_value=f"Balance ≤ ${account.high_credit:,.2f}",
+                actual_value=f"${account.balance:,.2f}",
+                fcra_section="611(a)",
+                metro2_field="Field 12 (High Credit / Original Loan Amount) & Field 21 (Current Balance)",
+                evidence={
+                    "balance": account.balance,
+                    "high_credit": account.high_credit,
+                    "over_amount": over_amount,
+                    "account_type": account.account_type,
+                    "classification": "unknown"
+                }
+            ))
 
         return violations
 
@@ -383,6 +546,11 @@ class SingleBureauRules:
         - Collection accounts (transferred balances include fees)
         - Accounts with OC_CHARGEOFF furnisher type
         - Accounts with payment_status indicating chargeoff/collection
+
+        IMPORTANT: Field 17A (Account Status Code) is NEVER cited for monetary
+        discrepancies. The correct fields are:
+        - Field 16: Credit Limit
+        - Field 21: Current Balance
         """
         violations = []
 
@@ -423,7 +591,7 @@ class SingleBureauRules:
                     expected_value=f"Balance ≤ ${account.credit_limit:,.2f}",
                     actual_value=f"${account.balance:,.2f}",
                     fcra_section="623(a)(1)",
-                    metro2_field="17A/21",
+                    metro2_field="Field 16 (Credit Limit) & Field 21 (Current Balance)",
                     evidence={
                         "balance": account.balance,
                         "credit_limit": account.credit_limit,
@@ -436,28 +604,52 @@ class SingleBureauRules:
 
     @staticmethod
     def check_negative_credit_limit(account: Account, bureau: Bureau) -> List[Violation]:
-        """Check for negative credit limit (invalid)."""
+        """
+        Check for negative credit limit (invalid).
+
+        ACCOUNT TYPE SCOPING:
+        - This rule ONLY applies to REVOLVING accounts (credit cards, lines of credit)
+        - Installment loans, student loans, and mortgages do NOT have credit limits
+        - Field 16 (Credit Limit) is only valid for revolving/open-end accounts
+        """
         violations = []
 
-        if account.credit_limit is not None and account.credit_limit < 0:
-            violations.append(Violation(
-                violation_type=ViolationType.NEGATIVE_CREDIT_LIMIT,
-                severity=Severity.MEDIUM,
-                account_id=account.account_id,
-                creditor_name=account.creditor_name,
-                account_number_masked=account.account_number_masked,
-                furnisher_type=account.furnisher_type,
-                bureau=bureau,
-                description=(
-                    f"This account reports a negative credit limit of ${account.credit_limit:,.2f}. "
-                    f"Negative credit limits are invalid."
-                ),
-                expected_value="Non-negative credit limit",
-                actual_value=f"${account.credit_limit:,.2f}",
-                fcra_section="611(a)",
-                metro2_field=None,
-                evidence={"credit_limit": account.credit_limit}
-            ))
+        if account.credit_limit is None or account.credit_limit >= 0:
+            return violations
+
+        # Only fire on revolving accounts - installment/student loans don't have credit limits
+        account_type = (account.account_type or "").lower()
+        revolving_keywords = ["revolving", "credit card", "line of credit", "heloc", "loc"]
+        is_revolving = any(k in account_type for k in revolving_keywords)
+
+        # If account type is clearly installment/student loan, skip
+        non_revolving_keywords = ["installment", "student", "educational", "mortgage", "auto", "car loan"]
+        is_non_revolving = any(k in account_type for k in non_revolving_keywords)
+
+        if is_non_revolving:
+            return violations  # Credit limit field doesn't apply to installment accounts
+
+        violations.append(Violation(
+            violation_type=ViolationType.NEGATIVE_CREDIT_LIMIT,
+            severity=Severity.MEDIUM,
+            account_id=account.account_id,
+            creditor_name=account.creditor_name,
+            account_number_masked=account.account_number_masked,
+            furnisher_type=account.furnisher_type,
+            bureau=bureau,
+            description=(
+                f"This account reports a negative credit limit of ${account.credit_limit:,.2f}. "
+                f"Negative credit limits are invalid under Metro 2 reporting standards."
+            ),
+            expected_value="Non-negative credit limit",
+            actual_value=f"${account.credit_limit:,.2f}",
+            fcra_section="611(a)",
+            metro2_field="Field 16 (Credit Limit)",
+            evidence={
+                "credit_limit": account.credit_limit,
+                "account_type": account.account_type
+            }
+        ))
 
         return violations
 
@@ -613,7 +805,7 @@ class SingleBureauRules:
                 expected_value="Payment history consistent with charged-off status (should show delinquency)",
                 actual_value=f"{ok_count}/{total_count} months showing 'OK' despite chargeoff indication",
                 fcra_section="623(a)(1)",
-                metro2_field="17A/25",
+                metro2_field="Field 17A (Account Status) & Field 18 (Payment History Profile)",
                 evidence={
                     "payment_status": payment_status,
                     "comments": remarks[:200] if remarks else None,
@@ -1971,7 +2163,7 @@ class FurnisherRules:
                 expected_value="$0.00 (closed account)",
                 actual_value=f"${account.balance:,.2f}",
                 fcra_section="611(a)(5)(A)",
-                metro2_field="17A",
+                metro2_field="Field 21 (Current Balance)",
                 evidence={
                     "furnisher_type": account.furnisher_type.value,
                     "status": account.account_status.value,
@@ -2091,7 +2283,7 @@ class FurnisherRules:
                 expected_value="$0.00 (closed account)",
                 actual_value=f"${account.past_due_amount:,.2f}",
                 fcra_section="611(a)(5)(A)",
-                metro2_field="17B",
+                metro2_field="Field 19 (Amount Past Due)",
                 evidence={
                     "furnisher_type": account.furnisher_type.value,
                     "status": account.account_status.value,
@@ -2190,7 +2382,7 @@ class FurnisherRules:
                     expected_value="Balance: $0.00, Past Due: $0.00 (for paid account)",
                     actual_value=f"Balance: ${balance:,.2f}, Past Due: ${past_due:,.2f}, Status: {account.payment_status}",
                     fcra_section="623(a)(1)",
-                    metro2_field="17A/10",
+                    metro2_field="Field 17A (Account Status) & Field 21 (Current Balance)",
                     evidence={
                         "payment_status": account.payment_status,
                         "balance": balance,
@@ -2295,7 +2487,7 @@ class FurnisherRules:
                     primary_statute_type="fdcpa",
                     secondary_statutes=["15 U.S.C. § 1681s-2(a)(1)"],
                     fcra_section="15 U.S.C. § 1692f(1)",  # Legacy field
-                    metro2_field="17A (Current Balance) vs 15A (High Credit)",
+                    metro2_field="Field 21 (Current Balance) & Field 12 (High Credit)",
                     evidence={
                         "balance": balance,
                         "high_credit": high_credit,

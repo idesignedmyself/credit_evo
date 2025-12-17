@@ -11,7 +11,10 @@ const VIOLATION_LABELS = {
   missing_original_creditor: 'Missing Original Creditor Name',
   negative_balance: 'Invalid Negative Balance',
   past_due_exceeds_balance: 'Past Due Exceeds Total Balance',
-  balance_exceeds_high_credit: 'Balance Exceeds Credit Limit',
+  balance_exceeds_high_credit: 'Balance Exceeds High Credit',
+  balance_exceeds_credit_limit: 'Balance Exceeds Credit Limit',
+  student_loan_capitalized_interest: 'Student Loan Balance Review (Capitalized Interest)',
+  mortgage_balance_review: 'Mortgage Balance Review (Escrow/Amortization)',
   negative_credit_limit: 'Invalid Negative Credit Limit',
   obsolete_account: 'Account Past 7-Year Limit',
   future_date: 'Future Date Reported',
@@ -29,6 +32,7 @@ const VIOLATION_LABELS = {
   closed_vs_open_conflict: 'Open/Closed Status Conflict',
   creditor_name_mismatch: 'Creditor Name Mismatch',
   account_number_mismatch: 'Account Number Mismatch',
+  metro2_portfolio_mismatch: 'Student Loan Portfolio Mismatch',
 };
 
 // Severity to color/label mapping

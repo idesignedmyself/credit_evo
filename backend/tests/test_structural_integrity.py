@@ -31,6 +31,7 @@ from app.services.legal_letter_generator import (
 
 
 # Sample legal letter content with correct structure
+# Order: header -> intro -> disputed_items -> legal_basis -> mov -> case_law -> demands -> signature
 SAMPLE_LEGAL_LETTER = """John Doe
 123 Main Street
 Anytown, ST 12345
@@ -43,17 +44,17 @@ I. PRELIMINARY STATEMENT
 
 This letter constitutes a formal dispute of information contained in my credit report pursuant to the Fair Credit Reporting Act, 15 U.S.C. § 1681.
 
-II. LEGAL BASIS
-
-Under Section 611 of the FCRA, 15 U.S.C. § 1681i, you are required to conduct a reasonable reinvestigation of disputed items within 30 days.
-
-III. SPECIFIC VIOLATIONS
+II. SPECIFIC VIOLATIONS
 
 The following items are disputed as inaccurate:
 
 1. Account: Example Bank - XXXX1234
    - Balance reported as $5,000 but actual balance is $0
    - This constitutes a violation of FCRA Section 623(a)(1)
+
+III. LEGAL BASIS
+
+Under Section 611 of the FCRA, 15 U.S.C. § 1681i, you are required to conduct a reasonable reinvestigation of disputed items within 30 days.
 
 IV. METRO-2 COMPLIANCE
 

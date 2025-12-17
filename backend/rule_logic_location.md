@@ -51,13 +51,17 @@ app/
 | Missing Date Opened | `missing_date_opened` | Field 10 |
 | Re-aged DOFD | `reaged_dofd` | Field 25 |
 | Charge-off contradictions | Various | Status codes |
-| Balance > High Credit | `balance_exceeds_high_credit` | Field 17A |
-| Balance > Credit Limit (open accts only) | `balance_exceeds_credit_limit` | Field 17A/21 |
-| Negative Credit Limit | `negative_credit_limit` | Field 21 |
-| Status/Payment History Mismatch | `status_payment_history_mismatch` | Field 17A/25 (requires explicit derogatory status) |
+| Balance > High Credit (Installment) | `balance_exceeds_high_credit` | Field 21 & Field 12 (MEDIUM severity) |
+| Balance > High Credit (Student Loan) | `student_loan_capitalized_interest` | Field 21 & Field 12 (LOW severity - review only) |
+| Balance > High Credit (Mortgage) | `mortgage_balance_review` | Field 21 & Field 12 (LOW severity - review only) |
+| Balance > Credit Limit (Revolving only) | `balance_exceeds_credit_limit` | Field 21 & Field 16 |
+| Negative Balance | `negative_balance` | Field 21 (Current Balance) |
+| Negative Credit Limit | `negative_credit_limit` | Field 16 (Revolving only) |
+| Collection Balance Inflation | `collection_balance_inflation` | Field 21 & Field 12 (FDCPA §1692f - HIGH severity) |
+| Status/Payment History Mismatch | `status_payment_history_mismatch` | Field 17A & Field 18 |
 | Phantom Late Payment | `phantom_late_payment` | Field 15/25 (late markers during $0 due or forbearance) |
-| Paid Status with Balance | `paid_status_with_balance` | Field 17A/10 (status=Paid but balance>$0) |
-| Zero Balance Not Paid | `zero_balance_not_paid` | Field 17A/10 (collection with $0 but not marked Paid) |
+| Paid Status with Balance | `paid_status_with_balance` | Field 17A & Field 21 (status=Paid but balance>$0) |
+| Zero Balance Not Paid | `zero_balance_not_paid` | Field 17A (collection with $0 but not marked Paid) |
 | Delinquency Jump | `delinquency_jump` | Field 18 (payment history jumps levels, e.g., 0→60) |
 | Stagnant Delinquency | `stagnant_delinquency` | Field 18 (same late status for consecutive months) |
 | Missing Original Creditor | `missing_original_creditor` | K1 Segment (Chain of Title - collection without OC) |
@@ -251,6 +255,64 @@ User Profile (PostgreSQL users table) → IdentityRules → Violations
 | Paid Reporting | is_paid (status=Paid/Settled OR $0 balance) AND is_medical | Bureau Policy / NCAP 2022 |
 
 **To add a new rule:** Create a new function in this file following the existing pattern.
+
+---
+
+### B6 Balance Rules System (CRRG 2024-2025 Compliant)
+
+**Authoritative Metro 2 Field Reference:**
+
+| Field # | Name | Purpose |
+|---------|------|---------|
+| **Field 12** | High Credit / Original Loan Amount | Installment/Student Loans/Mortgages |
+| **Field 16** | Credit Limit | Revolving accounts ONLY |
+| **Field 17A** | Account Status Code | Status indicator (NEVER monetary) |
+| **Field 18** | Payment History Profile | 24-month payment pattern |
+| **Field 19** | Amount Past Due | Past due balance |
+| **Field 21** | Current Balance | Current balance owed |
+
+**Balance Rule Matrix (Account Type Scoped):**
+
+| Account Type | Comparison | Metro 2 Fields | Severity | Auto-Dispute |
+|--------------|------------|----------------|----------|--------------|
+| **Revolving** | Balance > Credit Limit | Field 21 vs Field 16 | MEDIUM | YES |
+| **Revolving** | Balance > High Credit | — | NEVER FIRE | NO |
+| **Installment** | Balance > High Credit | Field 21 vs Field 12 | MEDIUM | YES |
+| **Student Loan** | Balance > High Credit | Field 21 vs Field 12 | LOW | NO (review only) |
+| **Mortgage** | Balance > High Credit | Field 21 vs Field 12 | LOW | NO (review only) |
+| **Collection** | Balance > Original Debt | Field 21 vs Field 12 | HIGH | YES (FDCPA §1692f) |
+
+**Critical Scoping Rules:**
+
+1. **Field 17A (Account Status)** — NEVER cite for monetary discrepancies
+2. **Field 16 (Credit Limit)** — Revolving accounts ONLY (credit cards, HELOCs)
+3. **Field 12 (High Credit)** — Installment, Student Loan, Mortgage, Collection
+4. **Student Loans** — Capitalized interest is LEGAL; LOW severity, review-only
+5. **Mortgages** — Escrow/negative amortization possible; LOW severity, review-only
+6. **Collections** — Balance increases are PRESUMPTIVELY UNLAWFUL under FDCPA §1692f(1)
+
+**Student Loan Detection Keywords:**
+```
+educational, student loan, student, dept of ed, dept ed, nelnet, navient,
+mohela, fedloan, sallie mae, great lakes, acs education, edfinancial,
+pheaa, ecmc, firstmark, cornerstone, granite state, osla, tiva,
+department of education
+```
+
+**Mortgage Detection Keywords:**
+```
+mortgage, home loan, real estate, mtg, heloc, home equity, deed of trust,
+fannie mae, freddie mac, va loan, fha loan, usda loan, jumbo loan,
+conventional loan
+```
+
+**Collection Balance Inflation (FDCPA §1692f):**
+- Presumption: Balance increase by collector is UNLAWFUL
+- Consumer payments are NON-EXCULPATORY (do not prove authorization)
+- Requires explicit authorization to downgrade severity:
+  - Contractual post-default interest
+  - Court judgment with interest award
+  - State law permitting post-charge-off interest
 
 ---
 

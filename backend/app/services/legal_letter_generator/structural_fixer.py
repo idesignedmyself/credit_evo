@@ -71,9 +71,9 @@ LEGAL_SECTION_SPECS: List[SectionSpec] = [
         position=2,
         required=True,
         header_patterns=[
-            r"^(II\.?\s+)?SPECIFIC VIOLATIONS",
-            r"^(II\.?\s+)?DISPUTED ITEMS",
-            r"^(III\.?\s+)?SPECIFIC DEFICIENCIES",
+            r"^(I{1,3}\.?\s+)?SPECIFIC VIOLATIONS",  # Matches II. or III. SPECIFIC VIOLATIONS
+            r"^(I{1,3}\.?\s+)?DISPUTED ITEMS",
+            r"^(I{1,3}\.?\s+)?SPECIFIC DEFICIENCIES",
             r"^Violations",
             r"^VIOLATIONS",
             r"^Disputed Items",
@@ -128,9 +128,9 @@ LEGAL_SECTION_SPECS: List[SectionSpec] = [
         position=6,
         required=True,
         header_patterns=[
-            r"^(VI\.?\s+)?FORMAL DEMANDS",
-            r"^(VII\.?\s+)?NON-NEGOTIABLE DEMANDS",
-            r"^(VII\.?\s+)?DEMANDS",
+            r"^(V?I{1,3}\.?\s+)?FORMAL DEMANDS",  # Matches VI. or VII. FORMAL DEMANDS
+            r"^(V?I{1,3}\.?\s+)?NON-NEGOTIABLE DEMANDS",
+            r"^(V?I{1,3}\.?\s+)?DEMANDS",
             r"^Demands",
             r"^DEMANDS",
             r"^Requested Actions",

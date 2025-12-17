@@ -100,6 +100,10 @@ class ViolationType(str, Enum):
     # Metro 2 Portfolio Type violations
     METRO2_PORTFOLIO_MISMATCH = "metro2_portfolio_mismatch"  # Student loan reported as Open instead of Installment
 
+    # Student Loan / Installment Account Balance Reviews (informational, not hard violations)
+    STUDENT_LOAN_CAPITALIZED_INTEREST = "student_loan_capitalized_interest"  # Balance > High Credit due to capitalized interest - REVIEW ONLY
+    MORTGAGE_BALANCE_REVIEW = "mortgage_balance_review"  # Balance > High Credit due to escrow/negative amortization - REVIEW ONLY
+
     # Identity Integrity violations (User Profile vs Credit Report)
     IDENTITY_SUFFIX_MISMATCH = "identity_suffix_mismatch"  # Jr vs Sr - Mixed File indicator
     IDENTITY_NAME_MISMATCH = "identity_name_mismatch"  # Robert vs Richard - potential identity issue

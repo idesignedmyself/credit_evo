@@ -601,6 +601,10 @@ class DiversityEngine:
         Returns:
             A varied citation string
         """
+        # Handle None or empty section gracefully
+        if not section:
+            return "FCRA § 611(a)"  # Default fallback for missing section
+
         from .fcra_statutes import resolve_statute as resolve_fcra
         from .fdcpa_statutes import resolve_fdcpa_statute as resolve_fdcpa
 

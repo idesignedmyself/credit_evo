@@ -68,11 +68,11 @@ METRO2_FIELDS: Dict[str, Metro2FieldExplanation] = {
     ),
     "high_credit": Metro2FieldExplanation(
         field_name="High Credit/Original Loan Amount",
-        field_number="Field 15",
+        field_number="Field 12",
         segment="Base Segment",
         description="The highest balance or original loan amount on the account.",
         compliance_requirement="Must accurately reflect the original credit extended or highest balance achieved.",
-        legal_language="Field 15 (High Credit/Original Loan Amount) establishes the maximum credit exposure. Inaccurate reporting of this field can materially impact credit scoring models and debt-to-income calculations, requiring correction under FCRA Section 623(a)(1).",
+        legal_language="Field 12 (High Credit/Original Loan Amount) establishes the maximum credit exposure. Inaccurate reporting of this field can materially impact credit scoring models and debt-to-income calculations, requiring correction under FCRA Section 623(a)(1).",
         fcra_section="623(a)(1)",
         common_errors=[
             "Inflated high credit amounts",

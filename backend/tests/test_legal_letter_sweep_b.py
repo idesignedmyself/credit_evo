@@ -92,6 +92,28 @@ CASE_LAW_REFERENCES = ["Cushman", "Henson", "Gorman", "Dennis", "Safeco"]
 
 # ---------------------------------------------------------------------------
 # Test 1 — STRICT: Verify FCRA sections appear correctly for each violation
+# FCRA Section to USC Code mapping (for test validation)
+# The letter generator may output USC format instead of FCRA section format
+FCRA_TO_USC = {
+    "605": "1681c",
+    "605(a)": "1681c(a)",
+    "607": "1681e",
+    "607(b)": "1681e(b)",
+    "609": "1681g",
+    "609(a)": "1681g(a)",
+    "609(a)(1)": "1681g(a)(1)",
+    "611": "1681i",
+    "611(a)": "1681i(a)",
+    "611(a)(1)": "1681i(a)(1)",
+    "611(a)(5)": "1681i(a)(5)",
+    "623": "1681s-2",
+    "623(a)": "1681s-2(a)",
+    "623(a)(1)": "1681s-2(a)(1)",
+    "623(a)(2)": "1681s-2(a)(2)",
+    "623(b)": "1681s-2(b)",
+}
+
+
 # ---------------------------------------------------------------------------
 @pytest.mark.parametrize("v_type,expected_fcra", list(FCRA_MAPPING.items()))
 def test_fcra_section_accuracy(v_type, expected_fcra):
@@ -112,10 +134,17 @@ def test_fcra_section_accuracy(v_type, expected_fcra):
 
     # The expected FCRA section should appear in the letter
     letter = result["letter"]
-    # Check for section reference (with or without parentheses)
+    # Check for section reference in multiple formats:
+    # - FCRA format: "609(a)(1)"
+    # - Without parentheses: "609a1"
+    # - USC format: "1681g(a)(1)"
     section_variants = [expected_fcra, expected_fcra.replace("(", "").replace(")", "")]
+    # Also check for USC equivalent
+    usc_code = FCRA_TO_USC.get(expected_fcra)
+    if usc_code:
+        section_variants.append(usc_code)
     assert any(s in letter for s in section_variants), \
-        f"Missing FCRA section {expected_fcra} for violation type {v_type}"
+        f"Missing FCRA section {expected_fcra} (or USC {usc_code}) for violation type {v_type}"
 
 
 # ---------------------------------------------------------------------------
