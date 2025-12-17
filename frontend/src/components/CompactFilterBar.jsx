@@ -48,10 +48,14 @@ const CompactFilterBar = ({
       .join(' ');
   };
 
-  // Format label for violation types using the proper mapping
+  // Format label based on filter type
   const formatTypeLabel = (str, filterType) => {
     if (filterType === 'categories') {
       return getViolationLabel(str);
+    }
+    if (filterType === 'accounts') {
+      // Keep account names as-is (ALL CAPS from credit report) to match Group by Account tab
+      return str;
     }
     return formatLabel(str);
   };
