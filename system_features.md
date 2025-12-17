@@ -550,6 +550,58 @@ The component reads `uiConfig = getViolationUI(violation.violation_type, violati
 
 ---
 
+## Dispute Tracking UI (Human-in-the-Loop)
+
+**Added:** December 2024
+
+### Overview
+User-facing interface for the enforcement automation system. Users report factual responses - the system handles legal evaluation and escalation automatically.
+
+### Access
+- **Route:** `/disputes`
+- **Sidebar:** "Dispute Tracking" with gavel icon
+
+### Components
+
+#### 1. Response Input Panel
+Minimal input interface per B6 prompt:
+- Entity Type (read-only, from dispute)
+- Entity Name (read-only, from dispute)
+- Response Outcome dropdown (DELETED, VERIFIED, UPDATED, INVESTIGATING, NO_RESPONSE, REJECTED)
+- Response Date (optional date picker, no future dates)
+
+**NO additional dropdowns** - user cannot select statutes, violations, or escalation paths.
+
+#### 2. DisputeList Component
+Table showing all user disputes with:
+- Entity name and type
+- Current escalation state
+- Deadline status (with overdue warnings)
+- Dispute status
+
+#### 3. DisputeStateIndicator Component
+Shows current position in escalation state machine:
+- Progress bar through escalation stages
+- User vs System action indicator
+- Deadline countdown
+- Tone posture (informational, assertive, enforcement, regulatory, litigation)
+- Available outputs/artifacts
+- Possible next states
+
+#### 4. DisputeTimeline Component
+Immutable, chronological paper trail showing:
+- User-authorized events (dispute created, response logged, mailing confirmed)
+- System-authoritative events (deadline breach, state transition, reinsertion detected)
+- Evidence hashes and artifact references
+
+### Authority Separation
+- **User controls:** Reporting facts (what response was received)
+- **System controls:** Statute selection, deadline enforcement, reinsertion detection, escalation
+
+Escalation occurs automatically when conditions are met - no user confirmation required.
+
+---
+
 ## Metro 2 Field Citation Normalization
 
 **Added:** December 2024
