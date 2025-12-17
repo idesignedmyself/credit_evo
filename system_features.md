@@ -369,10 +369,127 @@ Fixed visual inconsistencies between the sidebar and main content area for a coh
 
 ---
 
+## Bureau Ghost Guard (B6)
+
+**Added:** December 2024
+
+### Overview
+Prevents false positive violations from cross-bureau data bleed. When an account is reported by only some bureaus (e.g., Equifax only), the validation engine now correctly skips violations for bureaus that never reported the tradeline (e.g., TransUnion, Experian).
+
+### Problem Solved
+**Before:** If NAVY FCU reported an account only on Equifax, but the UI showed empty columns for TransUnion/Experian, the audit engine would incorrectly fire "Missing Account Open Date" violations for TU/EX - even though those bureaus never reported the account.
+
+**After:** Ghost tradelines (bureaus with no substantive data) are detected and skipped at validation time. Only bureaus that actually reported the tradeline are audited.
+
+### Implementation
+
+#### 1. Ghost Detection Function
+**Location:** `backend/app/services/audit/engine.py`
+
+```python
+def is_bureau_ghost(bureau_data: BureauAccountData) -> bool:
+    """
+    Returns True if the bureau column represents a non-existent (ghost) tradeline.
+    A bureau cannot violate FCRA/Metro 2 rules on data it never reported.
+    """
+    # Checks for ANY substantive data:
+    # - Financial: balance, high_credit, credit_limit, past_due_amount
+    # - Dates: date_opened, date_closed, date_reported, date_last_activity, dofd
+    # - Status: payment_status, account_status_raw
+    # - Payment History: At least one non-empty status entry
+
+    # Ghost = NO substantive data from this bureau
+    return not has_any_data
+```
+
+#### 2. Ghost Guard Checkpoints
+The ghost guard is applied in multiple locations:
+
+1. **`_audit_account_bureau()`** - Skips all single-bureau rules for ghost tradelines
+2. **`_convert_bureau_data_to_accounts()`** - Skips cross-bureau comparison for ghost data
+3. **Double Jeopardy check** - Skips ghost tradelines in duplicate reporting detection
+4. **Child Identity Theft check** - Skips ghost tradelines in identity validation
+5. **Medical Debt Compliance** - Skips ghost tradelines in HIPAA/FCRA compliance checks
+
+### Key Design Decisions
+- **Validation-layer only**: Parsing and UI rendering unchanged (empty columns still display)
+- **Preserves cross-bureau discrepancy detection**: Only applied to single-bureau rules
+- **Payment history check**: Empty status strings (`''`) don't count as real data
+
+---
+
+## Dynamic Filter Dropdown
+
+**Added:** December 2024
+
+### Overview
+The violation type filter dropdown is dynamically populated based on violations that exist in the current audit results. If no accounts have a particular violation type, that type won't appear in the filter dropdown.
+
+### Benefits
+- **No dead options**: Users only see violation types that actually exist in their report
+- **Cleaner UX**: No confusion from selecting a filter that returns zero results
+- **Automatic updates**: As violations are resolved or new reports uploaded, dropdown updates accordingly
+
+### Implementation
+
+**Location:** `frontend/src/hooks/useCreditFilter.js`
+
+```javascript
+// Extract unique values from data for dynamic filter options
+const filterOptions = useMemo(() => {
+  const categories = [...new Set(allViolations.map(v => v.violation_type).filter(Boolean))];
+  return { bureaus, severities, categories, accounts };
+}, [allViolations]);
+```
+
+---
+
+## Unified Violation Type Labels
+
+**Added:** December 2024
+
+### Overview
+Violation type labels are now consistent between the dropdown filter and the "Group by Type" tab. All labels use Title Case formatting with proper human-readable names.
+
+### Problem Solved
+**Before:** Dropdown showed raw values like "Missing Dofd" while the tab showed "Missing Date Of First Delinquency"
+
+**After:** Both use the same `getViolationLabel()` function from `formatViolation.js`
+
+### Implementation
+
+#### 1. Label Mapping
+**Location:** `frontend/src/utils/formatViolation.js`
+
+```javascript
+const VIOLATION_LABELS = {
+  missing_dofd: 'Missing Date Of First Delinquency',
+  missing_date_opened: 'Missing Account Open Date',
+  stale_reporting: 'Stale/Outdated Data',
+  obsolete_account: 'Account Past 7-Year Limit',
+  // ... 70+ violation types mapped
+};
+
+export const getViolationLabel = (violationType) => {
+  return VIOLATION_LABELS[violationType] ||
+    violationType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+};
+```
+
+#### 2. Component Integration
+Both filter components now use `getViolationLabel`:
+
+- **CompactFilterBar.jsx** - Uses `formatTypeLabel()` which calls `getViolationLabel()` for category options
+- **FilterToolbar.jsx** - Uses `getViolationLabel()` directly for chip labels
+
+---
+
 ## Recent Commits
 
 | Commit | Description |
 |--------|-------------|
+| `TBD` | B6: Bureau Ghost Guard - prevent cross-bureau data bleed |
+| `TBD` | Unify violation type labels between dropdown and tabs |
 | `9079259` | Add Account filter dropdown and remove filter icon |
 | `a8596d8` | Add collapsible accordion headers to violation groups |
 | `830c649` | Fix sidebar background color and add border for visual consistency |

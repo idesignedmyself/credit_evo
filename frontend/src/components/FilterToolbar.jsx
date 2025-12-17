@@ -21,6 +21,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
+import { getViolationLabel } from '../utils/formatViolation';
 
 const VISIBLE_LIMIT = 8; // Show top 8 categories by default
 
@@ -187,7 +188,7 @@ const FilterToolbar = ({
                   return (
                     <Chip
                       key={option}
-                      label={option}
+                      label={getViolationLabel(option)}
                       onClick={() => toggleFilter('categories', option)}
                       size="small"
                       sx={{

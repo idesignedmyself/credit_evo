@@ -19,6 +19,66 @@ from .cross_bureau_rules import CrossBureauRules
 logger = logging.getLogger(__name__)
 
 
+# =============================================================================
+# BUREAU GHOST DETECTION (B6 - DATA BLEED FIX)
+# =============================================================================
+
+def is_bureau_ghost(bureau_data: BureauAccountData) -> bool:
+    """
+    Returns True if the bureau column represents a non-existent (ghost) tradeline,
+    even if other bureaus reported the account.
+
+    A bureau cannot violate FCRA/Metro 2 rules on data it never reported.
+    Ghost criteria:
+    1. No account data at all (all key fields are None/empty)
+    2. No balance AND no dates AND no status - bureau didn't report this tradeline
+
+    This prevents cross-bureau data bleed where validation rules fire incorrectly
+    for bureaus that show empty columns in the merged account view.
+    """
+    # Check for ANY substantive data that indicates the bureau reported this account
+    # Key fields that would be present if bureau actually reported the tradeline:
+
+    # 1. Financial data
+    has_balance = bureau_data.balance is not None and bureau_data.balance != 0
+    has_high_credit = bureau_data.high_credit is not None and bureau_data.high_credit != 0
+    has_credit_limit = bureau_data.credit_limit is not None and bureau_data.credit_limit != 0
+    has_past_due = bureau_data.past_due_amount is not None and bureau_data.past_due_amount != 0
+
+    # 2. Date fields - any date indicates bureau reported something
+    has_date_opened = bureau_data.date_opened is not None
+    has_date_closed = bureau_data.date_closed is not None
+    has_date_reported = bureau_data.date_reported is not None
+    has_date_last_activity = bureau_data.date_last_activity is not None
+    has_dofd = bureau_data.date_of_first_delinquency is not None
+
+    # 3. Status fields
+    has_payment_status = bureau_data.payment_status is not None and str(bureau_data.payment_status).strip() != ""
+    has_account_status = bureau_data.account_status_raw is not None and str(bureau_data.account_status_raw).strip() != ""
+
+    # 4. Payment history (must have at least one non-empty status to count as real data)
+    # Empty status strings like '' don't count - only actual values like 'OK', 'CO', '30', etc.
+    has_payment_history = False
+    if bureau_data.payment_history:
+        for entry in bureau_data.payment_history:
+            status = entry.get('status', '') if isinstance(entry, dict) else ''
+            if status and str(status).strip():
+                has_payment_history = True
+                break
+
+    # If ANY of these fields have data, the bureau actually reported this tradeline
+    has_any_data = (
+        has_balance or has_high_credit or has_credit_limit or has_past_due or
+        has_date_opened or has_date_closed or has_date_reported or
+        has_date_last_activity or has_dofd or
+        has_payment_status or has_account_status or
+        has_payment_history
+    )
+
+    # Ghost = NO substantive data from this bureau
+    return not has_any_data
+
+
 class AuditEngine:
     """
     Main audit engine that runs all rules against a NormalizedReport.
@@ -54,14 +114,19 @@ class AuditEngine:
         for account in report.accounts:
             account_violations = []
 
+            # DEBUG: Check which path is taken
+            has_bureaus = hasattr(account, 'bureaus') and account.bureaus
+            print(f"[DEBUG] Account '{account.creditor_name}': has_bureaus={has_bureaus}, bureaus={list(account.bureaus.keys()) if has_bureaus else 'N/A'}")
+
             # Check if account has multi-bureau data
-            if hasattr(account, 'bureaus') and account.bureaus:
+            if has_bureaus:
                 # Audit each bureau's data separately
                 for bureau, bureau_data in account.bureaus.items():
                     bureau_violations = self._audit_account_bureau(account, bureau, bureau_data)
                     account_violations.extend(bureau_violations)
             else:
-                # Fallback for single-bureau accounts
+                # Fallback for single-bureau accounts (NO GHOST GUARD HERE!)
+                print(f"[DEBUG] FALLBACK PATH - no bureaus dict for '{account.creditor_name}'")
                 account_bureau = getattr(account, 'bureau', report.bureau)
                 account_violations = self._audit_account(account, account_bureau)
 
@@ -117,7 +182,10 @@ class AuditEngine:
                 for account in report.accounts:
                     # Run check on each bureau's data
                     if hasattr(account, 'bureaus') and account.bureaus:
-                        for bureau in account.bureaus.keys():
+                        for bureau, bureau_data in account.bureaus.items():
+                            # B6 GHOST GUARD: Skip ghost bureaus
+                            if is_bureau_ghost(bureau_data):
+                                continue
                             child_id_violations.extend(
                                 self.single_bureau_rules.check_child_identity_theft(account, bureau, user_dob)
                             )
@@ -149,7 +217,10 @@ class AuditEngine:
         for account in report.accounts:
             # Check each bureau the account appears in
             if hasattr(account, 'bureaus') and account.bureaus:
-                for bureau in account.bureaus.keys():
+                for bureau, bureau_data in account.bureaus.items():
+                    # B6 GHOST GUARD: Skip ghost bureaus
+                    if is_bureau_ghost(bureau_data):
+                        continue
                     medical_violations.extend(
                         self.single_bureau_rules.check_medical_debt_compliance(account, bureau)
                     )
@@ -232,12 +303,19 @@ class AuditEngine:
 
         The cross_bureau_rules expect Dict[Bureau, Account] where each Account has
         bureau-specific fields. We create temporary Account objects from BureauAccountData.
+
+        B6 FIX: Excludes ghost bureaus from cross-bureau analysis. A bureau that didn't
+        report the tradeline cannot be compared against bureaus that did.
         """
         from dataclasses import replace
 
         bureau_accounts: Dict[Bureau, Account] = {}
 
         for bureau, bureau_data in account.bureaus.items():
+            # B6 GHOST GUARD: Skip ghost bureaus in cross-bureau analysis
+            if is_bureau_ghost(bureau_data):
+                continue
+
             # Create a copy of the account with this bureau's specific data
             bureau_account = replace(
                 account,
@@ -302,8 +380,17 @@ class AuditEngine:
 
         Creates a temporary account-like object with bureau-specific fields
         so existing rules can operate on per-bureau data.
+
+        B6 FIX: Skips "ghost" tradelines where the bureau didn't actually report
+        the account (empty columns). A bureau cannot violate FCRA/Metro 2 rules
+        on data it never reported.
         """
         from dataclasses import replace
+
+        # B6 GHOST GUARD: Skip validation if this bureau didn't actually report the tradeline
+        # This prevents false positives from cross-bureau data bleed
+        if is_bureau_ghost(bureau_data):
+            return []
 
         # Create a modified copy of the account with bureau-specific fields
         # This allows existing rules to work without modification
@@ -375,6 +462,10 @@ class AuditEngine:
                 continue
 
             for bureau, bureau_data in account.bureaus.items():
+                # B6 GHOST GUARD: Skip ghost bureaus in double jeopardy check
+                if is_bureau_ghost(bureau_data):
+                    continue
+
                 # Only process collection accounts with original_creditor info
                 if account.furnisher_type != FurnisherType.COLLECTOR:
                     continue
@@ -421,6 +512,11 @@ class AuditEngine:
                         continue
 
                     other_bureau_data = other_account.bureaus[bureau]
+
+                    # B6 GHOST GUARD: Skip if OC's bureau data is a ghost
+                    if is_bureau_ghost(other_bureau_data):
+                        continue
+
                     oc_balance = other_bureau_data.balance if other_bureau_data.balance is not None else 0
 
                     # DOUBLE JEOPARDY: Both have balance > $0

@@ -19,6 +19,7 @@ import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import CloseIcon from '@mui/icons-material/Close';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import WarningIcon from '@mui/icons-material/Warning';
+import { getViolationLabel } from '../utils/formatViolation';
 
 const CompactFilterBar = ({
   filters,
@@ -39,12 +40,20 @@ const CompactFilterBar = ({
   const [typeAnchor, setTypeAnchor] = useState(null);
   const [accountAnchor, setAccountAnchor] = useState(null);
 
-  // Format label for display
+  // Format label for display (generic - for bureau, severity, accounts)
   const formatLabel = (str) => {
     return str
       .split('_')
       .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
       .join(' ');
+  };
+
+  // Format label for violation types using the proper mapping
+  const formatTypeLabel = (str, filterType) => {
+    if (filterType === 'categories') {
+      return getViolationLabel(str);
+    }
+    return formatLabel(str);
   };
 
   // Render a dropdown button with selection count
@@ -130,7 +139,7 @@ const CompactFilterBar = ({
                     }}
                   />
                   <ListItemText
-                    primary={formatLabel(option)}
+                    primary={formatTypeLabel(option, filterType)}
                     primaryTypographyProps={{
                       fontSize: '0.8rem',
                       fontWeight: isSelected ? 600 : 400,
