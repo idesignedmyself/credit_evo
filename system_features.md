@@ -550,10 +550,33 @@ The component reads `uiConfig = getViolationUI(violation.violation_type, violati
 
 ---
 
+## Metro 2 Field Citation Normalization
+
+**Added:** December 2024
+
+### Overview
+Fixes the "Metro 2 Field Field 12..." duplication issue where the word "Field" appeared twice in citations.
+
+### Problem
+UI was prefixing citations with "Metro 2 Field " but the backend data already contained "Field 12 (...)".
+
+### Solution
+Defensive string normalization in `formatViolation.js`:
+```javascript
+metroDisplay: violation.metro2_field
+  ? `Metro 2 Field ${violation.metro2_field.replace(/^Field\s+/i, '')}`
+  : null,
+```
+
+This strips any leading "Field " from the source string before adding the prefix, ensuring the word appears exactly once.
+
+---
+
 ## Recent Commits
 
 | Commit | Description |
 |--------|-------------|
+| `TBD` | Metro 2 Field citation normalization |
 | `TBD` | UI Semantic Layer - Violations vs Advisories |
 | `TBD` | B6: Bureau Ghost Guard - prevent cross-bureau data bleed |
 | `TBD` | Unify violation type labels between dropdown and tabs |

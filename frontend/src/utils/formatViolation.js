@@ -265,7 +265,10 @@ export const formatViolation = (violation) => {
     displayDescription: violation.description || 'No description available',
     accountDisplay: violation.creditor_name || 'Unknown Account',
     fcraDisplay: violation.fcra_section ? `FCRA §${violation.fcra_section}` : null,
-    metroDisplay: violation.metro2_field ? `Metro 2 Field ${violation.metro2_field}` : null,
+    // Normalize Metro 2 field citation to prevent "Field Field" duplication
+    metroDisplay: violation.metro2_field
+      ? `Metro 2 Field ${violation.metro2_field.replace(/^Field\s+/i, '')}`
+      : null,
   };
 };
 

@@ -1,0 +1,181 @@
+# Credit Engine 2.0 - Obstacle Fix Log
+
+This document tracks bugs, issues, and obstacles encountered during development along with their solutions. Use this as a reference for similar issues in the future.
+
+---
+
+## Table of Contents
+
+1. [B6: Bureau Ghost Guard - Cross-Bureau Data Bleed](#b6-bureau-ghost-guard---cross-bureau-data-bleed)
+2. [B6: Payment History Ghost Detection](#b6-payment-history-ghost-detection)
+3. [B6: Violation Type Label Mismatch](#b6-violation-type-label-mismatch)
+4. [B6: Account Dropdown Label Case Mismatch](#b6-account-dropdown-label-case-mismatch)
+5. [B6: UI Semantic Layer - Violations vs Advisories](#b6-ui-semantic-layer---violations-vs-advisories)
+6. [B6: Metro 2 Field Citation Duplication](#b6-metro-2-field-citation-duplication)
+
+---
+
+## B6: Bureau Ghost Guard - Cross-Bureau Data Bleed
+
+**Date:** December 2024
+
+**Symptom:**
+"Missing Account Open Date" violations appearing for TransUnion and Experian when only Equifax actually reported the tradeline. UI showed empty columns for TU/EX but validator still fired violations.
+
+**Root Cause:**
+When parsing merged credit reports, the system creates `BureauAccountData` objects for all three bureaus even when a bureau didn't report the account. Validation rules then fire on these empty "ghost" tradelines.
+
+**Solution:**
+Added `is_bureau_ghost()` function in `backend/app/services/audit/engine.py` that checks for substantive data before allowing validation:
+- Financial data (balance, high_credit, credit_limit, past_due_amount)
+- Date fields (date_opened, date_closed, date_reported, etc.)
+- Status fields (payment_status, account_status_raw)
+- Payment history (at least one non-empty status entry)
+
+**Files Modified:**
+- `backend/app/services/audit/engine.py`
+
+---
+
+## B6: Payment History Ghost Detection
+
+**Date:** December 2024
+
+**Symptom:**
+Ghost detection wasn't working - bureaus with empty data still passed as "not a ghost" because `payment_history` array contained 24 entries with empty `status: ''` strings.
+
+**Root Cause:**
+Original check `bool(bureau_data.payment_history) and len(bureau_data.payment_history) > 0` returned True for arrays with empty status strings.
+
+**Solution:**
+Updated ghost detection to iterate through payment_history entries and check for at least one non-empty status value:
+```python
+has_payment_history = False
+if bureau_data.payment_history:
+    for entry in bureau_data.payment_history:
+        status = entry.get('status', '') if isinstance(entry, dict) else ''
+        if status and str(status).strip():
+            has_payment_history = True
+            break
+```
+
+**Files Modified:**
+- `backend/app/services/audit/engine.py`
+
+---
+
+## B6: Violation Type Label Mismatch
+
+**Date:** December 2024
+
+**Symptom:**
+Dropdown filter showed labels like "Missing Dofd" while "Group by Type" tab showed "Missing Date Of First Delinquency". Inconsistent user experience.
+
+**Root Cause:**
+`CompactFilterBar.jsx` used a generic `formatLabel()` function that did simple underscore-to-space conversion, while `ViolationList.jsx` used `getViolationLabel()` from the shared mapping.
+
+**Solution:**
+- Updated `CompactFilterBar.jsx` and `FilterToolbar.jsx` to use `getViolationLabel()` for category options
+- Added 70+ violation types to `VIOLATION_LABELS` mapping in `formatViolation.js`
+
+**Files Modified:**
+- `frontend/src/components/CompactFilterBar.jsx`
+- `frontend/src/components/FilterToolbar.jsx`
+- `frontend/src/utils/formatViolation.js`
+
+---
+
+## B6: Account Dropdown Label Case Mismatch
+
+**Date:** December 2024
+
+**Symptom:**
+Account dropdown showed "Bk of amer" (Title Case) while "Group by Account" tab showed "BK OF AMER" (ALL CAPS from credit report).
+
+**Root Cause:**
+`CompactFilterBar.jsx` was applying `formatLabel()` to account names, converting them to Title Case.
+
+**Solution:**
+Updated `formatTypeLabel()` to pass account names through unchanged:
+```javascript
+if (filterType === 'accounts') {
+  return str;  // Keep as-is to match Group by Account tab
+}
+```
+
+**Files Modified:**
+- `frontend/src/components/CompactFilterBar.jsx`
+
+---
+
+## B6: UI Semantic Layer - Violations vs Advisories
+
+**Date:** December 2024
+
+**Symptom:**
+LOW severity items (like "Student Loan Capitalized Interest") displayed with alarming "DISCREPANCY DETECTED" language and "EXPECTED vs ACTUAL" labels, creating unnecessary user alarm for informational review items.
+
+**Root Cause:**
+All items were rendered with the same violation-oriented language regardless of severity. No distinction between actionable violations and informational advisories.
+
+**Solution:**
+Created UI semantic layer with `getViolationUI()` function that returns mode-specific rendering:
+- **LOW severity (advisory):** "Review Details", "Reference/Reported" labels, neutral gray colors
+- **MEDIUM/HIGH severity (violation):** "Discrepancy Detected", "Expected/Actual" labels, green/red colors
+
+**Files Modified:**
+- `frontend/src/utils/formatViolation.js` (added `getViolationUI()` function)
+- `frontend/src/components/ViolationToggle.jsx` (dynamic rendering based on severity)
+
+---
+
+## B6: Metro 2 Field Citation Duplication
+
+**Date:** December 2024
+
+**Symptom:**
+Metro 2 citations displayed as "Metro 2 Field Field 12 (High Credit...)" - the word "Field" appeared twice.
+
+**Root Cause:**
+String concatenation issue. The UI prefixed with "Metro 2 Field " but `violation.metro2_field` already contained "Field 12 (...)".
+
+**Solution:**
+Defensive normalization - strip leading "Field " from the value before adding prefix:
+```javascript
+metroDisplay: violation.metro2_field
+  ? `Metro 2 Field ${violation.metro2_field.replace(/^Field\s+/i, '')}`
+  : null,
+```
+
+**Files Modified:**
+- `frontend/src/utils/formatViolation.js`
+
+---
+
+## Common Patterns & Lessons Learned
+
+### 1. Data Bleed Issues
+When working with multi-dimensional data (bureaus, accounts, dates), always validate that the dimension actually has data before processing. Empty containers can pass truthy checks.
+
+### 2. Label Consistency
+Use centralized mapping functions for display labels. Never duplicate formatting logic across components.
+
+### 3. String Composition
+When building display strings, check if source data already contains formatting. Use defensive normalization to strip duplicates.
+
+### 4. Severity-Based UI
+Different severity levels warrant different UI treatment. Don't use alarming language for informational items.
+
+### 5. Case Sensitivity
+Be intentional about text case. Credit report data is often ALL CAPS - decide whether to normalize or preserve.
+
+---
+
+## Adding New Entries
+
+When documenting a new fix, include:
+1. **Date** - When the fix was implemented
+2. **Symptom** - What the user saw / reported
+3. **Root Cause** - Technical explanation of why it happened
+4. **Solution** - How it was fixed (include code snippets if helpful)
+5. **Files Modified** - Which files were changed
