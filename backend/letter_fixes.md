@@ -171,3 +171,57 @@ After re-uploading a report, verify:
 - [ ] Section IV contains Scheduled Payment (Field 15), Date Opened (Field 10), and other miscellaneous violations
 - [ ] No duplicate Field numbers in the same bullet (e.g., "Field 15...Field 13")
 - [ ] All Metro 2 field references are correct per the table above
+
+---
+
+## B6 Update: Balance Rule Field Citations & Severity Gating (December 2025)
+
+### Problem
+Balance-related violation rules were citing incorrect Metro 2 fields:
+- **Field 17A** (Account Status Code) was incorrectly cited for monetary discrepancies
+- **Field 15** was incorrectly referenced (doesn't exist for balance)
+- Installment loan overages had flat severity regardless of materiality
+
+### Correct Metro 2 Field Reference (CRRG 2024-2025)
+
+| Field # | Name | Purpose |
+|---------|------|---------|
+| **Field 12** | High Credit / Original Loan Amount | Installment/Student Loans/Mortgages |
+| **Field 16** | Credit Limit | Revolving accounts ONLY |
+| **Field 17A** | Account Status Code | Status indicator (NEVER monetary) |
+| **Field 21** | Current Balance | Current balance owed |
+
+### Field Citation Corrections Made
+
+| Rule | Old Citation | Correct Citation |
+|------|--------------|------------------|
+| `check_negative_balance` | Field 17A | Field 21 |
+| `check_negative_credit_limit` | None | Field 16 |
+| `check_balance_exceeds_credit_limit` | Field 17A/21 | Field 21 & Field 16 |
+| `check_balance_exceeds_high_credit` | Field 17A | Field 21 & Field 12 |
+| `check_status_payment_history_mismatch` | 17A/25 | Field 17A & Field 18 |
+| `check_paid_collection_contradiction` | 17A/10 | Field 17A & Field 21 |
+| `check_collection_balance_inflation` | 17A vs 15A | Field 21 & Field 12 |
+
+### Installment Loan Threshold-Based Severity Gating
+
+Small overages on installment loans may result from late fees or administrative noise. Material deviations are inconsistent with amortization.
+
+| Overage Condition | Severity | Auto-Dispute |
+|-------------------|----------|--------------|
+| < 3% OR < $100 | LOW | NO (review only) |
+| ≥ 3% AND ≥ $100 | MEDIUM | YES |
+
+**Conservative gating:** MEDIUM requires BOTH thresholds exceeded.
+
+### Account Type Scoping
+
+| Account Type | Balance Comparison | Severity |
+|--------------|-------------------|----------|
+| Revolving | Balance > Credit Limit | MEDIUM |
+| Installment | Balance > High Credit | *Threshold-gated* |
+| Student Loan | Balance > High Credit | LOW (capitalized interest) |
+| Mortgage | Balance > High Credit | LOW (escrow/neg-am) |
+| Collection | Balance > Original Debt | HIGH (FDCPA §1692f) |
+
+### Key Rule: Field 17A (Account Status) is NEVER cited for monetary discrepancies

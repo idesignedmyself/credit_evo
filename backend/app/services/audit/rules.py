@@ -443,33 +443,79 @@ class SingleBureauRules:
                 }
             ))
 
-        # CASE 2: Non-Student Installment Accounts - Review Only
+        # CASE 2: Non-Student Installment Accounts - Threshold-Based Severity
         elif is_installment:
+            # =================================================================
+            # THRESHOLD-BASED SEVERITY GATING (B6 Final Tuning)
+            # =================================================================
+            # Installment loans are amortizing - balance should decrease.
+            # However, small overages may result from:
+            #   - Late fees
+            #   - Accrued interest during deferment
+            #   - Administrative rounding
+            #
+            # Thresholds:
+            #   LOW (Review-only): < 3% OR < $100 overage
+            #   MEDIUM (Disputable): ≥ 3% AND ≥ $100 overage
+            #
+            # Rationale: Small overages are likely noise; material deviations
+            # are inconsistent with amortization and warrant dispute.
+            # =================================================================
+
+            # Threshold constants
+            INSTALLMENT_PCT_THRESHOLD = 0.03  # 3%
+            INSTALLMENT_ABS_THRESHOLD = 100   # $100
+
+            # Calculate overage metrics
+            overage_pct = over_amount / account.high_credit if account.high_credit > 0 else 0
+
+            # Severity determination: MEDIUM requires BOTH thresholds exceeded
+            # (conservative gating - defaults to LOW if borderline)
+            is_material_overage = (overage_pct >= INSTALLMENT_PCT_THRESHOLD and
+                                   over_amount >= INSTALLMENT_ABS_THRESHOLD)
+
+            severity = Severity.MEDIUM if is_material_overage else Severity.LOW
+
+            # Build description based on severity
+            if is_material_overage:
+                description = (
+                    f"Installment Loan Reporting Error: Current balance (${account.balance:,.2f}) "
+                    f"exceeds original loan amount (${account.high_credit:,.2f}) by "
+                    f"${over_amount:,.2f} ({overage_pct:.1%}). This is a material deviation "
+                    f"inconsistent with standard amortization. Installment loans should have "
+                    f"decreasing balances over time. Request verification of balance accuracy."
+                )
+            else:
+                description = (
+                    f"Installment Account Review: Current balance (${account.balance:,.2f}) exceeds "
+                    f"original loan amount (${account.high_credit:,.2f}) by ${over_amount:,.2f} "
+                    f"({overage_pct:.1%}). This minor overage may be due to late fees or "
+                    f"administrative adjustments. Review for accuracy - likely not material."
+                )
+
             violations.append(Violation(
                 violation_type=ViolationType.BALANCE_EXCEEDS_HIGH_CREDIT,
-                severity=Severity.LOW,  # Lower severity for installment accounts
+                severity=severity,
                 account_id=account.account_id,
                 creditor_name=account.creditor_name,
                 account_number_masked=account.account_number_masked,
                 furnisher_type=account.furnisher_type,
                 bureau=bureau,
-                description=(
-                    f"Installment Account Review: Current balance (${account.balance:,.2f}) exceeds "
-                    f"original loan amount (${account.high_credit:,.2f}) by ${over_amount:,.2f}. "
-                    f"While unusual for installment loans, this may occur due to late fees or "
-                    f"accrued interest. Review for accuracy before disputing."
-                ),
+                description=description,
                 expected_value=f"Balance ≤ ${account.high_credit:,.2f}",
-                actual_value=f"${account.balance:,.2f}",
+                actual_value=f"${account.balance:,.2f} ({overage_pct:.1%} over)",
                 fcra_section="611(a)",
                 metro2_field="Field 12 (High Credit / Original Loan Amount) & Field 21 (Current Balance)",
                 evidence={
                     "balance": account.balance,
                     "high_credit": account.high_credit,
-                    "over_amount": over_amount,
+                    "over_amount": round(over_amount, 2),
+                    "overage_pct": round(overage_pct * 100, 2),
                     "account_type": account.account_type,
                     "classification": "installment",
-                    "review_reason": "fees_or_interest_possible"
+                    "severity_reason": "material_overage" if is_material_overage else "minor_overage",
+                    "threshold_pct": INSTALLMENT_PCT_THRESHOLD * 100,
+                    "threshold_abs": INSTALLMENT_ABS_THRESHOLD
                 }
             ))
 

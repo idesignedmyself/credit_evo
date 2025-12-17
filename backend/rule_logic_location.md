@@ -277,10 +277,19 @@ User Profile (PostgreSQL users table) → IdentityRules → Violations
 |--------------|------------|----------------|----------|--------------|
 | **Revolving** | Balance > Credit Limit | Field 21 vs Field 16 | MEDIUM | YES |
 | **Revolving** | Balance > High Credit | — | NEVER FIRE | NO |
-| **Installment** | Balance > High Credit | Field 21 vs Field 12 | MEDIUM | YES |
+| **Installment** | Balance > High Credit | Field 21 vs Field 12 | *Threshold-Gated* | *Conditional* |
 | **Student Loan** | Balance > High Credit | Field 21 vs Field 12 | LOW | NO (review only) |
 | **Mortgage** | Balance > High Credit | Field 21 vs Field 12 | LOW | NO (review only) |
 | **Collection** | Balance > Original Debt | Field 21 vs Field 12 | HIGH | YES (FDCPA §1692f) |
+
+**Installment Loan Threshold-Based Severity Gating:**
+
+| Condition | Severity | Auto-Dispute | Rationale |
+|-----------|----------|--------------|-----------|
+| Overage < 3% OR < $100 | LOW | NO | Likely fees/noise |
+| Overage ≥ 3% AND ≥ $100 | MEDIUM | YES | Material deviation |
+
+*Conservative gating: MEDIUM requires BOTH thresholds exceeded.*
 
 **Critical Scoping Rules:**
 
