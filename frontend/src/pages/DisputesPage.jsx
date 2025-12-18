@@ -97,45 +97,48 @@ const ViolationResponseRow = ({ violation, disputeId, onResponseLogged }) => {
   return (
     <Box
       sx={{
-        p: 2,
+        p: 2.5,
         bgcolor: 'white',
         borderRadius: 2,
         border: '1px solid',
         borderColor: success ? 'success.light' : 'divider',
-        mb: 1.5,
+        mb: 2,
       }}
     >
-      {/* Violation Info */}
-      <Box sx={{ mb: 2 }}>
-        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
-          <Typography variant="body2" sx={{ fontWeight: 600 }}>
-            {violation.violation_type?.replace(/_/g, ' ') || 'Unknown Violation'}
-          </Typography>
+      {/* Violation Info - Creditor name prominent */}
+      <Box sx={{ mb: 2.5 }}>
+        <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.5 }}>
+          {violation.creditor_name || 'Unknown Creditor'}
+        </Typography>
+        <Stack direction="row" spacing={1} alignItems="center">
+          <Chip
+            label={violation.violation_type?.replace(/_/g, ' ') || 'Unknown Violation'}
+            size="small"
+            color="error"
+            variant="outlined"
+            sx={{ textTransform: 'capitalize' }}
+          />
           {violation.severity && (
             <Chip
               label={violation.severity}
               size="small"
-              sx={{ height: 20, fontSize: '0.7rem' }}
+              sx={{ height: 22, fontSize: '0.7rem' }}
               color={violation.severity === 'HIGH' ? 'error' : violation.severity === 'MEDIUM' ? 'warning' : 'default'}
               variant="outlined"
             />
           )}
         </Stack>
-        <Typography variant="caption" color="text.secondary">
-          {violation.creditor_name || 'Unknown Creditor'}
-          {violation.account_number_masked && ` • ${violation.account_number_masked}`}
-        </Typography>
       </Box>
 
       {error && (
-        <Alert severity="error" sx={{ mb: 1, py: 0 }} onClose={() => setError(null)}>
+        <Alert severity="error" sx={{ mb: 2, py: 0.5 }} onClose={() => setError(null)}>
           {error}
         </Alert>
       )}
 
       {/* Response Form */}
-      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems="flex-start">
-        <FormControl size="small" sx={{ minWidth: 160 }}>
+      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems="flex-start">
+        <FormControl size="small" sx={{ minWidth: 180 }}>
           <InputLabel>Response *</InputLabel>
           <Select
             value={responseType}
@@ -163,7 +166,7 @@ const ViolationResponseRow = ({ violation, disputeId, onResponseLogged }) => {
             slotProps={{
               textField: {
                 size: 'small',
-                sx: { width: 150 },
+                sx: { minWidth: 170 },
               },
             }}
           />
@@ -171,17 +174,17 @@ const ViolationResponseRow = ({ violation, disputeId, onResponseLogged }) => {
 
         <Button
           variant="contained"
-          size="small"
+          size="medium"
           onClick={handleLogResponse}
           disabled={submitting || !responseType}
           disableElevation
-          sx={{ minWidth: 80 }}
+          sx={{ minWidth: 90, height: 40 }}
         >
           {submitting ? <CircularProgress size={18} /> : 'Save'}
         </Button>
 
         {success && (
-          <Chip label="Saved!" size="small" color="success" variant="filled" sx={{ height: 24 }} />
+          <Chip label="Saved!" size="small" color="success" variant="filled" sx={{ height: 28 }} />
         )}
       </Stack>
     </Box>
@@ -248,18 +251,23 @@ const ExpandedRowContent = ({ dispute, onResponseLogged }) => {
       {/* Violations Summary */}
       {violations.length > 0 && (
         <Box sx={{ mb: 3 }}>
-          <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
+          <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1.5 }}>
             Violations Being Disputed ({violations.length})
           </Typography>
-          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mb: 2 }}>
-            {[...new Set(violations.map(v => v.violation_type))].map((type, i) => (
-              <Chip
-                key={i}
-                label={type?.replace(/_/g, ' ') || 'Unknown'}
-                size="small"
-                color="error"
-                variant="outlined"
-              />
+          <Stack spacing={1}>
+            {violations.map((v, i) => (
+              <Box key={i} sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                <Typography variant="body2" sx={{ fontWeight: 500, minWidth: 140 }}>
+                  {v.creditor_name || 'Unknown'}
+                </Typography>
+                <Chip
+                  label={v.violation_type?.replace(/_/g, ' ') || 'Unknown'}
+                  size="small"
+                  color="error"
+                  variant="outlined"
+                  sx={{ textTransform: 'capitalize' }}
+                />
+              </Box>
             ))}
           </Stack>
         </Box>

@@ -332,23 +332,37 @@ const LettersPage = () => {
                             Violations Disputed in Letter #{letters.length - index}
                           </Typography>
                           {(() => {
-                            // Filter and format violation types, excluding UUIDs (old data)
-                            const displayableViolations = (letter.violations_cited || [])
-                              .map(formatViolationType)
-                              .filter(Boolean);
+                            // Filter violation types, excluding UUIDs (old data)
+                            const violationTypes = (letter.violations_cited || []).filter(v => !isUUID(v));
+                            const accounts = letter.accounts_disputed || [];
 
-                            if (displayableViolations.length > 0) {
+                            if (violationTypes.length > 0 || accounts.length > 0) {
+                              // Combine violations with accounts - use whichever is longer
+                              const maxLen = Math.max(violationTypes.length, accounts.length);
+                              const combined = [];
+                              for (let i = 0; i < maxLen; i++) {
+                                combined.push({
+                                  creditor: accounts[i] || 'Unknown',
+                                  type: violationTypes[i] || null,
+                                });
+                              }
+
                               return (
-                                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                                  {displayableViolations.map((formattedType, i) => (
-                                    <Chip
-                                      key={i}
-                                      label={formattedType}
-                                      size="small"
-                                      variant="outlined"
-                                      color="error"
-                                      sx={{ mb: 1 }}
-                                    />
+                                <Stack spacing={1.5}>
+                                  {combined.map((item, i) => (
+                                    <Box key={i} sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                                      <Typography variant="body2" sx={{ fontWeight: 500, minWidth: 160 }}>
+                                        {item.creditor}
+                                      </Typography>
+                                      {item.type && (
+                                        <Chip
+                                          label={formatViolationType(item.type)}
+                                          size="small"
+                                          variant="outlined"
+                                          color="error"
+                                        />
+                                      )}
+                                    </Box>
                                   ))}
                                 </Stack>
                               );
@@ -367,13 +381,6 @@ const LettersPage = () => {
                               );
                             }
                           })()}
-                          {letter.accounts_disputed && letter.accounts_disputed.length > 0 && (
-                            <Box sx={{ mt: 2 }}>
-                              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-                                Accounts: {letter.accounts_disputed.length} account(s) disputed
-                              </Typography>
-                            </Box>
-                          )}
                         </Box>
                       </Collapse>
                     </TableCell>
