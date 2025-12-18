@@ -19,12 +19,36 @@ import {
   CircularProgress,
   Chip,
   Button,
+  Tooltip,
+  Collapse,
+  Stack,
 } from '@mui/material';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
-import DownloadIcon from '@mui/icons-material/Download';
+import TrackChangesIcon from '@mui/icons-material/TrackChanges';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import { letterApi } from '../api';
+import { createDisputeFromLetter } from '../api/disputeApi';
+
+// Utility to detect if string is a UUID (old data format)
+const isUUID = (str) => {
+  if (!str || typeof str !== 'string') return false;
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(str);
+};
+
+// Format violation type for display
+const formatViolationType = (violation) => {
+  if (!violation) return null;
+  // Skip UUIDs (old data format) - they're not displayable
+  if (isUUID(violation)) return null;
+  // Convert snake_case to Title Case
+  return violation
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+};
 
 const LettersPage = () => {
   const navigate = useNavigate();
@@ -32,6 +56,8 @@ const LettersPage = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
+  const [trackingId, setTrackingId] = useState(null);
+  const [expandedId, setExpandedId] = useState(null);
 
   const fetchLetters = async () => {
     setIsLoading(true);
@@ -72,16 +98,66 @@ const LettersPage = () => {
     }
   };
 
-  const formatDate = (dateString) => {
+  const handleTrack = async (letter) => {
+    setTrackingId(letter.letter_id);
+    setError(null);
     try {
-      return new Date(dateString).toLocaleDateString('en-US', {
+      // Build violation_data from available letter info
+      // Filter out UUIDs (old data) - only use valid violation type names
+      const validViolations = (letter.violations_cited || []).filter(v => !isUUID(v));
+
+      const violationData = validViolations.map((violationType, idx) => ({
+        violation_id: `${letter.letter_id}-v${idx}`, // Generate ID from letter + index
+        violation_type: violationType,
+        creditor_name: letter.accounts_disputed?.[idx] || 'Unknown',
+        severity: 'MEDIUM',
+      }));
+
+      // If no valid violations, create at least one entry from accounts
+      if (violationData.length === 0 && letter.accounts_disputed?.length > 0) {
+        letter.accounts_disputed.forEach((account, idx) => {
+          violationData.push({
+            violation_id: `${letter.letter_id}-v${idx}`,
+            violation_type: 'dispute_filed',
+            creditor_name: account,
+            severity: 'MEDIUM',
+          });
+        });
+      }
+
+      await createDisputeFromLetter(letter.letter_id, {
+        entity_type: 'CRA',
+        entity_name: letter.bureau,
+        violation_ids: violationData.map(v => v.violation_id),
+        violation_data: violationData,
+      });
+      navigate('/disputes');
+    } catch (err) {
+      console.error('Failed to create dispute:', err);
+      setError(err.response?.data?.detail || err.message || 'Failed to create dispute tracking');
+    } finally {
+      setTrackingId(null);
+    }
+  };
+
+  const formatDateTime = (dateString) => {
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleString('en-US', {
         month: 'numeric',
         day: 'numeric',
         year: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
       });
     } catch {
       return dateString;
     }
+  };
+
+  const handleToggleExpand = (letterId) => {
+    setExpandedId(expandedId === letterId ? null : letterId);
   };
 
   const getLetterTypeChip = (letterType) => {
@@ -154,6 +230,8 @@ const LettersPage = () => {
           <Table sx={{ minWidth: 650 }}>
             <TableHead sx={{ bgcolor: '#f9fafb' }}>
               <TableRow>
+                <TableCell sx={{ fontWeight: 'bold', width: 50 }}></TableCell>
+                <TableCell sx={{ fontWeight: 'bold', width: 80 }}>#</TableCell>
                 <TableCell sx={{ fontWeight: 'bold' }}>Bureau</TableCell>
                 <TableCell sx={{ fontWeight: 'bold' }}>Type</TableCell>
                 <TableCell sx={{ fontWeight: 'bold' }}>Tone</TableCell>
@@ -163,53 +241,144 @@ const LettersPage = () => {
               </TableRow>
             </TableHead>
             <TableBody>
-              {letters.map((letter) => (
-                <TableRow
-                  key={letter.letter_id}
-                  sx={{ '&:last-child td, &:last-child th': { border: 0 } }}
-                  hover
-                >
-                  <TableCell component="th" scope="row" sx={{ fontWeight: 500 }}>
-                    {letter.bureau?.toUpperCase() || 'N/A'}
-                  </TableCell>
-                  <TableCell>{getLetterTypeChip(letter.letter_type)}</TableCell>
-                  <TableCell>{getToneChip(letter.tone)}</TableCell>
-                  <TableCell align="center">
-                    <Chip
-                      label={letter.violation_count || 0}
-                      size="small"
-                      color="error"
-                      variant="filled"
-                      sx={{ minWidth: 40 }}
-                    />
-                  </TableCell>
-                  <TableCell color="text.secondary">
-                    {formatDate(letter.created_at)}
-                  </TableCell>
-                  <TableCell align="right">
-                    <IconButton
-                      color="primary"
-                      size="small"
-                      onClick={() => handleView(letter)}
-                      title="View Letter"
-                    >
-                      <VisibilityIcon />
-                    </IconButton>
-                    <IconButton
-                      color="error"
-                      size="small"
-                      onClick={() => handleDelete(letter.letter_id)}
-                      disabled={deletingId === letter.letter_id}
-                      title="Delete Letter"
-                    >
-                      {deletingId === letter.letter_id ? (
-                        <CircularProgress size={20} />
-                      ) : (
-                        <DeleteIcon />
-                      )}
-                    </IconButton>
-                  </TableCell>
-                </TableRow>
+              {letters.map((letter, index) => (
+                <React.Fragment key={letter.letter_id}>
+                  {/* Main Row */}
+                  <TableRow
+                    sx={{
+                      cursor: 'pointer',
+                      '&:last-child td, &:last-child th': { border: expandedId === letter.letter_id ? 0 : undefined },
+                      bgcolor: expandedId === letter.letter_id ? '#f0f7ff' : 'inherit',
+                    }}
+                    hover
+                    onClick={() => handleToggleExpand(letter.letter_id)}
+                  >
+                    <TableCell>
+                      <IconButton size="small">
+                        {expandedId === letter.letter_id ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                      </IconButton>
+                    </TableCell>
+                    <TableCell>
+                      <Chip
+                        label={`#${letters.length - index}`}
+                        size="small"
+                        variant="outlined"
+                        sx={{ fontWeight: 600 }}
+                      />
+                    </TableCell>
+                    <TableCell component="th" scope="row" sx={{ fontWeight: 500 }}>
+                      {letter.bureau?.toUpperCase() || 'N/A'}
+                    </TableCell>
+                    <TableCell>{getLetterTypeChip(letter.letter_type)}</TableCell>
+                    <TableCell>{getToneChip(letter.tone)}</TableCell>
+                    <TableCell align="center">
+                      <Tooltip title={`${letter.violation_count || 0} violation(s) disputed`}>
+                        <Chip
+                          label={letter.violation_count || 0}
+                          size="small"
+                          color="error"
+                          variant="filled"
+                          sx={{ minWidth: 40 }}
+                        />
+                      </Tooltip>
+                    </TableCell>
+                    <TableCell color="text.secondary">
+                      {formatDateTime(letter.created_at)}
+                    </TableCell>
+                    <TableCell align="right" onClick={(e) => e.stopPropagation()}>
+                      <IconButton
+                        color="primary"
+                        size="small"
+                        onClick={() => handleView(letter)}
+                        title="View Letter"
+                      >
+                        <VisibilityIcon />
+                      </IconButton>
+                      <IconButton
+                        color="success"
+                        size="small"
+                        onClick={() => handleTrack(letter)}
+                        disabled={trackingId === letter.letter_id}
+                        title="Track Dispute"
+                      >
+                        {trackingId === letter.letter_id ? (
+                          <CircularProgress size={20} />
+                        ) : (
+                          <TrackChangesIcon />
+                        )}
+                      </IconButton>
+                      <IconButton
+                        color="error"
+                        size="small"
+                        onClick={() => handleDelete(letter.letter_id)}
+                        disabled={deletingId === letter.letter_id}
+                        title="Delete Letter"
+                      >
+                        {deletingId === letter.letter_id ? (
+                          <CircularProgress size={20} />
+                        ) : (
+                          <DeleteIcon />
+                        )}
+                      </IconButton>
+                    </TableCell>
+                  </TableRow>
+
+                  {/* Expanded Content Row */}
+                  <TableRow>
+                    <TableCell colSpan={8} sx={{ p: 0, borderBottom: expandedId === letter.letter_id ? '1px solid' : 0, borderColor: 'divider' }}>
+                      <Collapse in={expandedId === letter.letter_id} timeout="auto" unmountOnExit>
+                        <Box sx={{ p: 3, bgcolor: '#fafafa' }}>
+                          <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 2 }}>
+                            Violations Disputed in Letter #{letters.length - index}
+                          </Typography>
+                          {(() => {
+                            // Filter and format violation types, excluding UUIDs (old data)
+                            const displayableViolations = (letter.violations_cited || [])
+                              .map(formatViolationType)
+                              .filter(Boolean);
+
+                            if (displayableViolations.length > 0) {
+                              return (
+                                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                                  {displayableViolations.map((formattedType, i) => (
+                                    <Chip
+                                      key={i}
+                                      label={formattedType}
+                                      size="small"
+                                      variant="outlined"
+                                      color="error"
+                                      sx={{ mb: 1 }}
+                                    />
+                                  ))}
+                                </Stack>
+                              );
+                            } else if (letter.violation_count > 0) {
+                              // Old letter with UUIDs - show count instead
+                              return (
+                                <Typography variant="body2" color="text.secondary">
+                                  {letter.violation_count} violation(s) disputed (legacy format - regenerate letter to see details)
+                                </Typography>
+                              );
+                            } else {
+                              return (
+                                <Typography variant="body2" color="text.secondary">
+                                  No specific violation types recorded for this letter.
+                                </Typography>
+                              );
+                            }
+                          })()}
+                          {letter.accounts_disputed && letter.accounts_disputed.length > 0 && (
+                            <Box sx={{ mt: 2 }}>
+                              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                                Accounts: {letter.accounts_disputed.length} account(s) disputed
+                              </Typography>
+                            </Box>
+                          )}
+                        </Box>
+                      </Collapse>
+                    </TableCell>
+                  </TableRow>
+                </React.Fragment>
               ))}
             </TableBody>
           </Table>

@@ -19,9 +19,11 @@ import {
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import HomeIcon from '@mui/icons-material/Home';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import SendIcon from '@mui/icons-material/Send';
 import { ToneSelector, LetterPreview } from '../components';
 import { useViolationStore, useUIStore } from '../state';
 import { getViolationLabel } from '../utils';
+import { createDisputeFromLetter } from '../api/disputeApi';
 
 const steps = ['Upload Report', 'Review Violations', 'Generate Letter'];
 
@@ -30,6 +32,8 @@ const LetterPage = () => {
   const [searchParams] = useSearchParams();
   const letterId = searchParams.get('letterId');
   const navigate = useNavigate();
+  const [isCreatingDispute, setIsCreatingDispute] = React.useState(false);
+  const [disputeError, setDisputeError] = React.useState(null);
   const { selectedViolationIds, selectedDiscrepancyIds, violations, auditResult, fetchAuditResults } = useViolationStore();
   const {
     currentLetter,
@@ -92,6 +96,42 @@ const LetterPage = () => {
 
   // Calculate stats from SELECTED violations only
   const selectedViolations = violations.filter(v => selectedViolationIds.includes(v.violation_id));
+
+  const handleTrackDispute = async () => {
+    if (!currentLetter) return;
+
+    setIsCreatingDispute(true);
+    setDisputeError(null);
+
+    // Get the actual violation data to store with the dispute
+    const violationData = selectedViolations.map(v => ({
+      violation_id: v.violation_id,
+      violation_type: v.violation_type,
+      creditor_name: v.creditor_name,
+      account_number_masked: v.account_number_masked,
+      severity: v.severity,
+    }));
+
+    try {
+      await createDisputeFromLetter(currentLetter.letter_id, {
+        entity_type: 'CRA',
+        entity_name: currentLetter.bureau || auditResult?.bureau,
+        violation_ids: selectedViolationIds,
+        violation_data: violationData,
+      });
+      // Navigate to disputes page after creating
+      navigate('/disputes');
+    } catch (err) {
+      // If backend isn't ready, still navigate to disputes page
+      // The dispute will need to be created when backend is available
+      console.error('Failed to create dispute:', err);
+      setDisputeError('Could not create dispute record. You can still track it manually on the Disputes page.');
+      // Navigate anyway after a brief delay
+      setTimeout(() => navigate('/disputes'), 2000);
+    } finally {
+      setIsCreatingDispute(false);
+    }
+  };
   const stats = {
     violations: selectedViolations.length,
     accounts: [...new Set(selectedViolations.map(v => v.account_id))].length,
@@ -218,6 +258,44 @@ const LetterPage = () => {
 
       {currentLetter && (
         <>
+          {/* Track Dispute CTA */}
+          <Paper
+            elevation={0}
+            sx={{
+              p: 3,
+              mt: 4,
+              borderRadius: 3,
+              border: '2px solid',
+              borderColor: 'primary.main',
+              backgroundColor: '#e3f2fd',
+              textAlign: 'center',
+            }}
+          >
+            <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 1 }}>
+              Ready to Send?
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2, maxWidth: 500, mx: 'auto' }}>
+              After you mail or submit this letter, click below to start tracking the dispute.
+              This starts the 30-day response clock and enables you to log responses.
+            </Typography>
+            {disputeError && (
+              <Alert severity="warning" sx={{ mb: 2, maxWidth: 500, mx: 'auto' }}>
+                {disputeError}
+              </Alert>
+            )}
+            <Button
+              variant="contained"
+              size="large"
+              startIcon={<SendIcon />}
+              onClick={handleTrackDispute}
+              disabled={isCreatingDispute}
+              disableElevation
+              sx={{ px: 4 }}
+            >
+              {isCreatingDispute ? 'Creating Dispute...' : 'I Sent This - Track Dispute'}
+            </Button>
+          </Paper>
+
           {/* Violation Types Summary */}
           {Object.keys(violationsByType).length > 0 && (
             <Paper

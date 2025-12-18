@@ -27,20 +27,22 @@ router = APIRouter(prefix="/disputes", tags=["disputes"])
 
 class CreateDisputeRequest(BaseModel):
     """Request to create a new dispute."""
-    violation_id: str = Field(..., description="ID of the violation being disputed")
     entity_type: EntityType = Field(..., description="Type of entity (CRA, FURNISHER, COLLECTOR)")
     entity_name: str = Field(..., description="Name of the entity")
-    dispute_date: date = Field(..., description="Date dispute was/will be sent")
+    dispute_date: Optional[date] = Field(None, description="Date dispute was/will be sent")
     source: DisputeSource = Field(default=DisputeSource.DIRECT, description="Source of dispute")
     letter_id: Optional[str] = Field(None, description="ID of generated letter")
+    violation_id: Optional[str] = Field(None, description="ID of the violation being disputed (single)")
+    violation_ids: Optional[List[str]] = Field(None, description="IDs of violations being disputed (multiple)")
     account_fingerprint: Optional[str] = Field(None, description="Account fingerprint for tracking")
-    violation_data: Optional[dict] = Field(None, description="Snapshot of violation data")
+    violation_data: Optional[List[dict]] = Field(None, description="Snapshot of all violations data")
     has_validation_request: bool = Field(default=False, description="For FDCPA - validation request sent")
     collection_continued: bool = Field(default=False, description="For FDCPA - collection continued before validation")
 
 
 class LogResponseRequest(BaseModel):
     """Request to log an entity response."""
+    violation_id: Optional[str] = Field(None, description="ID of the specific violation this response is for")
     response_type: ResponseType = Field(..., description="Type of response received")
     response_date: Optional[date] = Field(None, description="Date response was received")
     updated_fields: Optional[dict] = Field(None, description="For UPDATED - field changes")
@@ -92,7 +94,7 @@ class TimelineEntry(BaseModel):
 async def create_dispute(
     request: CreateDisputeRequest,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user = Depends(get_current_user),
 ):
     """
     Create a new dispute.
@@ -101,13 +103,22 @@ async def create_dispute(
     """
     service = DisputeService(db)
 
+    # Use dispute_date if provided, otherwise use today
+    from datetime import date as date_type
+    dispute_date = request.dispute_date or date_type.today()
+
+    # Get violation_id - prefer single, fall back to first of array
+    violation_id = request.violation_id
+    if not violation_id and request.violation_ids:
+        violation_id = request.violation_ids[0] if request.violation_ids else None
+
     result = service.create_dispute(
-        user_id=current_user["id"],
-        violation_id=request.violation_id,
+        user_id=current_user.id,
         entity_type=request.entity_type,
         entity_name=request.entity_name,
-        dispute_date=request.dispute_date,
+        dispute_date=dispute_date,
         source=request.source,
+        violation_id=violation_id,
         letter_id=request.letter_id,
         account_fingerprint=request.account_fingerprint,
         violation_data=request.violation_data,
@@ -123,7 +134,7 @@ async def log_response(
     dispute_id: str,
     request: LogResponseRequest,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user = Depends(get_current_user),
 ):
     """
     Log an entity response.
@@ -140,6 +151,7 @@ async def log_response(
 
     result = service.log_response(
         dispute_id=dispute_id,
+        violation_id=request.violation_id,
         response_type=request.response_type,
         response_date=request.response_date,
         updated_fields=request.updated_fields,
@@ -160,7 +172,7 @@ async def confirm_mailing(
     dispute_id: str,
     request: ConfirmMailingRequest,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user = Depends(get_current_user),
 ):
     """
     Confirm that the dispute letter was mailed.
@@ -186,7 +198,7 @@ async def request_artifact(
     dispute_id: str,
     artifact_type: str = Query(..., description="Type of artifact to generate"),
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user = Depends(get_current_user),
 ):
     """
     Request generation of an artifact (letter, complaint packet, etc.).
@@ -215,7 +227,7 @@ async def get_user_disputes(
     status: Optional[DisputeStatus] = None,
     state: Optional[EscalationState] = None,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user = Depends(get_current_user),
 ):
     """
     Get all disputes for the current user.
@@ -225,7 +237,7 @@ async def get_user_disputes(
     service = DisputeService(db)
 
     return service.get_user_disputes(
-        user_id=current_user["id"],
+        user_id=current_user.id,
         status=status,
         state=state,
     )
@@ -235,7 +247,7 @@ async def get_user_disputes(
 async def get_dispute(
     dispute_id: str,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user = Depends(get_current_user),
 ):
     """
     Get details of a specific dispute.
@@ -254,7 +266,7 @@ async def get_dispute(
 async def get_dispute_timeline(
     dispute_id: str,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user = Depends(get_current_user),
 ):
     """
     Get the complete paper trail for a dispute.
@@ -270,7 +282,7 @@ async def get_dispute_timeline(
 async def get_dispute_state(
     dispute_id: str,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user = Depends(get_current_user),
 ):
     """
     Get the current state of a dispute.
@@ -291,7 +303,7 @@ async def get_dispute_state(
 async def get_available_artifacts(
     dispute_id: str,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user = Depends(get_current_user),
 ):
     """
     Get available artifacts for the current state.
@@ -305,7 +317,7 @@ async def get_available_artifacts(
 async def get_system_events(
     dispute_id: str,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user = Depends(get_current_user),
 ):
     """
     Get system-triggered events for a dispute.
@@ -323,6 +335,37 @@ async def get_system_events(
 
 
 # =============================================================================
+# DELETE DISPUTE
+# =============================================================================
+
+@router.delete("/{dispute_id}")
+async def delete_dispute(
+    dispute_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Delete a dispute.
+
+    Only the owner can delete their disputes.
+    """
+    from ..models.db_models import DisputeDB
+
+    dispute = db.query(DisputeDB).filter(
+        DisputeDB.id == dispute_id,
+        DisputeDB.user_id == current_user.id
+    ).first()
+
+    if not dispute:
+        raise HTTPException(status_code=404, detail="Dispute not found")
+
+    db.delete(dispute)
+    db.commit()
+
+    return {"status": "deleted", "dispute_id": dispute_id}
+
+
+# =============================================================================
 # REINSERTION NOTICE ENDPOINT
 # =============================================================================
 
@@ -331,7 +374,7 @@ async def log_reinsertion_notice(
     dispute_id: str,
     request: LogReinsertionNoticeRequest,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user = Depends(get_current_user),
 ):
     """
     Log receipt of a reinsertion notice.

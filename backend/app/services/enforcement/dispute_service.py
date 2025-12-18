@@ -71,11 +71,11 @@ class DisputeService:
     def create_dispute(
         self,
         user_id: str,
-        violation_id: str,
         entity_type: EntityType,
         entity_name: str,
         dispute_date: date,
         source: DisputeSource = DisputeSource.DIRECT,
+        violation_id: str = None,
         letter_id: str = None,
         account_fingerprint: str = None,
         violation_data: Dict[str, Any] = None,
@@ -154,6 +154,7 @@ class DisputeService:
         self,
         dispute_id: str,
         response_type: ResponseType,
+        violation_id: str = None,
         response_date: date = None,
         updated_fields: Dict[str, Any] = None,
         rejection_reason: str = None,
@@ -181,6 +182,7 @@ class DisputeService:
         response = DisputeResponseDB(
             id=str(uuid4()),
             dispute_id=dispute_id,
+            violation_id=violation_id,
             response_type=response_type,
             response_date=response_date or date.today(),
             reported_by=ActorType.USER,
@@ -508,6 +510,7 @@ class DisputeService:
                 "deadline_date": d.deadline_date.isoformat() if d.deadline_date else None,
                 "days_to_deadline": (d.deadline_date - today).days if d.deadline_date else None,
                 "created_at": d.created_at.isoformat(),
+                "violation_data": d.original_violation_data,
             }
             for d in disputes
         ]

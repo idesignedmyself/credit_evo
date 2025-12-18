@@ -213,7 +213,7 @@ class DisputeDB(Base):
 
     id = Column(String(36), primary_key=True)  # UUID
     user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    violation_id = Column(String(36), nullable=False, index=True)  # References violation from audit
+    violation_id = Column(String(64), nullable=True, index=True)  # References violation from audit or generated ID like {letter_id}-v{idx}
 
     # Entity Information
     entity_type = Column(SQLEnum(EntityType), nullable=False)
@@ -257,6 +257,7 @@ class DisputeResponseDB(Base):
 
     id = Column(String(36), primary_key=True)  # UUID
     dispute_id = Column(String(36), ForeignKey("disputes.id", ondelete="CASCADE"), nullable=False, index=True)
+    violation_id = Column(String(64), nullable=True, index=True)  # Which specific violation this response is for (can be generated ID like {letter_id}-v{idx})
 
     # Response Details
     response_type = Column(SQLEnum(ResponseType), nullable=False)

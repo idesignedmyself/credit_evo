@@ -40,9 +40,19 @@ const DisputeList = ({ onSelectDispute, onCreateDispute }) => {
   const fetchDisputes = async () => {
     try {
       const data = await getDisputes();
-      setDisputes(data);
+      setDisputes(data || []);
+      setError(null);
     } catch (err) {
-      setError(err.message);
+      // Handle gracefully: network errors or 404 = no disputes yet
+      // Only show error for unexpected server issues (5xx)
+      const status = err.response?.status;
+      if (status >= 500) {
+        setError('Server error. Please try again later.');
+      } else {
+        // Network error, 404, or other client errors = treat as empty
+        setDisputes([]);
+        setError(null);
+      }
     } finally {
       setLoading(false);
     }
@@ -101,8 +111,9 @@ const DisputeList = ({ onSelectDispute, onCreateDispute }) => {
           <Typography color="text.secondary" gutterBottom>
             No disputes yet
           </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Create a dispute to start tracking responses from credit bureaus and creditors.
+          <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 400, mx: 'auto' }}>
+            Disputes are created automatically when you generate and send a dispute letter.
+            Upload a credit report, review violations, and generate a letter to get started.
           </Typography>
         </Box>
       ) : (

@@ -389,7 +389,7 @@ async def generate_letter(
                 bureau=civil_result.bureau,
                 tone=request.tone,
                 accounts_disputed=list(set(v.creditor_name for v in filtered_violations)),
-                violations_cited=civil_result.violations_included,
+                violations_cited=[v.violation_type.value for v in filtered_violations],  # Store type names, not IDs
                 word_count=civil_result.word_count,
             )
             db.add(letter_db)
@@ -556,7 +556,7 @@ async def generate_letter(
                 bureau=request.bureau,
                 tone=request.tone,
                 accounts_disputed=list(set(v.creditor_name for v in filtered_violations)),
-                violations_cited=[v.violation_id for v in filtered_violations],
+                violations_cited=[v.violation_type.value for v in filtered_violations],  # Store type names, not IDs
                 word_count=word_count,
             )
             db.add(letter_db)
@@ -615,7 +615,7 @@ async def generate_letter(
                 bureau=copilot_letter.bureau,
                 tone=request.tone,
                 accounts_disputed=list(set(v.creditor_name for v in filtered_violations)),
-                violations_cited=copilot_letter.violations_included,
+                violations_cited=[v.violation_type.value for v in filtered_violations],  # Store type names, not IDs
                 word_count=copilot_letter.word_count,
             )
             db.add(letter_db)
@@ -674,7 +674,7 @@ async def generate_letter(
                 bureau=letter.bureau.value,
                 tone=request.tone,
                 accounts_disputed=[acc for acc in letter.accounts_disputed],
-                violations_cited=[v for v in letter.violations_cited],
+                violations_cited=[v.value if hasattr(v, 'value') else str(v) for v in letter.violations_cited],  # Convert enums to strings
                 word_count=letter.metadata.word_count,
             )
             db.add(letter_db)
@@ -951,6 +951,8 @@ async def list_all_letters(
             "letter_type": get_letter_type(letter.tone),
             "word_count": letter.word_count,
             "violation_count": len(letter.violations_cited or []),
+            "violations_cited": letter.violations_cited or [],  # Array of violation type strings
+            "accounts_disputed": letter.accounts_disputed or [],  # Array of account IDs
             "accounts": len(letter.accounts_disputed or []),
             "has_edits": letter.edited_content is not None,
         }

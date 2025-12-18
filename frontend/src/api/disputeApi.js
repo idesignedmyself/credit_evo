@@ -17,6 +17,24 @@ export const createDispute = async (disputeData) => {
 };
 
 /**
+ * Create a dispute from a generated letter
+ * This starts the clock on the dispute tracking process
+ */
+export const createDisputeFromLetter = async (letterId, letterData) => {
+  const disputeData = {
+    letter_id: letterId,
+    entity_type: letterData.entity_type || 'CRA',
+    entity_name: letterData.entity_name || letterData.bureau,
+    dispute_date: letterData.dispute_date || new Date().toISOString().split('T')[0],
+    source: letterData.source || 'DIRECT',
+    violation_ids: letterData.violation_ids || [],
+    violation_data: letterData.violation_data || null,
+  };
+  const response = await apiClient.post('/disputes', disputeData);
+  return response.data;
+};
+
+/**
  * Get all disputes for current user
  */
 export const getDisputes = async (filters = {}) => {
@@ -93,6 +111,14 @@ export const confirmMailing = async (disputeId, mailingData) => {
  */
 export const logReinsertionNotice = async (disputeId, noticeData) => {
   const response = await apiClient.post(`/disputes/${disputeId}/reinsertion-notice`, noticeData);
+  return response.data;
+};
+
+/**
+ * Delete a dispute
+ */
+export const deleteDispute = async (disputeId) => {
+  const response = await apiClient.delete(`/disputes/${disputeId}`);
   return response.data;
 };
 
