@@ -79,7 +79,7 @@ const CollapsibleTableRow = ({ label, count, isExpanded, onToggle, children }) =
 );
 
 const ViolationList = ({ hideFilters = false, hideHeader = false }) => {
-  const [groupBy, setGroupBy] = useState("type");
+  const [groupBy, setGroupBy] = useState("crossbureau");
   const [expandedItems, setExpandedItems] = useState({});
 
   const {
@@ -218,9 +218,6 @@ const ViolationList = ({ hideFilters = false, hideHeader = false }) => {
               },
             }}
           >
-            <Tab value="type" label="Group by Type" />
-            <Tab value="account" label="Group by Account" />
-            <Tab value="bureau" label="Group by Bureau" />
             <Tab value="crossbureau" label={`Cross-Bureau (${discrepancies?.length || 0})`} />
             <Tab value="accounts" label={`Tri-Merge Accounts (${accounts.length})`} />
           </Tabs>
