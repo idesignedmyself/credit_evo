@@ -103,20 +103,41 @@ const LetterPage = () => {
     setIsCreatingDispute(true);
     setDisputeError(null);
 
-    // Get the actual violation data to store with the dispute
-    const violationData = selectedViolations.map(v => ({
-      violation_id: v.violation_id,
-      violation_type: v.violation_type,
-      creditor_name: v.creditor_name,
-      account_number_masked: v.account_number_masked,
-      severity: v.severity,
-    }));
+    // Build violation data from the letter's stored data
+    // When viewing a saved letter, selectedViolations may be empty,
+    // so we use the letter's violations_cited and accounts_disputed
+    let violationData = [];
+
+    if (selectedViolations.length > 0) {
+      // Use current selection if available (just generated)
+      violationData = selectedViolations.map(v => ({
+        violation_id: v.violation_id,
+        violation_type: v.violation_type,
+        creditor_name: v.creditor_name,
+        account_number_masked: v.account_number_masked,
+        severity: v.severity,
+      }));
+    } else if (currentLetter.violations_cited || currentLetter.accounts_disputed) {
+      // Reconstruct from saved letter data
+      const violationTypes = currentLetter.violations_cited || [];
+      const accounts = currentLetter.accounts_disputed || [];
+      const maxLen = Math.max(violationTypes.length, accounts.length);
+
+      for (let i = 0; i < maxLen; i++) {
+        violationData.push({
+          violation_id: `${currentLetter.letter_id}-v${i}`,
+          violation_type: violationTypes[i] || 'unknown',
+          creditor_name: accounts[i] || 'Unknown',
+          severity: 'MEDIUM',
+        });
+      }
+    }
 
     try {
       await createDisputeFromLetter(currentLetter.letter_id, {
         entity_type: 'CRA',
         entity_name: currentLetter.bureau || auditResult?.bureau,
-        violation_ids: selectedViolationIds,
+        violation_ids: violationData.map(v => v.violation_id),
         violation_data: violationData,
       });
       // Navigate to disputes page after creating
