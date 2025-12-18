@@ -448,7 +448,12 @@ const DisputesPage = () => {
 
   const formatDateTime = (dateString) => {
     try {
-      const date = new Date(dateString);
+      // Backend stores UTC timestamps without 'Z' suffix - add it for proper timezone conversion
+      let normalizedDate = dateString;
+      if (dateString && !dateString.endsWith('Z') && !dateString.includes('+')) {
+        normalizedDate = dateString + 'Z';
+      }
+      const date = new Date(normalizedDate);
       return date.toLocaleString('en-US', {
         month: 'numeric',
         day: 'numeric',
