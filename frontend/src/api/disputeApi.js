@@ -18,19 +18,31 @@ export const createDispute = async (disputeData) => {
 
 /**
  * Create a dispute from a generated letter
- * This starts the clock on the dispute tracking process
+ * Creates dispute in "pending tracking" state - clock doesn't start until user calls startTracking
  */
 export const createDisputeFromLetter = async (letterId, letterData) => {
   const disputeData = {
     letter_id: letterId,
     entity_type: letterData.entity_type || 'CRA',
     entity_name: letterData.entity_name || letterData.bureau,
-    dispute_date: letterData.dispute_date || new Date().toISOString().split('T')[0],
+    // Don't set dispute_date - user will set it when they start tracking
+    dispute_date: null,
     source: letterData.source || 'DIRECT',
     violation_ids: letterData.violation_ids || [],
     violation_data: letterData.violation_data || null,
   };
   const response = await apiClient.post('/disputes', disputeData);
+  return response.data;
+};
+
+/**
+ * Start tracking a dispute (set the send date and start the deadline clock)
+ */
+export const startTracking = async (disputeId, sendDate, trackingNumber = null) => {
+  const response = await apiClient.post(`/disputes/${disputeId}/confirm-sent`, {
+    mailed_date: sendDate,
+    tracking_number: trackingNumber,
+  });
   return response.data;
 };
 

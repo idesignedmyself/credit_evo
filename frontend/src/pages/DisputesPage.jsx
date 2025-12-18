@@ -26,6 +26,11 @@ import {
   Divider,
   Tooltip,
   Button,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
@@ -39,10 +44,12 @@ import {
   getDisputeTimeline,
   logResponse,
   deleteDispute,
+  startTracking,
   RESPONSE_TYPES,
   ESCALATION_STATES,
 } from '../api/disputeApi';
 import DeleteIcon from '@mui/icons-material/Delete';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 
 // =============================================================================
 // EXPANDABLE ROW CONTENT
@@ -191,7 +198,7 @@ const ViolationResponseRow = ({ violation, disputeId, onResponseLogged }) => {
   );
 };
 
-const ExpandedRowContent = ({ dispute, onResponseLogged }) => {
+const ExpandedRowContent = ({ dispute, onResponseLogged, onStartTracking }) => {
   const [timeline, setTimeline] = useState([]);
   const [loadingTimeline, setLoadingTimeline] = useState(true);
   const [error, setError] = useState(null);
@@ -218,33 +225,62 @@ const ExpandedRowContent = ({ dispute, onResponseLogged }) => {
 
   return (
     <Box sx={{ p: 3, bgcolor: '#fafafa' }}>
-      {/* Dispute Details */}
-      <Box sx={{ display: 'flex', gap: 4, mb: 3, flexWrap: 'wrap' }}>
-        <Box>
-          <Typography variant="caption" color="text.secondary">Deadline</Typography>
-          <Typography variant="body2" sx={{ fontWeight: 500 }}>
-            {dispute.deadline_date}
+      {/* Show Start Tracking prompt if not yet tracking */}
+      {!dispute.tracking_started && (
+        <Alert
+          severity="info"
+          sx={{ mb: 3, borderRadius: 2 }}
+          action={
+            <Button
+              color="primary"
+              variant="contained"
+              size="small"
+              startIcon={<PlayArrowIcon />}
+              onClick={() => onStartTracking(dispute)}
+              disableElevation
+            >
+              Start Tracking
+            </Button>
+          }
+        >
+          <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+            Tracking not started
           </Typography>
-        </Box>
-        <Box>
-          <Typography variant="caption" color="text.secondary">Days Remaining</Typography>
-          <Typography variant="body2" sx={{ fontWeight: 500 }}>
-            {dispute.days_to_deadline} days
+          <Typography variant="body2">
+            Click "Start Tracking" and enter the date you mailed the letter to begin the 30-day response clock.
           </Typography>
+        </Alert>
+      )}
+
+      {/* Dispute Details - only show if tracking started */}
+      {dispute.tracking_started && (
+        <Box sx={{ display: 'flex', gap: 4, mb: 3, flexWrap: 'wrap' }}>
+          <Box>
+            <Typography variant="caption" color="text.secondary">Deadline</Typography>
+            <Typography variant="body2" sx={{ fontWeight: 500 }}>
+              {dispute.deadline_date}
+            </Typography>
+          </Box>
+          <Box>
+            <Typography variant="caption" color="text.secondary">Days Remaining</Typography>
+            <Typography variant="body2" sx={{ fontWeight: 500 }}>
+              {dispute.days_to_deadline} days
+            </Typography>
+          </Box>
+          <Box>
+            <Typography variant="caption" color="text.secondary">Dispute Date</Typography>
+            <Typography variant="body2" sx={{ fontWeight: 500 }}>
+              {dispute.dispute_date}
+            </Typography>
+          </Box>
+          <Box>
+            <Typography variant="caption" color="text.secondary">Current State</Typography>
+            <Typography variant="body2" sx={{ fontWeight: 500 }}>
+              {stateConfig.label || dispute.current_state}
+            </Typography>
+          </Box>
         </Box>
-        <Box>
-          <Typography variant="caption" color="text.secondary">Dispute Date</Typography>
-          <Typography variant="body2" sx={{ fontWeight: 500 }}>
-            {dispute.dispute_date}
-          </Typography>
-        </Box>
-        <Box>
-          <Typography variant="caption" color="text.secondary">Current State</Typography>
-          <Typography variant="body2" sx={{ fontWeight: 500 }}>
-            {stateConfig.label || dispute.current_state}
-          </Typography>
-        </Box>
-      </Box>
+      )}
 
       <Divider sx={{ mb: 3 }} />
 
@@ -356,6 +392,13 @@ const DisputesPage = () => {
   const [refreshKey, setRefreshKey] = useState(0);
   const [deletingId, setDeletingId] = useState(null);
 
+  // Start Tracking Dialog State
+  const [trackingDialogOpen, setTrackingDialogOpen] = useState(false);
+  const [trackingDispute, setTrackingDispute] = useState(null);
+  const [trackingSendDate, setTrackingSendDate] = useState(dayjs());
+  const [trackingNumber, setTrackingNumber] = useState('');
+  const [startingTracking, setStartingTracking] = useState(false);
+
   useEffect(() => {
     const fetchDisputes = async () => {
       setLoading(true);
@@ -401,6 +444,40 @@ const DisputesPage = () => {
     }
   };
 
+  // Start Tracking Dialog Handlers
+  const handleOpenTrackingDialog = (dispute) => {
+    setTrackingDispute(dispute);
+    setTrackingSendDate(dayjs());
+    setTrackingNumber('');
+    setTrackingDialogOpen(true);
+  };
+
+  const handleCloseTrackingDialog = () => {
+    setTrackingDialogOpen(false);
+    setTrackingDispute(null);
+  };
+
+  const handleStartTracking = async () => {
+    if (!trackingDispute || !trackingSendDate) return;
+
+    setStartingTracking(true);
+    setError(null);
+    try {
+      await startTracking(
+        trackingDispute.id,
+        trackingSendDate.format('YYYY-MM-DD'),
+        trackingNumber || null
+      );
+      handleCloseTrackingDialog();
+      setRefreshKey((k) => k + 1); // Refresh disputes list
+    } catch (err) {
+      console.error('Failed to start tracking:', err);
+      setError(err.response?.data?.detail || err.message || 'Failed to start tracking');
+    } finally {
+      setStartingTracking(false);
+    }
+  };
+
   const getStateChip = (state) => {
     const config = ESCALATION_STATES[state] || {};
     return (
@@ -413,7 +490,10 @@ const DisputesPage = () => {
     );
   };
 
-  const getDeadlineChip = (days) => {
+  const getDeadlineChip = (days, trackingStarted) => {
+    if (!trackingStarted) {
+      return <Chip label="Not Started" size="small" color="info" variant="outlined" />;
+    }
     if (days === null) return <Chip label="N/A" size="small" variant="outlined" />;
 
     let color = 'default';
@@ -509,7 +589,7 @@ const DisputesPage = () => {
             <TableHead sx={{ bgcolor: '#f9fafb' }}>
               <TableRow>
                 <TableCell sx={{ fontWeight: 'bold', width: 50 }}></TableCell>
-                <TableCell sx={{ fontWeight: 'bold', width: 80 }}>#</TableCell>
+                <TableCell sx={{ fontWeight: 'bold', width: 80 }}>ID</TableCell>
                 <TableCell sx={{ fontWeight: 'bold' }}>Entity</TableCell>
                 <TableCell sx={{ fontWeight: 'bold' }}>Type</TableCell>
                 <TableCell align="center" sx={{ fontWeight: 'bold' }}>Violations</TableCell>
@@ -540,7 +620,7 @@ const DisputesPage = () => {
                     </TableCell>
                     <TableCell>
                       <Chip
-                        label={`#${disputes.length - index}`}
+                        label={disputes.length - index}
                         size="small"
                         variant="outlined"
                         sx={{ fontWeight: 600 }}
@@ -567,12 +647,23 @@ const DisputesPage = () => {
                       />
                     </TableCell>
                     <TableCell>{getStateChip(dispute.current_state)}</TableCell>
-                    <TableCell align="center">{getDeadlineChip(dispute.days_to_deadline)}</TableCell>
+                    <TableCell align="center">{getDeadlineChip(dispute.days_to_deadline, dispute.tracking_started)}</TableCell>
                     <TableCell>{getStatusChip(dispute.status)}</TableCell>
                     <TableCell>
                       {formatDateTime(dispute.created_at)}
                     </TableCell>
                     <TableCell align="right" onClick={(e) => e.stopPropagation()}>
+                      {!dispute.tracking_started && (
+                        <Tooltip title="Start Tracking">
+                          <IconButton
+                            color="primary"
+                            size="small"
+                            onClick={() => handleOpenTrackingDialog(dispute)}
+                          >
+                            <PlayArrowIcon />
+                          </IconButton>
+                        </Tooltip>
+                      )}
                       <IconButton
                         color="error"
                         size="small"
@@ -596,6 +687,7 @@ const DisputesPage = () => {
                         <ExpandedRowContent
                           dispute={dispute}
                           onResponseLogged={handleResponseLogged}
+                          onStartTracking={handleOpenTrackingDialog}
                         />
                       </Collapse>
                     </TableCell>
@@ -606,6 +698,69 @@ const DisputesPage = () => {
           </Table>
         </TableContainer>
       )}
+
+      {/* Start Tracking Dialog */}
+      <Dialog
+        open={trackingDialogOpen}
+        onClose={handleCloseTrackingDialog}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ fontWeight: 600 }}>
+          Start Tracking
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+            Enter the date you mailed the dispute letter. The 30-day response clock will begin from this date.
+          </Typography>
+
+          <LocalizationProvider dateAdapter={AdapterDayjs}>
+            <DatePicker
+              label="Date Letter Was Mailed *"
+              value={trackingSendDate}
+              onChange={setTrackingSendDate}
+              maxDate={dayjs()}
+              slotProps={{
+                textField: {
+                  fullWidth: true,
+                  sx: { mb: 2 },
+                },
+              }}
+            />
+          </LocalizationProvider>
+
+          <TextField
+            label="Tracking Number (Optional)"
+            value={trackingNumber}
+            onChange={(e) => setTrackingNumber(e.target.value)}
+            fullWidth
+            placeholder="e.g., USPS Certified Mail tracking"
+            helperText="Enter tracking number if you sent via certified mail"
+          />
+
+          {trackingSendDate && (
+            <Alert severity="info" sx={{ mt: 2 }}>
+              <Typography variant="body2">
+                <strong>Deadline will be:</strong>{' '}
+                {trackingSendDate.add(30, 'day').format('MMMM D, YYYY')} (30 days from send date)
+              </Typography>
+            </Alert>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 2.5 }}>
+          <Button onClick={handleCloseTrackingDialog} disabled={startingTracking}>
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleStartTracking}
+            disabled={!trackingSendDate || startingTracking}
+            disableElevation
+          >
+            {startingTracking ? <CircularProgress size={20} /> : 'Start Tracking'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

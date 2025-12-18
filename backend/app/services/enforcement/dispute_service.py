@@ -73,7 +73,7 @@ class DisputeService:
         user_id: str,
         entity_type: EntityType,
         entity_name: str,
-        dispute_date: date,
+        dispute_date: date = None,
         source: DisputeSource = DisputeSource.DIRECT,
         violation_id: str = None,
         letter_id: str = None,
@@ -86,13 +86,22 @@ class DisputeService:
         Create a new dispute.
 
         User-authorized action - user initiates dispute.
+
+        If dispute_date is None, creates dispute in "pending tracking" state.
+        The deadline clock doesn't start until user calls start_tracking/confirm_mailing.
         """
-        # Calculate deadline
-        deadline_date, deadline_meta = self.deadline_engine.calculate_deadline(
-            dispute_date=dispute_date,
-            source=source,
-            entity_type=entity_type,
-        )
+        # If dispute_date provided, calculate deadline and start tracking immediately
+        deadline_date = None
+        deadline_meta = {}
+        tracking_started = False
+
+        if dispute_date:
+            deadline_date, deadline_meta = self.deadline_engine.calculate_deadline(
+                dispute_date=dispute_date,
+                source=source,
+                entity_type=entity_type,
+            )
+            tracking_started = True
 
         # Create dispute
         dispute = DisputeDB(
@@ -103,9 +112,10 @@ class DisputeService:
             entity_name=entity_name,
             dispute_date=dispute_date,
             deadline_date=deadline_date,
+            tracking_started=tracking_started,
             source=source,
             status=DisputeStatus.OPEN,
-            current_state=EscalationState.DISPUTED,
+            current_state=EscalationState.DETECTED if not tracking_started else EscalationState.DISPUTED,
             letter_id=letter_id,
             account_fingerprint=account_fingerprint,
             original_violation_data=violation_data,
@@ -115,24 +125,31 @@ class DisputeService:
         self.db.add(dispute)
 
         # Create initial paper trail entry
+        if tracking_started:
+            description = f"Dispute created against {entity_name} ({entity_type.value}). Deadline: {deadline_date.isoformat()}"
+        else:
+            description = f"Dispute tracking initiated against {entity_name} ({entity_type.value}). Awaiting send date to start clock."
+
         paper_trail = PaperTrailDB(
             id=str(uuid4()),
             dispute_id=dispute.id,
             event_type="dispute_created",
             actor=ActorType.USER,
-            description=f"Dispute created against {entity_name} ({entity_type.value}). Deadline: {deadline_date.isoformat()}",
+            description=description,
             event_metadata={
                 "entity_type": entity_type.value,
                 "entity_name": entity_name,
                 "source": source.value,
-                "deadline_date": deadline_date.isoformat(),
+                "tracking_started": tracking_started,
+                "deadline_date": deadline_date.isoformat() if deadline_date else None,
                 **deadline_meta,
             }
         )
         self.db.add(paper_trail)
 
-        # Schedule deadline check
-        self.deadline_engine.schedule_deadline_check(dispute)
+        # Only schedule deadline check if tracking has started
+        if tracking_started:
+            self.deadline_engine.schedule_deadline_check(dispute)
 
         self.db.commit()
 
@@ -140,8 +157,9 @@ class DisputeService:
             "dispute_id": dispute.id,
             "entity_type": entity_type.value,
             "entity_name": entity_name,
-            "dispute_date": dispute_date.isoformat(),
-            "deadline_date": deadline_date.isoformat(),
+            "dispute_date": dispute_date.isoformat() if dispute_date else None,
+            "deadline_date": deadline_date.isoformat() if deadline_date else None,
+            "tracking_started": tracking_started,
             "current_state": dispute.current_state.value,
             "deadline_info": deadline_meta,
         }
@@ -267,32 +285,56 @@ class DisputeService:
         Confirm that dispute letter was mailed.
 
         User-authorized action - starts the deadline clock.
+        This is also the "Start Tracking" action for disputes created without a date.
         """
         dispute = self.db.query(DisputeDB).get(dispute_id)
         if not dispute:
             return {"error": "Dispute not found"}
 
-        # Update dispute date if different from creation
-        if mailed_date != dispute.dispute_date:
-            old_deadline = dispute.deadline_date
-            new_deadline = self.deadline_engine.recalculate_deadline(
-                dispute=dispute,
-                reason="Mailing date confirmed",
-                new_base_date=mailed_date,
-                days=30 if dispute.source == DisputeSource.DIRECT else 45,
+        # Check if this is starting tracking for the first time
+        is_first_tracking = not dispute.tracking_started
+
+        if is_first_tracking:
+            # First time tracking - calculate deadline from scratch
+            deadline_date, deadline_meta = self.deadline_engine.calculate_deadline(
+                dispute_date=mailed_date,
+                source=dispute.source,
+                entity_type=dispute.entity_type,
             )
+            dispute.dispute_date = mailed_date
+            dispute.deadline_date = deadline_date
+            dispute.tracking_started = True
+            dispute.current_state = EscalationState.DISPUTED
+
+            # Schedule deadline check now that tracking has started
+            self.deadline_engine.schedule_deadline_check(dispute)
+
+            event_type = "tracking_started"
+            description = f"Tracking started. Letter mailed on {mailed_date.isoformat()}. Deadline: {deadline_date.isoformat()}"
+        else:
+            # Already tracking - update if mailed date is different
+            if mailed_date != dispute.dispute_date:
+                self.deadline_engine.recalculate_deadline(
+                    dispute=dispute,
+                    reason="Mailing date confirmed",
+                    new_base_date=mailed_date,
+                    days=30 if dispute.source == DisputeSource.DIRECT else 45,
+                )
+            event_type = "mailing_confirmed"
+            description = f"Dispute letter mailed on {mailed_date.isoformat()}"
 
         # Create paper trail
         paper_trail = PaperTrailDB(
             id=str(uuid4()),
             dispute_id=dispute_id,
-            event_type="mailing_confirmed",
+            event_type=event_type,
             actor=ActorType.USER,
-            description=f"Dispute letter mailed on {mailed_date.isoformat()}",
+            description=description,
             event_metadata={
                 "mailed_date": mailed_date.isoformat(),
                 "tracking_number": tracking_number,
-                "deadline_date": dispute.deadline_date.isoformat(),
+                "deadline_date": dispute.deadline_date.isoformat() if dispute.deadline_date else None,
+                "is_first_tracking": is_first_tracking,
             }
         )
         self.db.add(paper_trail)
@@ -302,8 +344,9 @@ class DisputeService:
         return {
             "dispute_id": dispute_id,
             "mailed_date": mailed_date.isoformat(),
-            "deadline_date": dispute.deadline_date.isoformat(),
+            "deadline_date": dispute.deadline_date.isoformat() if dispute.deadline_date else None,
             "tracking_number": tracking_number,
+            "tracking_started": dispute.tracking_started,
         }
 
     # =========================================================================
@@ -506,7 +549,8 @@ class DisputeService:
                 "entity_name": d.entity_name,
                 "status": d.status.value,
                 "current_state": d.current_state.value,
-                "dispute_date": d.dispute_date.isoformat(),
+                "tracking_started": d.tracking_started,
+                "dispute_date": d.dispute_date.isoformat() if d.dispute_date else None,
                 "deadline_date": d.deadline_date.isoformat() if d.deadline_date else None,
                 "days_to_deadline": (d.deadline_date - today).days if d.deadline_date else None,
                 "created_at": d.created_at.isoformat(),

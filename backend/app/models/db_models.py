@@ -220,8 +220,9 @@ class DisputeDB(Base):
     entity_name = Column(String(255), nullable=False)  # Equifax, Experian, TransUnion, or creditor name
 
     # Dispute Details
-    dispute_date = Column(Date, nullable=False)  # Date dispute was sent
-    deadline_date = Column(Date, nullable=False)  # Calculated deadline for response
+    dispute_date = Column(Date, nullable=True)  # Date dispute was sent (null until tracking started)
+    deadline_date = Column(Date, nullable=True)  # Calculated deadline for response (null until tracking started)
+    tracking_started = Column(Boolean, default=False)  # Has user started tracking (confirmed send date)?
     source = Column(SQLEnum(DisputeSource), default=DisputeSource.DIRECT)
 
     # State Machine

@@ -236,7 +236,7 @@ const LettersPage = () => {
             <TableHead sx={{ bgcolor: '#f9fafb' }}>
               <TableRow>
                 <TableCell sx={{ fontWeight: 'bold', width: 50 }}></TableCell>
-                <TableCell sx={{ fontWeight: 'bold', width: 80 }}>#</TableCell>
+                <TableCell sx={{ fontWeight: 'bold', width: 80 }}>ID</TableCell>
                 <TableCell sx={{ fontWeight: 'bold' }}>Bureau</TableCell>
                 <TableCell sx={{ fontWeight: 'bold' }}>Type</TableCell>
                 <TableCell sx={{ fontWeight: 'bold' }}>Tone</TableCell>
@@ -265,7 +265,7 @@ const LettersPage = () => {
                     </TableCell>
                     <TableCell>
                       <Chip
-                        label={`#${letters.length - index}`}
+                        label={letters.length - index}
                         size="small"
                         variant="outlined"
                         sx={{ fontWeight: 600 }}
@@ -334,7 +334,7 @@ const LettersPage = () => {
                       <Collapse in={expandedId === letter.letter_id} timeout="auto" unmountOnExit>
                         <Box sx={{ p: 3, bgcolor: '#fafafa' }}>
                           <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 2 }}>
-                            Violations Disputed in Letter #{letters.length - index}
+                            Violations Disputed in Letter {letters.length - index}
                           </Typography>
                           {(() => {
                             // Filter violation types, excluding UUIDs (old data)
