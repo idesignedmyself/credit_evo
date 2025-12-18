@@ -955,7 +955,8 @@ async def list_all_letters(
             "word_count": letter.word_count,
             "violation_count": len(letter.violations_cited or []),
             "violations_cited": letter.violations_cited or [],  # Array of violation type strings
-            "accounts_disputed": letter.accounts_disputed or [],  # Array of account IDs
+            "accounts_disputed": letter.accounts_disputed or [],  # Array of creditor names
+            "account_numbers": letter.account_numbers or [],  # Array of masked account numbers
             "accounts": len(letter.accounts_disputed or []),
             "has_edits": letter.edited_content is not None,
         }

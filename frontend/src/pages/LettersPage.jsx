@@ -105,11 +105,13 @@ const LettersPage = () => {
       // Build violation_data from available letter info
       // Filter out UUIDs (old data) - only use valid violation type names
       const validViolations = (letter.violations_cited || []).filter(v => !isUUID(v));
+      const accountNumbers = letter.account_numbers || [];
 
       const violationData = validViolations.map((violationType, idx) => ({
         violation_id: `${letter.letter_id}-v${idx}`, // Generate ID from letter + index
         violation_type: violationType,
         creditor_name: letter.accounts_disputed?.[idx] || 'Unknown',
+        account_number_masked: accountNumbers[idx] || null,
         severity: 'MEDIUM',
       }));
 
@@ -120,6 +122,7 @@ const LettersPage = () => {
             violation_id: `${letter.letter_id}-v${idx}`,
             violation_type: 'dispute_filed',
             creditor_name: account,
+            account_number_masked: accountNumbers[idx] || null,
             severity: 'MEDIUM',
           });
         });
@@ -340,6 +343,7 @@ const LettersPage = () => {
                             // Filter violation types, excluding UUIDs (old data)
                             const violationTypes = (letter.violations_cited || []).filter(v => !isUUID(v));
                             const accounts = letter.accounts_disputed || [];
+                            const accountNumbers = letter.account_numbers || [];
 
                             if (violationTypes.length > 0 || accounts.length > 0) {
                               // Combine violations with accounts - use whichever is longer
@@ -349,6 +353,7 @@ const LettersPage = () => {
                                 combined.push({
                                   creditor: accounts[i] || 'Unknown',
                                   type: violationTypes[i] || null,
+                                  accountNumber: accountNumbers[i] || null,
                                 });
                               }
 
@@ -358,6 +363,11 @@ const LettersPage = () => {
                                     <Box key={i} sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
                                       <Typography variant="body2" sx={{ fontWeight: 500, minWidth: 160 }}>
                                         {item.creditor}
+                                        {item.accountNumber && (
+                                          <Typography component="span" variant="body2" color="text.secondary" sx={{ ml: 1 }}>
+                                            ({item.accountNumber})
+                                          </Typography>
+                                        )}
                                       </Typography>
                                       {item.type && (
                                         <Chip

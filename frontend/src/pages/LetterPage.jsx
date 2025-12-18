@@ -121,6 +121,7 @@ const LetterPage = () => {
       // Reconstruct from saved letter data
       const violationTypes = currentLetter.violations_cited || [];
       const accounts = currentLetter.accounts_disputed || [];
+      const accountNumbers = currentLetter.account_numbers || [];
       const maxLen = Math.max(violationTypes.length, accounts.length);
 
       for (let i = 0; i < maxLen; i++) {
@@ -128,6 +129,7 @@ const LetterPage = () => {
           violation_id: `${currentLetter.letter_id}-v${i}`,
           violation_type: violationTypes[i] || 'unknown',
           creditor_name: accounts[i] || 'Unknown',
+          account_number_masked: accountNumbers[i] || null,
           severity: 'MEDIUM',
         });
       }
