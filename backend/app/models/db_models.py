@@ -189,8 +189,9 @@ class LetterDB(Base):
     tone = Column(String(50), default="formal")
 
     # Metadata
-    accounts_disputed = Column(JSON)  # List of account IDs
+    accounts_disputed = Column(JSON)  # List of creditor names
     violations_cited = Column(JSON)   # List of violation types
+    account_numbers = Column(JSON)    # List of masked account numbers (parallel to violations_cited)
     word_count = Column(Integer, default=0)
 
     created_at = Column(DateTime, default=datetime.utcnow)

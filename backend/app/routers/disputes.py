@@ -103,9 +103,8 @@ async def create_dispute(
     """
     service = DisputeService(db)
 
-    # Use dispute_date if provided, otherwise use today
-    from datetime import date as date_type
-    dispute_date = request.dispute_date or date_type.today()
+    # Pass dispute_date as-is - if None, dispute will be created in "pending tracking" state
+    # The clock won't start until user calls confirm-sent with the actual send date
 
     # Get violation_id - prefer single, fall back to first of array
     violation_id = request.violation_id
@@ -116,7 +115,7 @@ async def create_dispute(
         user_id=current_user.id,
         entity_type=request.entity_type,
         entity_name=request.entity_name,
-        dispute_date=dispute_date,
+        dispute_date=request.dispute_date,  # Pass as-is - None means pending tracking
         source=request.source,
         violation_id=violation_id,
         letter_id=request.letter_id,

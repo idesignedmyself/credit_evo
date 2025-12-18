@@ -388,8 +388,9 @@ async def generate_letter(
                 content=civil_result.content,
                 bureau=civil_result.bureau,
                 tone=request.tone,
-                accounts_disputed=list(set(v.creditor_name for v in filtered_violations)),
-                violations_cited=[v.violation_type.value for v in filtered_violations],  # Store type names, not IDs
+                accounts_disputed=[v.creditor_name for v in filtered_violations],
+                violations_cited=[v.violation_type.value for v in filtered_violations],
+                account_numbers=[v.account_number_masked or '' for v in filtered_violations],
                 word_count=civil_result.word_count,
             )
             db.add(letter_db)
@@ -555,8 +556,9 @@ async def generate_letter(
                 content=letter_content,
                 bureau=request.bureau,
                 tone=request.tone,
-                accounts_disputed=list(set(v.creditor_name for v in filtered_violations)),
-                violations_cited=[v.violation_type.value for v in filtered_violations],  # Store type names, not IDs
+                accounts_disputed=[v.creditor_name for v in filtered_violations],
+                violations_cited=[v.violation_type.value for v in filtered_violations],
+                account_numbers=[v.account_number_masked or '' for v in filtered_violations],
                 word_count=word_count,
             )
             db.add(letter_db)
@@ -614,8 +616,9 @@ async def generate_letter(
                 content=copilot_letter.content,
                 bureau=copilot_letter.bureau,
                 tone=request.tone,
-                accounts_disputed=list(set(v.creditor_name for v in filtered_violations)),
-                violations_cited=[v.violation_type.value for v in filtered_violations],  # Store type names, not IDs
+                accounts_disputed=[v.creditor_name for v in filtered_violations],
+                violations_cited=[v.violation_type.value for v in filtered_violations],
+                account_numbers=[v.account_number_masked or '' for v in filtered_violations],
                 word_count=copilot_letter.word_count,
             )
             db.add(letter_db)
@@ -988,6 +991,8 @@ async def get_letter(
         "word_count": letter.word_count,
         "accounts_disputed": letter.accounts_disputed,
         "violations_cited": letter.violations_cited,
+        "account_numbers": letter.account_numbers,  # Masked account numbers parallel to violations_cited
+        "violation_count": len(letter.violations_cited or []),
         "created_at": letter.created_at.isoformat() if letter.created_at else None,
         "updated_at": letter.updated_at.isoformat() if letter.updated_at else None,
         "report_id": letter.report_id,  # May be NULL if report was deleted

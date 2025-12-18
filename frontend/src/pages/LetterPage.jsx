@@ -158,18 +158,59 @@ const LetterPage = () => {
     accounts: [...new Set(selectedViolations.map(v => v.account_id))].length,
   };
 
-  // Group selected violations by type with account details
-  const violationsByType = selectedViolations.reduce((acc, v) => {
-    const label = getViolationLabel(v.violation_type);
-    if (!acc[label]) {
-      acc[label] = [];
+  // Group violations by type with account details
+  // Use selectedViolations if available, otherwise reconstruct from letter data
+  const violationsByType = React.useMemo(() => {
+    if (selectedViolations.length > 0) {
+      // Use current selection (just generated)
+      return selectedViolations.reduce((acc, v) => {
+        const label = getViolationLabel(v.violation_type);
+        if (!acc[label]) {
+          acc[label] = [];
+        }
+        acc[label].push({
+          creditorName: v.creditor_name || 'Unknown Creditor',
+          accountNumber: v.account_number_masked || '',
+        });
+        return acc;
+      }, {});
+    } else if (currentLetter?.violations_cited || currentLetter?.accounts_disputed) {
+      // Reconstruct from saved letter data
+      const violationTypes = currentLetter.violations_cited || [];
+      const accounts = currentLetter.accounts_disputed || [];
+      const accountNumbers = currentLetter.account_numbers || [];
+      const result = {};
+
+      // Build grouped structure from letter data
+      violationTypes.forEach((type, idx) => {
+        const label = getViolationLabel(type);
+        if (!result[label]) {
+          result[label] = [];
+        }
+        result[label].push({
+          creditorName: accounts[idx] || 'Unknown Creditor',
+          accountNumber: accountNumbers[idx] || '',
+        });
+      });
+
+      // Handle case where accounts > violation types
+      if (accounts.length > violationTypes.length) {
+        for (let i = violationTypes.length; i < accounts.length; i++) {
+          const label = 'Disputed Item';
+          if (!result[label]) {
+            result[label] = [];
+          }
+          result[label].push({
+            creditorName: accounts[i] || 'Unknown Creditor',
+            accountNumber: accountNumbers[i] || '',
+          });
+        }
+      }
+
+      return result;
     }
-    acc[label].push({
-      creditorName: v.creditor_name || 'Unknown Creditor',
-      accountNumber: v.account_number_masked || '',
-    });
-    return acc;
-  }, {});
+    return {};
+  }, [selectedViolations, currentLetter]);
 
   return (
     <Box>
@@ -293,11 +334,11 @@ const LetterPage = () => {
             }}
           >
             <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 1 }}>
-              Ready to Send?
+              Track This Dispute
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2, maxWidth: 500, mx: 'auto' }}>
-              After you mail or submit this letter, click below to start tracking the dispute.
-              This starts the 30-day response clock and enables you to log responses.
+              Click below to add this letter to your dispute tracker. You'll enter the send date
+              on the Disputes page to start the 30-day response clock.
             </Typography>
             {disputeError && (
               <Alert severity="warning" sx={{ mb: 2, maxWidth: 500, mx: 'auto' }}>
@@ -313,7 +354,7 @@ const LetterPage = () => {
               disableElevation
               sx={{ px: 4 }}
             >
-              {isCreatingDispute ? 'Creating Dispute...' : 'I Sent This - Track Dispute'}
+              {isCreatingDispute ? 'Creating...' : 'Start Tracking Process'}
             </Button>
           </Paper>
 
@@ -340,7 +381,7 @@ const LetterPage = () => {
                   borderColor: 'primary.main',
                 }}
               >
-                Violations Included ({selectedViolations.length})
+                Violations Included ({selectedViolations.length || currentLetter?.violation_count || Object.values(violationsByType).flat().length})
               </Typography>
               <Stack spacing={2}>
                 {Object.entries(violationsByType)
