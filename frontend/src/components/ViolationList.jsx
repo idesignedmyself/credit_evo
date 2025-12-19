@@ -29,18 +29,11 @@ import {
   useReportStore
 } from '../state';
 
-import {
-  groupViolationsByType,
-  groupViolationsByAccount,
-  groupViolationsByBureau
-} from '../utils';
-
 import { useCreditFilter } from '../hooks/useCreditFilter';
 import ViolationToggle from './ViolationToggle';
 import DiscrepancyToggle from './DiscrepancyToggle';
 import AccountAccordion from './AccountAccordion';
 import FilterToolbar from './FilterToolbar';
-import VirtualizedViolationList from './VirtualizedViolationList';
 
 /**
  * Collapsible row for Cross-Bureau and Accounts tabs
@@ -110,11 +103,6 @@ const ViolationList = ({ hideFilters = false, hideHeader = false }) => {
     searchTerm,
     setSearchTerm,
   } = useCreditFilter(violations);
-
-  // PRE-COMPUTE GROUPINGS ONCE (using filtered data)
-  const groupedByType = useMemo(() => groupViolationsByType(filteredData), [filteredData]);
-  const groupedByAccount = useMemo(() => groupViolationsByAccount(filteredData), [filteredData]);
-  const groupedByBureau = useMemo(() => groupViolationsByBureau(filteredData), [filteredData]);
 
   // Group discrepancies by account
   const groupedDiscrepancies = useMemo(() => {
@@ -285,9 +273,6 @@ const ViolationList = ({ hideFilters = false, hideHeader = false }) => {
             }}
           >
             <Tab value="all" label={`All Accounts (${Object.keys(allAccountsGrouped).length})`} />
-            <Tab value="type" label="Group by Type" />
-            <Tab value="account" label="Group by Account" />
-            <Tab value="bureau" label="Group by Bureau" />
             <Tab value="crossbureau" label={`Cross-Bureau (${discrepancies?.length || 0})`} />
             <Tab value="trimerge" label={`Tri-Merge Accounts (${accounts.length})`} />
           </Tabs>
@@ -374,33 +359,6 @@ const ViolationList = ({ hideFilters = false, hideHeader = false }) => {
               </Table>
             )}
           </>
-        )}
-
-        {groupBy === "type" && (
-          <VirtualizedViolationList
-            violations={filteredData}
-            selectedViolationIds={selectedViolationIds}
-            toggleViolation={toggleViolation}
-            groupedData={groupedByType}
-          />
-        )}
-
-        {groupBy === "account" && (
-          <VirtualizedViolationList
-            violations={filteredData}
-            selectedViolationIds={selectedViolationIds}
-            toggleViolation={toggleViolation}
-            groupedData={groupedByAccount}
-          />
-        )}
-
-        {groupBy === "bureau" && (
-          <VirtualizedViolationList
-            violations={filteredData}
-            selectedViolationIds={selectedViolationIds}
-            toggleViolation={toggleViolation}
-            groupedData={groupedByBureau}
-          />
         )}
 
         {/* CROSS-BUREAU TAB */}
