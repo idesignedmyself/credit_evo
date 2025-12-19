@@ -99,6 +99,34 @@ const ViolationToggle = React.memo(({ violation, isSelected, onToggle }) => {
                   border: 'none',
                 }}
               />
+              {/* Bureau Chip */}
+              {violation.bureau && (() => {
+                const bureauLower = violation.bureau.toLowerCase();
+                const bureauLabel = bureauLower === 'transunion' ? 'TransUnion'
+                  : bureauLower === 'equifax' ? 'Equifax'
+                  : bureauLower === 'experian' ? 'Experian'
+                  : violation.bureau;
+                return (
+                  <Chip
+                    label={bureauLabel}
+                    size="small"
+                    sx={{
+                      fontWeight: 600,
+                      fontSize: '0.7rem',
+                      height: 22,
+                      bgcolor: bureauLower === 'equifax' ? '#DBEAFE'
+                        : bureauLower === 'experian' ? '#FEE2E2'
+                        : bureauLower === 'transunion' ? '#DCFCE7'
+                        : '#F1F5F9',
+                      color: bureauLower === 'equifax' ? '#1E40AF'
+                        : bureauLower === 'experian' ? '#991B1B'
+                        : bureauLower === 'transunion' ? '#166534'
+                        : '#475569',
+                      border: 'none',
+                    }}
+                  />
+                );
+              })()}
             </Stack>
             <Typography variant="caption" color="text.secondary">
               {formatted.accountDisplay}

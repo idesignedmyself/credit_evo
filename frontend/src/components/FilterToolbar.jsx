@@ -14,6 +14,8 @@ import {
   Button,
   Collapse,
   IconButton,
+  TextField,
+  InputAdornment,
 } from '@mui/material';
 import FilterListIcon from '@mui/icons-material/FilterList';
 import CloseIcon from '@mui/icons-material/Close';
@@ -21,6 +23,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
+import SearchIcon from '@mui/icons-material/Search';
 import { getViolationLabel } from '../utils/formatViolation';
 
 const VISIBLE_LIMIT = 8; // Show top 8 categories by default
@@ -33,6 +36,8 @@ const FilterToolbar = ({
   hasActiveFilters,
   filteredCount,
   totalCount,
+  searchTerm = '',
+  setSearchTerm,
 }) => {
   const [isExpanded, setIsExpanded] = useState(true);
   const [showAllCategories, setShowAllCategories] = useState(false);
@@ -133,7 +138,52 @@ const FilterToolbar = ({
           />
         </Stack>
 
-        <Stack direction="row" spacing={1} alignItems="center">
+        <Stack direction="row" spacing={2} alignItems="center">
+          {/* Search Input */}
+          {setSearchTerm && (
+            <TextField
+              size="small"
+              placeholder="Search accounts..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon sx={{ fontSize: 18, color: '#94A3B8' }} />
+                  </InputAdornment>
+                ),
+                endAdornment: searchTerm && (
+                  <InputAdornment position="end">
+                    <IconButton
+                      size="small"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSearchTerm('');
+                      }}
+                      sx={{ p: 0.25 }}
+                    >
+                      <CloseIcon sx={{ fontSize: 16 }} />
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              }}
+              sx={{
+                width: 220,
+                '& .MuiOutlinedInput-root': {
+                  borderRadius: 2,
+                  bgcolor: '#F8FAFC',
+                  fontSize: '0.85rem',
+                  '& fieldset': { borderColor: '#E2E8F0' },
+                  '&:hover fieldset': { borderColor: '#CBD5E1' },
+                  '&.Mui-focused fieldset': { borderColor: '#2563EB' },
+                },
+                '& .MuiInputBase-input': {
+                  py: 0.75,
+                },
+              }}
+            />
+          )}
           {/* Clear Button */}
           {hasActiveFilters && (
             <Button

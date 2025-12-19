@@ -13,6 +13,12 @@ export const useFilterStore = create((set) => ({
     accounts: [],
   },
 
+  // Search term for account/creditor name search
+  searchTerm: '',
+
+  // Set search term
+  setSearchTerm: (term) => set({ searchTerm: term }),
+
   // Toggle a filter value
   toggleFilter: (type, value) => set((state) => {
     const currentList = state.filters[type];
@@ -22,9 +28,10 @@ export const useFilterStore = create((set) => ({
     return { filters: { ...state.filters, [type]: newList } };
   }),
 
-  // Clear all filters
+  // Clear all filters (including search)
   clearFilters: () => set({
-    filters: { bureaus: [], severities: [], categories: [], accounts: [] }
+    filters: { bureaus: [], severities: [], categories: [], accounts: [] },
+    searchTerm: '',
   }),
 
   // Check if any filters active

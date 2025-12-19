@@ -41,6 +41,8 @@ const AuditPage = () => {
     hasActiveFilters,
     totalCount,
     filteredCount,
+    searchTerm,
+    setSearchTerm,
   } = useCreditFilter(violations);
 
   useEffect(() => {
@@ -114,6 +116,8 @@ const AuditPage = () => {
           filteredCount={filteredCount}
           totalCount={totalCount}
           stats={stats}
+          searchTerm={searchTerm}
+          setSearchTerm={setSearchTerm}
         />
       )}
 

@@ -8,7 +8,7 @@ import { useFilterStore } from '../state';
 
 export function useCreditFilter(allViolations) {
   // Use shared filter store instead of local state
-  const { filters, toggleFilter, clearFilters } = useFilterStore();
+  const { filters, toggleFilter, clearFilters, searchTerm, setSearchTerm } = useFilterStore();
 
   // The "Join" Logic - only runs when filters or data change
   const filteredData = useMemo(() => {
@@ -55,11 +55,12 @@ export function useCreditFilter(allViolations) {
     return { bureaus, severities, categories, accounts };
   }, [allViolations]);
 
-  // Check if any filters are active
+  // Check if any filters are active (including search)
   const hasActiveFilters = filters.bureaus.length > 0 ||
                            filters.severities.length > 0 ||
                            filters.categories.length > 0 ||
-                           filters.accounts.length > 0;
+                           filters.accounts.length > 0 ||
+                           searchTerm.length > 0;
 
   return {
     filteredData,
@@ -68,6 +69,8 @@ export function useCreditFilter(allViolations) {
     toggleFilter,
     clearFilters,
     hasActiveFilters,
+    searchTerm,
+    setSearchTerm,
     totalCount: allViolations?.length || 0,
     filteredCount: filteredData.length
   };

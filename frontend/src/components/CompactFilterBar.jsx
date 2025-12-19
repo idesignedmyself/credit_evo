@@ -14,11 +14,15 @@ import {
   Stack,
   Typography,
   Divider,
+  TextField,
+  InputAdornment,
+  IconButton,
 } from '@mui/material';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import CloseIcon from '@mui/icons-material/Close';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import WarningIcon from '@mui/icons-material/Warning';
+import SearchIcon from '@mui/icons-material/Search';
 import { getViolationLabel } from '../utils/formatViolation';
 
 const CompactFilterBar = ({
@@ -30,6 +34,8 @@ const CompactFilterBar = ({
   filteredCount,
   totalCount,
   stats = {},
+  searchTerm = '',
+  setSearchTerm,
 }) => {
   const totalAccounts = stats.totalAccounts || 0;
   const violationsFound = stats.violationsFound || 0;
@@ -214,6 +220,50 @@ const CompactFilterBar = ({
           accountAnchor,
           setAccountAnchor,
           'accounts'
+        )}
+
+        {/* Search Input */}
+        {setSearchTerm && (
+          <TextField
+            size="small"
+            placeholder="Search accounts..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon sx={{ fontSize: 18, color: '#94A3B8' }} />
+                </InputAdornment>
+              ),
+              endAdornment: searchTerm && (
+                <InputAdornment position="end">
+                  <IconButton
+                    size="small"
+                    onClick={() => setSearchTerm('')}
+                    sx={{ p: 0.25 }}
+                  >
+                    <CloseIcon sx={{ fontSize: 14 }} />
+                  </IconButton>
+                </InputAdornment>
+              ),
+            }}
+            sx={{
+              width: 440,
+              '& .MuiOutlinedInput-root': {
+                borderRadius: '8px',
+                bgcolor: '#F8FAFC',
+                fontSize: '0.8rem',
+                height: 34,
+                '& fieldset': { borderColor: '#E2E8F0' },
+                '&:hover fieldset': { borderColor: '#CBD5E1' },
+                '&.Mui-focused fieldset': { borderColor: '#2563EB' },
+              },
+              '& .MuiInputBase-input': {
+                py: 0.75,
+                px: 0.5,
+              },
+            }}
+          />
         )}
       </Stack>
 
