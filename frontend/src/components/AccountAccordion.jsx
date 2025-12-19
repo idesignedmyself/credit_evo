@@ -52,6 +52,9 @@ const getBureauValue = (account, bureau, field) => {
 const AccountAccordion = React.memo(({ account, embedded = false }) => {
   const [expanded, setExpanded] = React.useState(embedded);
 
+  // Only show bureaus that have data for this account
+  const activeBureaus = BUREAUS.filter(bureau => account.bureaus?.[bureau]);
+
   const rows = [
     { label: 'Account #:', field: 'account_number_masked', isAccountLevel: true },
     { label: 'Account Type:', field: 'account_type' },
@@ -89,7 +92,7 @@ const AccountAccordion = React.memo(({ account, embedded = false }) => {
 
   const buildPaymentTimeline = () => {
     const allMonths = new Set();
-    BUREAUS.forEach(bureau => {
+    activeBureaus.forEach(bureau => {
       const history = getPaymentHistory(bureau);
       history.forEach(entry => {
         const key = `${entry.month}-${entry.year}`;
@@ -145,12 +148,12 @@ const AccountAccordion = React.memo(({ account, embedded = false }) => {
           <TableHead>
             <TableRow>
               <TableCell sx={{ width: '25%', fontWeight: 'bold', backgroundColor: 'grey.50' }} />
-              {BUREAUS.map(bureau => (
+              {activeBureaus.map(bureau => (
                 <TableCell
                   key={bureau}
                   align="center"
                   sx={{
-                    width: '25%',
+                    width: `${75 / activeBureaus.length}%`,
                     fontWeight: 'bold',
                     color: 'white',
                     backgroundColor: BUREAU_COLORS[bureau],
@@ -168,7 +171,7 @@ const AccountAccordion = React.memo(({ account, embedded = false }) => {
                 <TableCell sx={{ fontWeight: 'medium', fontSize: '0.85rem' }}>
                   {row.label}
                 </TableCell>
-                {BUREAUS.map(bureau => (
+                {activeBureaus.map(bureau => (
                   <TableCell key={bureau} align="center" sx={{ fontSize: '0.85rem' }}>
                     {getValue(bureau, row)}
                   </TableCell>
@@ -202,7 +205,7 @@ const AccountAccordion = React.memo(({ account, embedded = false }) => {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {BUREAUS.map(bureau => (
+                {activeBureaus.map(bureau => (
                   <TableRow key={bureau}>
                     <TableCell sx={{ fontSize: '0.75rem', textTransform: 'capitalize' }}>
                       {bureau}
