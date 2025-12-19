@@ -225,3 +225,85 @@ Small overages on installment loans may result from late fees or administrative 
 | Collection | Balance > Original Debt | HIGH (FDCPA §1692f) |
 
 ### Key Rule: Field 17A (Account Status) is NEVER cited for monetary discrepancies
+
+---
+
+## Issue: False K1 Violations on Original Creditor Accounts (December 2024)
+
+### Problem
+Original Creditors (VERIZON, CAPITAL ONE, etc.) with accounts in "collection" status were incorrectly triggering "Missing Original Creditor Name (K1 Segment)" violations.
+
+**Example of false positive:**
+```
+Missing Original Creditor Name  [HIGH]  TransUnion
+VERIZON (755944857****)
+Collection account fails to identify the Original Creditor...
+```
+
+This is incorrect because VERIZON *is* the Original Creditor—they cannot reference themselves in K1.
+
+---
+
+### Root Cause
+
+The furnisher classification in `html_parser.py` uses `combined_text` (which includes status) to detect collectors:
+
+```python
+combined_text = " ".join([creditor_name, account_type_detail, status, comments]).lower()
+
+# Rule 2: Collection keywords in type/name/comments
+if any(keyword in combined_text for keyword in COLLECTION_KEYWORDS):
+    return FurnisherType.COLLECTOR  # Fires on "collection" in STATUS
+```
+
+When status contains "collection" (e.g., "Collection/Chargeoff"), the account gets classified as `COLLECTOR` even though it's an OC reporting their own account.
+
+---
+
+### Metro 2 Rule (CRRG 2024-2025)
+
+**K1 Segment (Original Creditor Name) is ONLY required when:**
+- Account Type = 48 (Collection Agency/Attorney) OR
+- Account Type = 0C (Debt Purchaser)
+- AND the reporting entity is a **third-party** that acquired/was assigned the debt
+
+**K1 is NOT required when:**
+- The reporting entity IS the Original Creditor
+- Even if the account has "collection" status
+- Even if the account is charged off
+
+---
+
+### Fix Applied
+
+**File:** `app/services/audit/rules.py` → `FurnisherRules.check_collector_missing_original_creditor()`
+
+**Scope Guard:** K1 violation ONLY fires if the creditor **name** contains collection agency keywords:
+
+```python
+collection_agency_keywords = [
+    "collection", "coll svcs", "recovery", "midland", "lvnv",
+    "cavalry", "encore", "portfolio recovery", "convergent",
+    "ic system", "transworld", "debt buyer", "credit management",
+    "financial recovery", "asset acceptance", "jefferson capital",
+    "unifin", "enhanced recovery"
+]
+is_collection_agency = any(kw in creditor_lower for kw in collection_agency_keywords)
+
+# Suppress if creditor name doesn't indicate a collection agency
+if not is_collection_agency:
+    return violations  # No K1 violation
+```
+
+---
+
+### Result
+
+| Scenario | Before | After |
+|----------|--------|-------|
+| VERIZON with collection status | ❌ False HIGH violation | ✅ Suppressed |
+| CAPITAL ONE charge-off | ❌ False HIGH violation | ✅ Suppressed |
+| MIDLAND CREDIT missing K1 | ✅ HIGH violation | ✅ HIGH violation |
+| PORTFOLIO RECOVERY missing K1 | ✅ HIGH violation | ✅ HIGH violation |
+
+**No legitimate collection violations are suppressed.** Only OCs misclassified due to status text are excluded.

@@ -325,6 +325,44 @@ conventional loan
 
 ---
 
+### B6 K1 Segment Scope Guard (December 2024)
+
+**Issue:** OC charge-offs were triggering false K1 (Missing Original Creditor) violations.
+
+**Root Cause:** The furnisher classification logic in `html_parser.py` uses `combined_text` (which includes status) to detect collectors. When status contains "collection" (e.g., "Collection/Chargeoff"), the account gets classified as `COLLECTOR` even when it's an Original Creditor reporting their own charged-off account.
+
+**Metro 2 Rule (CRRG 2024-2025):**
+- K1 Segment (Original Creditor Name) is ONLY required for:
+  - Account Type 48 (Collection Agency/Attorney)
+  - Account Type 0C (Debt Purchaser)
+- K1 is NOT required when the reporting entity IS the Original Creditor
+
+**Scope Guard Location:** `app/services/audit/rules.py` → `FurnisherRules.check_collector_missing_original_creditor()`
+
+**Guard Logic:**
+```python
+# K1 only fires if creditor NAME contains collection agency keywords
+collection_agency_keywords = [
+    "collection", "coll svcs", "recovery", "midland", "lvnv",
+    "cavalry", "encore", "portfolio recovery", "convergent",
+    "ic system", "transworld", "debt buyer", etc.
+]
+is_collection_agency = any(kw in creditor_lower for kw in collection_agency_keywords)
+
+# Suppress K1 if creditor name doesn't indicate a collection agency
+if not is_collection_agency:
+    return violations  # No K1 violation for OCs like VERIZON, CAPITAL ONE, etc.
+```
+
+**Result:**
+| Scenario | K1 Violation? |
+|----------|---------------|
+| VERIZON (OC) with collection status | ❌ Suppressed |
+| MIDLAND CREDIT missing K1 | ✅ Fires (HIGH) |
+| PORTFOLIO RECOVERY missing K1 | ✅ Fires (HIGH) |
+
+---
+
 ### 2. `app/services/audit/engine.py` - Audit Engine
 
 **Purpose:** Orchestrates running rules against accounts and collecting violations.

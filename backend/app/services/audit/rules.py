@@ -2227,11 +2227,47 @@ class FurnisherRules:
         Without this, the 'Chain of Title' is broken, making the debt unverifiable.
         Under Metro 2 standards, the K1 Segment (Original Creditor Name) is mandatory
         for Account Type 48 (Collection) or 0C (Debt Purchaser) to establish lineage.
+
+        SCOPE GUARD (B6 Audit): OC charge-offs may be misclassified as COLLECTOR when
+        status text contains "collection" (e.g., "Collection/Chargeoff"). These are
+        Original Creditors reporting their own charged-off accounts—they cannot
+        reference themselves in K1. Suppress K1 violations for accounts where:
+        - account_status == CHARGEOFF (indicates OC, not third-party collector)
+        - creditor_name lacks collection agency identifiers
         """
         violations = []
 
         # Target: Collections & Debt Buyers ONLY
         if account.furnisher_type != FurnisherType.COLLECTOR:
+            return violations
+
+        # =================================================================
+        # SCOPE GUARD (B6 Audit): Prevent false K1 violations on OCs
+        # =================================================================
+        # K1 (Original Creditor Name) is ONLY required for TRUE third-party
+        # collectors/debt buyers - entities that acquired or were assigned debt.
+        #
+        # Original Creditors (VERIZON, CAPITAL ONE, etc.) reporting their OWN
+        # accounts - even with "collection" status - are NOT required to populate
+        # K1 because THEY ARE the original creditor. They can't reference themselves.
+        #
+        # The definitive signal for a TRUE third-party collector is:
+        # The creditor NAME contains collection agency identifiers.
+        # =================================================================
+        creditor_lower = (account.creditor_name or "").lower()
+        collection_agency_keywords = [
+            "collection", "coll svcs", "credit collection", "recovery",
+            "midland", "lvnv", "cavalry", "encore", "portfolio recovery",
+            "convergent", "ic system", "transworld", "debt buyer",
+            "credit management", "financial recovery", "asset acceptance",
+            "jefferson capital", "unifin", "enhanced recovery"
+        ]
+        is_collection_agency = any(kw in creditor_lower for kw in collection_agency_keywords)
+
+        # If creditor name does NOT indicate a collection agency, suppress K1 violation
+        # This prevents false positives on OCs (VERIZON, banks, etc.) whose accounts
+        # were classified as COLLECTOR due to "collection" appearing in status text
+        if not is_collection_agency:
             return violations
 
         # The Check: Is the Original Creditor Name missing?
