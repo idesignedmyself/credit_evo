@@ -190,14 +190,25 @@ const AccountAccordion = React.memo(({ account, embedded = false }) => {
           <Box sx={{ overflowX: 'auto' }}>
             <Table size="small">
               <TableHead>
+                {/* Month row */}
                 <TableRow>
-                  <TableCell sx={{ minWidth: 80, fontSize: '0.75rem' }}>Month</TableCell>
+                  <TableCell sx={{ minWidth: 80, fontSize: '0.75rem', backgroundColor: 'grey.50' }}>Month</TableCell>
                   {paymentTimeline.map(monthKey => {
-                    const [month, year] = monthKey.split('-');
+                    const [month] = monthKey.split('-');
                     return (
-                      <TableCell key={monthKey} align="center" sx={{ minWidth: 40, p: 0.5, fontSize: '0.7rem' }}>
+                      <TableCell key={`month-${monthKey}`} align="center" sx={{ minWidth: 40, p: 0.5, fontSize: '0.7rem' }}>
                         {month}
-                        <br />
+                      </TableCell>
+                    );
+                  })}
+                </TableRow>
+                {/* Year row */}
+                <TableRow>
+                  <TableCell sx={{ minWidth: 80, fontSize: '0.75rem' }}>Year</TableCell>
+                  {paymentTimeline.map(monthKey => {
+                    const [, year] = monthKey.split('-');
+                    return (
+                      <TableCell key={`year-${monthKey}`} align="center" sx={{ minWidth: 40, p: 0.5, fontSize: '0.7rem', color: 'text.secondary' }}>
                         {year?.slice(-2)}
                       </TableCell>
                     );
