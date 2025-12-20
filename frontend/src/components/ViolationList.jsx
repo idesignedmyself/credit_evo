@@ -373,7 +373,7 @@ const ViolationList = ({ hideFilters = false, hideHeader = false }) => {
             ) : (
               <Table>
                 <TableBody>
-                  {Object.entries(groupedDiscrepancies).map(([creditor, items]) => (
+                  {Object.entries(groupedDiscrepancies).sort(([a], [b]) => a.localeCompare(b)).map(([creditor, items]) => (
                     <CollapsibleTableRow
                       key={creditor}
                       label={creditor}
@@ -409,7 +409,7 @@ const ViolationList = ({ hideFilters = false, hideHeader = false }) => {
             ) : (
               <Table>
                 <TableBody>
-                  {accounts.map((account, index) => (
+                  {[...accounts].sort((a, b) => (a.creditor_name || '').localeCompare(b.creditor_name || '')).map((account, index) => (
                     <CollapsibleTableRow
                       key={account.account_id || index}
                       label={account.creditor_name || 'Unknown Account'}
