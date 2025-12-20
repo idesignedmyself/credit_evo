@@ -3,7 +3,7 @@
  * Displays audit results with bureau score dashboard and violations
  * Layout: KPIs -> Compact Filters -> Action Bar -> Violations List
  */
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -26,16 +26,20 @@ const AuditPage = () => {
   const { currentReport, fetchReport } = useReportStore();
   const {
     violations,
+    discrepancies,
     selectedViolationIds,
     isLoading,
     error,
     fetchAuditResults,
   } = useViolationStore();
 
+  // Tab state lifted from ViolationList for filter coordination
+  const [activeTab, setActiveTab] = useState('all');
+
   // Use filter hook at page level for CompactFilterBar
   const {
     filters,
-    filterOptions,
+    filterOptions: violationFilterOptions,
     toggleFilter,
     clearFilters,
     hasActiveFilters,
@@ -44,6 +48,30 @@ const AuditPage = () => {
     searchTerm,
     setSearchTerm,
   } = useCreditFilter(violations);
+
+  // Extract discrepancy categories for Cross-Bureau tab
+  const discrepancyFilterOptions = useMemo(() => {
+    if (!discrepancies || discrepancies.length === 0) {
+      return { bureaus: [], severities: [], categories: [], accounts: [] };
+    }
+
+    const bureaus = [...new Set(
+      discrepancies.flatMap(d => d.values_by_bureau ? Object.keys(d.values_by_bureau) : [])
+    )].filter(Boolean);
+    const severities = [...new Set(discrepancies.map(d => d.severity).filter(Boolean))];
+    const categories = [...new Set(discrepancies.map(d => d.violation_type).filter(Boolean))];
+    const accounts = [...new Set(discrepancies.map(d => d.creditor_name).filter(Boolean))].sort();
+
+    return { bureaus, severities, categories, accounts };
+  }, [discrepancies]);
+
+  // Dynamic filter options based on active tab
+  const filterOptions = useMemo(() => {
+    if (activeTab === 'crossbureau') {
+      return discrepancyFilterOptions;
+    }
+    return violationFilterOptions;
+  }, [activeTab, violationFilterOptions, discrepancyFilterOptions]);
 
   useEffect(() => {
     // Fetch data for this report - stores handle their own caching
@@ -158,7 +186,7 @@ const AuditPage = () => {
       )}
 
       {/* LEVEL 4: Violations List */}
-      <ViolationList hideFilters hideHeader />
+      <ViolationList hideFilters hideHeader activeTab={activeTab} onTabChange={setActiveTab} />
     </Box>
   );
 };

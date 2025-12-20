@@ -72,8 +72,11 @@ const CollapsibleTableRow = ({ label, count, isExpanded, onToggle, children }) =
   </>
 );
 
-const ViolationList = ({ hideFilters = false, hideHeader = false }) => {
-  const [groupBy, setGroupBy] = useState("all");
+const ViolationList = ({ hideFilters = false, hideHeader = false, activeTab, onTabChange }) => {
+  // Use controlled state if props provided, otherwise local state
+  const [localGroupBy, setLocalGroupBy] = useState("all");
+  const groupBy = activeTab !== undefined ? activeTab : localGroupBy;
+  const setGroupBy = onTabChange || setLocalGroupBy;
   const [expandedItems, setExpandedItems] = useState({});
 
   const {
@@ -104,7 +107,7 @@ const ViolationList = ({ hideFilters = false, hideHeader = false }) => {
     setSearchTerm,
   } = useCreditFilter(violations);
 
-  // Group discrepancies by account (with search filtering)
+  // Group discrepancies by account (with search and filter support)
   const groupedDiscrepancies = useMemo(() => {
     if (!discrepancies?.length) return {};
     const searchLower = searchTerm.toLowerCase().trim();
@@ -117,25 +120,69 @@ const ViolationList = ({ hideFilters = false, hideHeader = false }) => {
         if (!nameMatch && !numberMatch) return acc;
       }
 
+      // Apply bureau filter - discrepancies use values_by_bureau object
+      if (filters.bureaus.length > 0) {
+        const discBureaus = d.values_by_bureau ? Object.keys(d.values_by_bureau).map(b => b.toLowerCase()) : [];
+        const bureauMatch = filters.bureaus.some(b => discBureaus.includes(b.toLowerCase()));
+        if (!bureauMatch) return acc;
+      }
+
+      // Apply severity filter (case-insensitive)
+      if (filters.severities.length > 0) {
+        const severityMatch = filters.severities.some(s =>
+          s?.toLowerCase() === d.severity?.toLowerCase()
+        );
+        if (!severityMatch) return acc;
+      }
+
+      // Apply category/type filter (case-insensitive)
+      if (filters.categories.length > 0) {
+        const categoryMatch = filters.categories.some(c =>
+          c?.toLowerCase() === d.violation_type?.toLowerCase()
+        );
+        if (!categoryMatch) return acc;
+      }
+
+      // Apply account filter
+      if (filters.accounts.length > 0) {
+        if (!filters.accounts.includes(d.creditor_name)) return acc;
+      }
+
       const key = d.creditor_name || 'Unknown';
       if (!acc[key]) acc[key] = [];
       acc[key].push(d);
       return acc;
     }, {});
-  }, [discrepancies, searchTerm]);
+  }, [discrepancies, searchTerm, filters.bureaus, filters.severities, filters.categories, filters.accounts]);
 
-  // Filter accounts for Tri-Merge tab (with search filtering)
+  // Filter accounts for Tri-Merge tab (with search and filter support)
   const filteredAccounts = useMemo(() => {
     if (!accounts?.length) return [];
     const searchLower = searchTerm.toLowerCase().trim();
-    if (!searchLower) return accounts;
 
     return accounts.filter(a => {
-      const nameMatch = a.creditor_name?.toLowerCase().includes(searchLower);
-      const numberMatch = a.account_number_masked?.toLowerCase().includes(searchLower);
-      return nameMatch || numberMatch;
+      // Apply search filter
+      if (searchLower) {
+        const nameMatch = a.creditor_name?.toLowerCase().includes(searchLower);
+        const numberMatch = a.account_number_masked?.toLowerCase().includes(searchLower);
+        if (!nameMatch && !numberMatch) return false;
+      }
+
+      // Apply bureau filter - check if account has data for selected bureaus
+      if (filters.bureaus.length > 0) {
+        const accountBureaus = Object.keys(a.bureaus || {}).map(b => b.toLowerCase());
+        const bureauMatch = filters.bureaus.some(b => accountBureaus.includes(b));
+        if (!bureauMatch) return false;
+      }
+
+      // Apply account filter
+      if (filters.accounts.length > 0) {
+        if (!filters.accounts.includes(a.creditor_name)) return false;
+      }
+
+      return true;
     });
-  }, [accounts, searchTerm]);
+  }, [accounts, searchTerm, filters.bureaus, filters.accounts]);
 
   // Group ALL accounts with their violations (including clean accounts with 0 violations)
   // When filters are active, only show accounts that have matching violations
