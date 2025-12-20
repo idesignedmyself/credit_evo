@@ -12,6 +12,7 @@ This document tracks bugs, issues, and obstacles encountered during development 
 4. [B6: Account Dropdown Label Case Mismatch](#b6-account-dropdown-label-case-mismatch)
 5. [B6: UI Semantic Layer - Violations vs Advisories](#b6-ui-semantic-layer---violations-vs-advisories)
 6. [B6: Metro 2 Field Citation Duplication](#b6-metro-2-field-citation-duplication)
+7. [B7: UserDB Attribute Mismatch in Letter Generation](#b7-userdb-attribute-mismatch-in-letter-generation)
 
 ---
 
@@ -149,6 +150,48 @@ metroDisplay: violation.metro2_field
 
 **Files Modified:**
 - `frontend/src/utils/formatViolation.js`
+
+---
+
+## B7: UserDB Attribute Mismatch in Letter Generation
+
+**Date:** December 2024
+
+**Symptom:**
+Clicking "Generate Letter" for a violation threw a 500 Internal Server Error: `AttributeError: 'UserDB' object has no attribute 'full_name'`
+
+**Root Cause:**
+The letter generation endpoint assumed `UserDB` had `full_name` and `address` attributes, but the actual model uses separate fields:
+- Name: `first_name`, `middle_name`, `last_name`, `suffix`
+- Address: `street_address`, `unit`, `city`, `state`, `zip_code`
+
+**Solution:**
+Build consumer name and address from individual fields:
+```python
+# Build consumer name from first/last name fields
+consumer_name = "[CONSUMER NAME]"
+if user:
+    name_parts = [user.first_name, user.last_name]
+    name_parts = [p for p in name_parts if p]
+    if name_parts:
+        consumer_name = " ".join(name_parts)
+
+# Build consumer address from individual fields
+consumer_address = "[CONSUMER ADDRESS]"
+if user and user.street_address:
+    addr_parts = [user.street_address]
+    if user.unit:
+        addr_parts[0] += f" {user.unit}"
+    if user.city or user.state or user.zip_code:
+        city_state_zip = ", ".join(filter(None, [user.city, user.state]))
+        if user.zip_code:
+            city_state_zip += f" {user.zip_code}"
+        addr_parts.append(city_state_zip)
+    consumer_address = "\n".join(addr_parts)
+```
+
+**Files Modified:**
+- `backend/app/routers/disputes.py`
 
 ---
 
