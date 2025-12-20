@@ -104,27 +104,38 @@ const ViolationList = ({ hideFilters = false, hideHeader = false }) => {
     setSearchTerm,
   } = useCreditFilter(violations);
 
-  // Group discrepancies by account
+  // Group discrepancies by account (with search filtering)
   const groupedDiscrepancies = useMemo(() => {
     if (!discrepancies?.length) return {};
+    const searchLower = searchTerm.toLowerCase().trim();
+
     return discrepancies.reduce((acc, d) => {
+      // Apply search filter
+      if (searchLower) {
+        const nameMatch = d.creditor_name?.toLowerCase().includes(searchLower);
+        const numberMatch = d.account_number_masked?.toLowerCase().includes(searchLower);
+        if (!nameMatch && !numberMatch) return acc;
+      }
+
       const key = d.creditor_name || 'Unknown';
       if (!acc[key]) acc[key] = [];
       acc[key].push(d);
       return acc;
     }, {});
-  }, [discrepancies]);
+  }, [discrepancies, searchTerm]);
 
-  // Group accounts by first letter or type
-  const groupedAccounts = useMemo(() => {
-    if (!accounts?.length) return {};
-    return accounts.reduce((acc, a) => {
-      const key = a.creditor_name?.[0]?.toUpperCase() || '#';
-      if (!acc[key]) acc[key] = [];
-      acc[key].push(a);
-      return acc;
-    }, {});
-  }, [accounts]);
+  // Filter accounts for Tri-Merge tab (with search filtering)
+  const filteredAccounts = useMemo(() => {
+    if (!accounts?.length) return [];
+    const searchLower = searchTerm.toLowerCase().trim();
+    if (!searchLower) return accounts;
+
+    return accounts.filter(a => {
+      const nameMatch = a.creditor_name?.toLowerCase().includes(searchLower);
+      const numberMatch = a.account_number_masked?.toLowerCase().includes(searchLower);
+      return nameMatch || numberMatch;
+    });
+  }, [accounts, searchTerm]);
 
   // Group ALL accounts with their violations (including clean accounts with 0 violations)
   // When filters are active, only show accounts that have matching violations
@@ -273,8 +284,8 @@ const ViolationList = ({ hideFilters = false, hideHeader = false }) => {
             }}
           >
             <Tab value="all" label={`All Accounts (${Object.keys(allAccountsGrouped).length})`} />
-            <Tab value="crossbureau" label={`Cross-Bureau (${discrepancies?.length || 0})`} />
-            <Tab value="trimerge" label={`Tri-Merge Accounts (${accounts.length})`} />
+            <Tab value="crossbureau" label={`Cross-Bureau (${Object.keys(groupedDiscrepancies).length})`} />
+            <Tab value="trimerge" label={`Tri-Merge Accounts (${filteredAccounts.length})`} />
           </Tabs>
           <Typography variant="body2" sx={{ fontWeight: 600, color: 'text.primary' }}>
             Count
@@ -364,10 +375,10 @@ const ViolationList = ({ hideFilters = false, hideHeader = false }) => {
         {/* CROSS-BUREAU TAB */}
         {groupBy === "crossbureau" && (
           <>
-            {(!discrepancies || discrepancies.length === 0) ? (
+            {Object.keys(groupedDiscrepancies).length === 0 ? (
               <Box sx={{ p: 4, textAlign: 'center' }}>
                 <Typography variant="body1" color="text.secondary">
-                  No cross-bureau discrepancies found. Accounts are reported consistently across all bureaus.
+                  {searchTerm ? 'No discrepancies match your search.' : 'No cross-bureau discrepancies found. Accounts are reported consistently across all bureaus.'}
                 </Typography>
               </Box>
             ) : (
@@ -400,16 +411,16 @@ const ViolationList = ({ hideFilters = false, hideHeader = false }) => {
         {/* TRI-MERGE ACCOUNTS TAB */}
         {groupBy === "trimerge" && (
           <>
-            {accounts.length === 0 ? (
+            {filteredAccounts.length === 0 ? (
               <Box sx={{ p: 4, textAlign: 'center' }}>
                 <Typography variant="body1" color="text.secondary">
-                  No accounts found in this report.
+                  {searchTerm ? 'No accounts match your search.' : 'No accounts found in this report.'}
                 </Typography>
               </Box>
             ) : (
               <Table>
                 <TableBody>
-                  {[...accounts].sort((a, b) => (a.creditor_name || '').localeCompare(b.creditor_name || '')).map((account, index) => (
+                  {[...filteredAccounts].sort((a, b) => (a.creditor_name || '').localeCompare(b.creditor_name || '')).map((account, index) => (
                     <CollapsibleTableRow
                       key={account.account_id || index}
                       label={account.creditor_name || 'Unknown Account'}
