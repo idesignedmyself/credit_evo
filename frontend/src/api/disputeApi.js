@@ -147,6 +147,54 @@ export const requestArtifact = async (disputeId, artifactType) => {
 };
 
 // =============================================================================
+// RESPONSE LETTER GENERATION
+// =============================================================================
+
+/**
+ * Generate a response/enforcement letter based on dispute state
+ * @param {string} disputeId - ID of the dispute
+ * @param {Object} options - Letter generation options
+ * @param {string} options.letter_type - Type of letter (enforcement, follow_up, mov_demand, reinsertion)
+ * @param {string} options.response_type - Response type to generate letter for (NO_RESPONSE, VERIFIED, etc.)
+ * @param {string} options.violation_id - Specific violation to generate letter for
+ * @param {boolean} options.include_willful_notice - Include willful noncompliance notice under §616
+ */
+export const generateResponseLetter = async (disputeId, options = {}) => {
+  const response = await apiClient.post(`/disputes/${disputeId}/generate-response-letter`, {
+    letter_type: options.letter_type || 'enforcement',
+    response_type: options.response_type || null,
+    violation_id: options.violation_id || null,
+    include_willful_notice: options.include_willful_notice !== false, // Default true
+  });
+  return response.data;
+};
+
+/**
+ * Audit an enforcement letter for regulatory compliance
+ * @param {string} disputeId - ID of the dispute
+ * @param {Object} options - Audit options
+ * @param {string} options.letter_content - Full letter text to audit
+ * @param {boolean} options.strict_mode - If true, removes speculative language; if false, only flags it
+ */
+export const auditLetter = async (disputeId, options = {}) => {
+  const response = await apiClient.post(`/disputes/${disputeId}/audit-letter`, {
+    letter_content: options.letter_content,
+    strict_mode: options.strict_mode !== false, // Default true
+  });
+  return response.data;
+};
+
+/**
+ * Letter type options for UI
+ */
+export const LETTER_TYPES = {
+  enforcement: { value: 'enforcement', label: 'Enforcement Letter', description: 'General enforcement correspondence' },
+  follow_up: { value: 'follow_up', label: 'Follow-Up Letter', description: 'Follow-up to previous correspondence' },
+  mov_demand: { value: 'mov_demand', label: 'Method of Verification Demand', description: 'Demand disclosure of verification method' },
+  reinsertion: { value: 'reinsertion', label: 'Reinsertion Violation Notice', description: 'Notice of reinsertion without proper notice' },
+};
+
+// =============================================================================
 // CONSTANTS
 // =============================================================================
 

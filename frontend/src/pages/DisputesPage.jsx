@@ -45,11 +45,16 @@ import {
   logResponse,
   deleteDispute,
   startTracking,
+  generateResponseLetter,
   RESPONSE_TYPES,
   ESCALATION_STATES,
+  LETTER_TYPES,
 } from '../api/disputeApi';
 import DeleteIcon from '@mui/icons-material/Delete';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import DescriptionIcon from '@mui/icons-material/Description';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import DownloadIcon from '@mui/icons-material/Download';
 
 // =============================================================================
 // EXPANDABLE ROW CONTENT
@@ -59,7 +64,7 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 // SINGLE VIOLATION RESPONSE ROW
 // =============================================================================
 
-const ViolationResponseRow = ({ violation, disputeId, onResponseLogged }) => {
+const ViolationResponseRow = ({ violation, disputeId, entityName, onResponseLogged, onGenerateLetter }) => {
   const [responseType, setResponseType] = useState(violation.logged_response || '');
   const [responseDate, setResponseDate] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -90,13 +95,17 @@ const ViolationResponseRow = ({ violation, disputeId, onResponseLogged }) => {
     }
   };
 
-  const getResponseColor = (type) => {
+  // Determine if this response type warrants a letter
+  const canGenerateLetter = responseType && ['NO_RESPONSE', 'VERIFIED', 'REJECTED', 'REINSERTION_NO_NOTICE'].includes(responseType);
+
+  const getResponseChipColor = (type) => {
     switch (type) {
       case 'DELETED': return 'success';
       case 'VERIFIED': return 'warning';
       case 'UPDATED': return 'info';
       case 'NO_RESPONSE': return 'error';
       case 'REJECTED': return 'error';
+      case 'INVESTIGATING': return 'default';
       default: return 'default';
     }
   };
@@ -113,33 +122,59 @@ const ViolationResponseRow = ({ violation, disputeId, onResponseLogged }) => {
       }}
     >
       {/* Violation Info - Creditor name prominent */}
-      <Box sx={{ mb: 2.5 }}>
-        <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.5 }}>
-          {violation.creditor_name || 'Unknown Creditor'}
-          {violation.account_number_masked && (
-            <Typography component="span" variant="body2" color="text.secondary" sx={{ ml: 1, fontWeight: 400 }}>
-              ({violation.account_number_masked})
-            </Typography>
-          )}
-        </Typography>
-        <Stack direction="row" spacing={1} alignItems="center">
-          <Chip
-            label={violation.violation_type?.replace(/_/g, ' ') || 'Unknown Violation'}
-            size="small"
-            color="error"
-            variant="outlined"
-            sx={{ textTransform: 'capitalize' }}
-          />
-          {violation.severity && (
+      <Box sx={{ mb: 2.5, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <Box>
+          <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.5 }}>
+            {violation.creditor_name || 'Unknown Creditor'}
+            {violation.account_number_masked && (
+              <Typography component="span" variant="body2" color="text.secondary" sx={{ ml: 1, fontWeight: 400 }}>
+                ({violation.account_number_masked})
+              </Typography>
+            )}
+          </Typography>
+          <Stack direction="row" spacing={1} alignItems="center">
             <Chip
-              label={violation.severity}
+              label={violation.violation_type?.replace(/_/g, ' ') || 'Unknown Violation'}
               size="small"
-              sx={{ height: 22, fontSize: '0.7rem' }}
-              color={violation.severity === 'HIGH' ? 'error' : violation.severity === 'MEDIUM' ? 'warning' : 'default'}
+              color="error"
               variant="outlined"
+              sx={{ textTransform: 'capitalize' }}
             />
-          )}
-        </Stack>
+            {violation.severity && (
+              <Chip
+                label={violation.severity}
+                size="small"
+                sx={{ height: 22, fontSize: '0.7rem' }}
+                color={violation.severity === 'HIGH' ? 'error' : violation.severity === 'MEDIUM' ? 'warning' : 'default'}
+                variant="outlined"
+              />
+            )}
+            {responseType && (
+              <Chip
+                label={RESPONSE_TYPES[responseType]?.label || responseType}
+                size="small"
+                color={getResponseChipColor(responseType)}
+                variant="filled"
+                sx={{ height: 22, fontSize: '0.7rem' }}
+              />
+            )}
+          </Stack>
+        </Box>
+
+        {/* Generate Letter Button - only for actionable responses */}
+        {canGenerateLetter && (
+          <Tooltip title={`Generate ${RESPONSE_TYPES[responseType]?.label} letter for this violation`}>
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<DescriptionIcon />}
+              onClick={() => onGenerateLetter(violation, responseType)}
+              sx={{ ml: 2, whiteSpace: 'nowrap' }}
+            >
+              Generate Letter
+            </Button>
+          </Tooltip>
+        )}
       </Box>
 
       {error && (
@@ -199,11 +234,20 @@ const ViolationResponseRow = ({ violation, disputeId, onResponseLogged }) => {
           <Chip label="Saved!" size="small" color="success" variant="filled" sx={{ height: 28 }} />
         )}
       </Stack>
+
+      {/* Help text for response types that don't generate letters */}
+      {responseType && !canGenerateLetter && (
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>
+          {responseType === 'DELETED' && '✓ Item deleted - no enforcement letter needed. A 90-day reinsertion watch will be created.'}
+          {responseType === 'UPDATED' && '⚠ Verify if the update resolves the violation. If not, change response to "Verified" to generate a letter.'}
+          {responseType === 'INVESTIGATING' && '⏳ Waiting period - if no response after 15 days, change to "No Response" to generate a letter.'}
+        </Typography>
+      )}
     </Box>
   );
 };
 
-const ExpandedRowContent = ({ dispute, onResponseLogged, onStartTracking }) => {
+const ExpandedRowContent = ({ dispute, onResponseLogged, onStartTracking, onGenerateLetter }) => {
   const [timeline, setTimeline] = useState([]);
   const [loadingTimeline, setLoadingTimeline] = useState(true);
   const [error, setError] = useState(null);
@@ -346,7 +390,9 @@ const ExpandedRowContent = ({ dispute, onResponseLogged, onStartTracking }) => {
               key={violation.violation_id || idx}
               violation={violation}
               disputeId={dispute.id}
+              entityName={dispute.entity_name}
               onResponseLogged={onResponseLogged}
+              onGenerateLetter={(v, responseType) => onGenerateLetter(dispute, v, responseType)}
             />
           ))}
         </Box>
@@ -408,6 +454,16 @@ const DisputesPage = () => {
   const [trackingSendDate, setTrackingSendDate] = useState(dayjs());
   const [trackingNumber, setTrackingNumber] = useState('');
   const [startingTracking, setStartingTracking] = useState(false);
+
+  // Response Letter Dialog State
+  const [letterDialogOpen, setLetterDialogOpen] = useState(false);
+  const [letterDispute, setLetterDispute] = useState(null);
+  const [letterViolation, setLetterViolation] = useState(null);
+  const [letterContent, setLetterContent] = useState('');
+  const [letterLoading, setLetterLoading] = useState(false);
+  const [letterError, setLetterError] = useState(null);
+  const [letterResponseType, setLetterResponseType] = useState('');
+  const [copiedToClipboard, setCopiedToClipboard] = useState(false);
 
   useEffect(() => {
     const fetchDisputes = async () => {
@@ -486,6 +542,69 @@ const DisputesPage = () => {
     } finally {
       setStartingTracking(false);
     }
+  };
+
+  // Response Letter Dialog Handlers
+  const handleOpenLetterDialog = (dispute, violation, responseType) => {
+    setLetterDispute(dispute);
+    setLetterViolation(violation);
+    setLetterContent('');
+    setLetterError(null);
+    setLetterResponseType(responseType || '');
+    setCopiedToClipboard(false);
+    setLetterDialogOpen(true);
+  };
+
+  const handleCloseLetterDialog = () => {
+    setLetterDialogOpen(false);
+    setLetterDispute(null);
+    setLetterViolation(null);
+    setLetterContent('');
+    setLetterError(null);
+  };
+
+  const handleGenerateLetter = async () => {
+    if (!letterDispute) return;
+
+    setLetterLoading(true);
+    setLetterError(null);
+    setCopiedToClipboard(false);
+
+    try {
+      const result = await generateResponseLetter(letterDispute.id, {
+        response_type: letterResponseType || null,
+        violation_id: letterViolation?.violation_id || null,
+        include_willful_notice: true,
+      });
+      setLetterContent(result.content);
+    } catch (err) {
+      console.error('Failed to generate letter:', err);
+      setLetterError(err.response?.data?.detail || err.message || 'Failed to generate letter');
+    } finally {
+      setLetterLoading(false);
+    }
+  };
+
+  const handleCopyLetter = async () => {
+    try {
+      await navigator.clipboard.writeText(letterContent);
+      setCopiedToClipboard(true);
+      setTimeout(() => setCopiedToClipboard(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  };
+
+  const handleDownloadLetter = () => {
+    const blob = new Blob([letterContent], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `enforcement_letter_${letterDispute?.entity_name || 'dispute'}_${new Date().toISOString().split('T')[0]}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   const getStateChip = (state) => {
@@ -698,6 +817,7 @@ const DisputesPage = () => {
                           dispute={dispute}
                           onResponseLogged={handleResponseLogged}
                           onStartTracking={handleOpenTrackingDialog}
+                          onGenerateLetter={handleOpenLetterDialog}
                         />
                       </Collapse>
                     </TableCell>
@@ -769,6 +889,130 @@ const DisputesPage = () => {
           >
             {startingTracking ? <CircularProgress size={20} /> : 'Start Tracking'}
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Response Letter Generation Dialog */}
+      <Dialog
+        open={letterDialogOpen}
+        onClose={handleCloseLetterDialog}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle sx={{ fontWeight: 600, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          Generate Enforcement Letter
+          {letterContent && (
+            <Stack direction="row" spacing={1}>
+              <Tooltip title={copiedToClipboard ? 'Copied!' : 'Copy to Clipboard'}>
+                <IconButton size="small" onClick={handleCopyLetter} color={copiedToClipboard ? 'success' : 'default'}>
+                  <ContentCopyIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title="Download as Text">
+                <IconButton size="small" onClick={handleDownloadLetter}>
+                  <DownloadIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            </Stack>
+          )}
+        </DialogTitle>
+        <DialogContent>
+          {letterError && (
+            <Alert severity="error" sx={{ mb: 2 }} onClose={() => setLetterError(null)}>
+              {letterError}
+            </Alert>
+          )}
+
+          {!letterContent ? (
+            <Box>
+              {/* Show violation info */}
+              <Paper variant="outlined" sx={{ p: 2, mb: 3, bgcolor: '#f9fafb' }}>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                  Generating letter for:
+                </Typography>
+                <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                  {letterViolation?.creditor_name || 'Unknown Creditor'}
+                  {letterViolation?.account_number_masked && (
+                    <Typography component="span" variant="body2" color="text.secondary" sx={{ ml: 1, fontWeight: 400 }}>
+                      ({letterViolation.account_number_masked})
+                    </Typography>
+                  )}
+                </Typography>
+                <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
+                  <Chip
+                    label={letterViolation?.violation_type?.replace(/_/g, ' ') || 'Unknown Violation'}
+                    size="small"
+                    color="error"
+                    variant="outlined"
+                    sx={{ textTransform: 'capitalize' }}
+                  />
+                  <Chip
+                    label={RESPONSE_TYPES[letterResponseType]?.label || letterResponseType}
+                    size="small"
+                    color="warning"
+                    variant="filled"
+                  />
+                </Stack>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                  To: <strong>{letterDispute?.entity_name}</strong> ({letterDispute?.entity_type})
+                </Typography>
+              </Paper>
+
+              <Alert severity="info">
+                <Typography variant="body2">
+                  <strong>Letter will include:</strong>
+                </Typography>
+                <ul style={{ margin: '8px 0', paddingLeft: 20 }}>
+                  <li>Statutory violation citations (15 U.S.C. format)</li>
+                  <li>Timeline of events establishing breach</li>
+                  <li>Demanded remedial actions</li>
+                  <li>Willful noncompliance notice (§616)</li>
+                </ul>
+              </Alert>
+            </Box>
+          ) : (
+            <Box>
+              <Paper
+                variant="outlined"
+                sx={{
+                  p: 3,
+                  maxHeight: 500,
+                  overflow: 'auto',
+                  bgcolor: '#fafafa',
+                  fontFamily: 'monospace',
+                  fontSize: '0.85rem',
+                  whiteSpace: 'pre-wrap',
+                  lineHeight: 1.6,
+                }}
+              >
+                {letterContent}
+              </Paper>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 2.5 }}>
+          <Button onClick={handleCloseLetterDialog}>
+            {letterContent ? 'Close' : 'Cancel'}
+          </Button>
+          {!letterContent && (
+            <Button
+              variant="contained"
+              onClick={handleGenerateLetter}
+              disabled={letterLoading}
+              disableElevation
+              startIcon={letterLoading ? <CircularProgress size={16} /> : <DescriptionIcon />}
+            >
+              {letterLoading ? 'Generating...' : 'Generate Letter'}
+            </Button>
+          )}
+          {letterContent && (
+            <Button
+              variant="outlined"
+              onClick={() => setLetterContent('')}
+            >
+              Generate New
+            </Button>
+          )}
         </DialogActions>
       </Dialog>
     </Box>
