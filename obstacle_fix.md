@@ -17,6 +17,7 @@ This document tracks bugs, issues, and obstacles encountered during development 
 9. [B7: Test Mode Toggle Not Accessible for Response Selection](#b7-test-mode-toggle-not-accessible-for-response-selection)
 10. [B7: VERIFIED Letter Production Hardening](#b7-verified-letter-production-hardening)
 11. [B7: REJECTED/FRIVOLOUS Letter Production Hardening](#b7-rejectedfrivolous-letter-production-hardening)
+12. [B7: REINSERTION Letter Production Hardening](#b7-reinsertion-letter-production-hardening)
 
 ---
 
@@ -330,6 +331,51 @@ Created new `generate_rejected_response_letter()` function for production:
 5. **Single statutory theory:** Improper Frivolous/Irrelevant Determination under §1681i(a)(3)(B)
 6. **Rights-preservation clause:** Single sentence, no damages lecture
 7. **No regulatory cc:** Clean ending without CFPB/AG references
+
+**Files Modified:**
+- `backend/app/services/enforcement/response_letter_generator.py`
+- `backend/app/routers/disputes.py`
+
+---
+
+## B7: REINSERTION Letter Production Hardening
+
+**Date:** December 20, 2024
+
+**Symptom:**
+REINSERTION enforcement letters included:
+- Non-canonical entity names ("transunion" lowercase)
+- Generic "FORMAL NOTICE OF STATUTORY VIOLATIONS" subject line
+- Wrong violation type (Missing DOFD instead of Reinsertion Without Required Notice)
+- Empty statute field
+- Generic timeline with 30-day dispute deadline (not reinsertion-specific)
+- Generic demands not tailored to reinsertion violations
+- References to "reasonable investigation" which doesn't apply to reinsertion
+
+**Root Cause:**
+Letter generator was using the generic enforcement template for reinsertion cases. Reinsertion violations require specific statutory elements under §1681i(a)(5)(B): the 5-day written notice requirement, furnisher identification, and reinsertion-specific demands.
+
+**Solution:**
+Created new `generate_reinsertion_response_letter()` function for production:
+1. **Canonical entity names:** Uses shared `canonicalize_entity_name()` function
+2. **STATUTORY FRAMEWORK section:** Full breakdown of 15 U.S.C. § 1681i(a)(5)(B) requirements including:
+   - Certification of completeness/accuracy requirement
+   - 5-business-day written notice requirement
+   - Notice content requirements (statement of reinsertion, furnisher info, dispute rights)
+3. **Single statutory theory:** Reinsertion Without Required Notice under §1681i(a)(5)(B)
+4. **Timeline with reinsertion-specific dates:**
+   - Prior deletion date (or "previously deleted per dispute results" if unknown)
+   - Reinsertion detected date
+   - Written notice received: NONE (or date if deficient notice)
+5. **Reinsertion-specific demands:**
+   - Immediate deletion unless statutory compliance proven
+   - Written certification of reinsertion source and furnisher verification
+   - Production of alleged reinsertion notice
+   - Identification of furnisher with name, address, and notification date
+   - Updated consumer disclosure reflecting removal
+6. **NO mention of "reasonable investigation" or 30-day dispute deadline**
+7. **Rights-preservation clause:** Single sentence, no damages lecture
+8. **No regulatory cc:** Clean ending without CFPB/AG references
 
 **Files Modified:**
 - `backend/app/services/enforcement/response_letter_generator.py`

@@ -760,8 +760,9 @@ def generate_reinsertion_letter(
     notice_received: bool = False
 ) -> str:
     """
-    Generate enforcement letter for reinsertion without notice.
+    DEPRECATED: Use generate_reinsertion_response_letter() for production letters.
 
+    Generate enforcement letter for reinsertion without notice.
     Under FCRA §611(a)(5)(B), CRAs must provide 5-day advance written notice
     before reinserting previously deleted information.
     """
@@ -801,3 +802,184 @@ def generate_reinsertion_letter(
         response_type="REINSERTION_NO_NOTICE",
         include_willful_notice=True
     )
+
+
+def generate_reinsertion_response_letter(
+    consumer: Dict[str, str],
+    entity_type: str,
+    entity_name: str,
+    original_violations: List[Dict[str, Any]],
+    reinsertion_date: datetime,
+    deletion_date: datetime = None,
+    notice_received_date: datetime = None,
+) -> str:
+    """
+    Generate enforcement letter for REINSERTION response scenario.
+
+    Production-ready implementation:
+    - Single statutory theory: Reinsertion Without Required Notice under §1681i(a)(5)(B)
+    - Canonical entity names (TransUnion LLC, Equifax Inc., Experian LLC)
+    - Reinsertion-specific statutory elements
+    - Timeline with deletion date, reinsertion detected date, notice received date
+    - Reinsertion-specific demands
+    - No mention of "reasonable investigation" or 30-day dispute deadline
+    - No damages lecture, single rights-preservation sentence
+    - No regulatory cc at this stage
+    """
+    # Canonicalize entity name
+    canonical_entity = canonicalize_entity_name(entity_name)
+
+    # Build reinserted items with auto-assigned statutes
+    reinserted_items = []
+    for v in original_violations:
+        v_type = v.get("violation_type", v.get("type", ""))
+        creditor = v.get("creditor_name", "")
+        account_mask = v.get("account_number_masked", "")
+
+        item_desc = f"{creditor}" if creditor else "Disputed tradeline"
+        if account_mask:
+            item_desc += f" ({account_mask})"
+
+        reinserted_items.append(item_desc)
+
+    # Build the letter content directly (custom structure for REINSERTION)
+    letter_parts = []
+
+    # Header
+    today = datetime.now().strftime("%B %d, %Y")
+    consumer_name = consumer.get('name', '[CONSUMER NAME]')
+    consumer_address = consumer.get('address', '[CONSUMER ADDRESS]')
+
+    header = f"""{consumer_name}
+{consumer_address}
+
+{today}
+
+{canonical_entity}
+Consumer Dispute Department
+[ADDRESS ON FILE]
+
+Via Certified Mail, Return Receipt Requested"""
+    letter_parts.append(header)
+
+    # Subject line
+    subject = "RE: FORMAL NOTICE OF STATUTORY VIOLATION - Reinsertion Without Required Notice"
+    letter_parts.append(subject)
+
+    # Opening paragraph - NO mention of dispute deadline or reasonable investigation
+    opening = f"""{consumer_name} previously disputed inaccurate information appearing in {consumer_name}'s consumer file maintained by {canonical_entity}.
+
+Following {canonical_entity}'s prior deletion of the disputed information, {canonical_entity} has reinserted the same information without providing the written notice required by federal law."""
+    letter_parts.append(opening)
+
+    # STATUTORY FRAMEWORK SECTION
+    statutory_framework = f"""STATUTORY FRAMEWORK
+{'=' * 50}
+
+Under 15 U.S.C. § 1681i(a)(5)(B), if information that has been deleted from a consumer's file is reinserted, the consumer reporting agency shall:
+
+(i) Certify that the information is complete and accurate; AND
+
+(ii) Provide written notice to the consumer within five (5) business days of the reinsertion that includes:
+    (A) A statement that the disputed information has been reinserted;
+    (B) The business name and address of any furnisher that provided information that was the basis for reinsertion; AND
+    (C) A notice that the consumer has the right to add a statement to the file disputing the accuracy or completeness of the information.
+
+{canonical_entity} has failed to satisfy these statutory prerequisites for valid reinsertion."""
+    letter_parts.append(statutory_framework)
+
+    # VIOLATION SECTION
+    violation_section = f"""STATUTORY VIOLATION
+{'=' * 50}
+
+Violation: Reinsertion Without Required Notice
+Statute: 15 U.S.C. § 1681i(a)(5)(B)
+
+Established Facts:"""
+
+    # Deletion date fact
+    if deletion_date:
+        violation_section += f"\n    - Disputed information was deleted on or about {deletion_date.strftime('%B %d, %Y')}"
+    else:
+        violation_section += f"\n    - Disputed information was previously deleted per {canonical_entity} dispute results"
+
+    violation_section += f"""
+    - Same information was reinserted into consumer file on or about {reinsertion_date.strftime('%B %d, %Y')}
+    - {canonical_entity} failed to provide written notice of reinsertion within five (5) business days
+    - {canonical_entity} failed to identify the furnisher and furnisher address as required by § 1681i(a)(5)(B)(ii)
+    - {canonical_entity} failed to notify consumer of right to add dispute statement
+
+Reinserted Item(s):"""
+
+    for item in reinserted_items:
+        violation_section += f"\n    • {item}"
+
+    letter_parts.append(violation_section)
+
+    # TIMELINE SECTION - reinsertion-specific
+    timeline = f"""TIMELINE OF EVENTS
+{'-' * 50}
+
+"""
+    if deletion_date:
+        timeline += f"Prior Deletion Date: {deletion_date.strftime('%B %d, %Y')}\n"
+    else:
+        timeline += f"Prior Deletion: Previously deleted per {canonical_entity} dispute results\n"
+
+    timeline += f"Reinsertion Detected: {reinsertion_date.strftime('%B %d, %Y')}\n"
+
+    if notice_received_date:
+        timeline += f"Written Notice Received: {notice_received_date.strftime('%B %d, %Y')} (DEFICIENT)"
+    else:
+        timeline += "Written Notice Received: NONE"
+
+    letter_parts.append(timeline)
+
+    # DEMANDED ACTIONS - reinsertion-specific
+    demands = f"""DEMANDED ACTIONS
+{'-' * 50}
+
+The following actions are demanded within fifteen (15) days of receipt of this notice:
+
+1. Immediate deletion or re-blocking of the reinserted item unless {canonical_entity} can demonstrate statutory compliance with 15 U.S.C. § 1681i(a)(5)(B)
+
+2. Written certification of the reinsertion source and furnisher verification, including the specific steps taken to certify that the information is complete and accurate
+
+3. If {canonical_entity} claims written notice was provided: Production of the reinsertion notice allegedly sent, including date of mailing and method of delivery
+
+4. Identification of the furnisher whose information was the basis for reinsertion, including furnisher name, address, and date furnisher was notified
+
+5. Updated consumer disclosure reflecting removal of the reinserted information"""
+    letter_parts.append(demands)
+
+    # RIGHTS PRESERVATION (single sentence, no damages lecture)
+    rights = f"""RIGHTS PRESERVATION
+{'-' * 50}
+
+Nothing in this correspondence shall be construed as a waiver of any rights or remedies available under 15 U.S.C. §§ 1681n or 1681o for negligent or willful noncompliance."""
+    letter_parts.append(rights)
+
+    # CLOSING (no regulatory cc)
+    closing = f"""RESPONSE REQUIRED
+{'-' * 50}
+
+A written response addressing each demanded action is required within fifteen (15) days of receipt of this notice. Failure to respond or inadequate response will be documented and may be submitted as evidence in subsequent proceedings.
+
+All future correspondence regarding this matter should be directed to the undersigned at the address provided above.
+
+
+
+Respectfully submitted,
+
+
+
+____________________________________
+{consumer_name}
+
+Enclosures:
+- Copy of prior dispute results showing deletion
+- Evidence of reinsertion (current credit report)
+- Certified mail receipt"""
+    letter_parts.append(closing)
+
+    return "\n\n".join(letter_parts)

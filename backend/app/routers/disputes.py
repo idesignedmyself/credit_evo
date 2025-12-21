@@ -405,7 +405,7 @@ async def generate_response_letter(
         generate_no_response_letter,
         generate_verified_response_letter,
         generate_rejected_response_letter,
-        generate_reinsertion_letter,
+        generate_reinsertion_response_letter,
     )
     from datetime import datetime
 
@@ -546,36 +546,37 @@ async def generate_response_letter(
             response_date=datetime.combine(response_date, datetime.min.time()) if response_date else datetime.now(),
         )
 
-    elif response_type == "REINSERTION_NO_NOTICE" or request.letter_type == "reinsertion":
-        # Get reinsertion watch data
+    elif response_type in ("REINSERTION_NO_NOTICE", "REINSERTION") or request.letter_type == "reinsertion":
+        # Get reinsertion response data if logged
+        response = db.query(DisputeResponseDB).filter(
+            DisputeResponseDB.dispute_id == dispute_id,
+            DisputeResponseDB.response_type == ResponseType.REINSERTION
+        ).first()
+
+        # Get reinsertion watch data for deletion date
         from ..models.db_models import ReinsertionWatchDB
 
         watch = db.query(ReinsertionWatchDB).filter(
             ReinsertionWatchDB.dispute_id == dispute_id
         ).first()
 
-        if not watch:
-            raise HTTPException(
-                status_code=400,
-                detail="No reinsertion watch found for this dispute"
-            )
+        # Determine dates
+        reinsertion_date = response.response_date if response else datetime.now().date()
+        deletion_date = watch.monitoring_start if watch else None
+        notice_received_date = None  # Will be set if notice was received
 
-        # Get account info from violations
-        account = {}
-        if violations and len(violations) > 0:
-            v = violations[0]
-            account = {
-                "creditor": v.get("creditor_name", ""),
-                "account_mask": v.get("account_number_masked", "")
-            }
+        if watch and hasattr(watch, 'notice_received') and watch.notice_received:
+            # If notice was received, it would have a date (deficient notice case)
+            notice_received_date = getattr(watch, 'notice_date', None)
 
-        letter_content = generate_reinsertion_letter(
+        letter_content = generate_reinsertion_response_letter(
             consumer=consumer,
+            entity_type=entity_type,
             entity_name=entity_name,
-            account=account,
-            deletion_date=watch.monitoring_start,
-            reinsertion_date=datetime.now(),
-            notice_received=watch.notice_received or False if hasattr(watch, 'notice_received') else False,
+            original_violations=violations,
+            reinsertion_date=datetime.combine(reinsertion_date, datetime.min.time()) if isinstance(reinsertion_date, date) else reinsertion_date,
+            deletion_date=datetime.combine(deletion_date, datetime.min.time()) if deletion_date and isinstance(deletion_date, date) else deletion_date,
+            notice_received_date=datetime.combine(notice_received_date, datetime.min.time()) if notice_received_date and isinstance(notice_received_date, date) else notice_received_date,
         )
 
     elif response_type == "REJECTED":
