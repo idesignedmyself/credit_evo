@@ -742,7 +742,23 @@ const DisputesPage = () => {
       y += lineHeight;
     });
 
-    const filename = `enforcement_letter_${letterDispute?.entity_name || 'dispute'}_${new Date().toISOString().split('T')[0]}.pdf`;
+    // Build filename based on response type
+    const typeMap = {
+      'NO_RESPONSE': 'no_response',
+      'VERIFIED': 'verified',
+      'REJECTED': 'frivolous_rejected',
+      'REINSERTION': 'reinsertion',
+      'REINSERTION_NO_NOTICE': 'reinsertion',
+      'DELETED': 'deleted',
+      'UPDATED': 'updated',
+      'INVESTIGATING': 'investigating',
+    };
+    const dateStr = new Date().toISOString().split('T')[0];
+    const typePrefix = letterResponseType ? (typeMap[letterResponseType] || letterResponseType.toLowerCase()) : '';
+    const filename = typePrefix
+      ? `${typePrefix}_dispute_letter_${dateStr}.pdf`
+      : `dispute_letter_${dateStr}.pdf`;
+
     pdf.save(filename);
   };
 
