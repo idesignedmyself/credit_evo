@@ -388,7 +388,7 @@ const pricingPlans = [
     popular: true,
     features: [
       'Everything in Plus.',
-      'Copilot tracks 30-day SLA deadlines.',
+      'Copilot tracks FCRA response deadlines.',
       'Auto-prepares follow-up MOV/623 letters.',
       'Push/email reminders: "Deadline approaching - approve next letter."',
       '3 certified letters included/month (extra $12 each).'

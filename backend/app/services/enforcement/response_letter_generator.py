@@ -16,6 +16,80 @@ from uuid import UUID
 import textwrap
 
 
+# Canonical entity names (legal names for correspondence)
+CANONICAL_ENTITY_NAMES = {
+    # CRAs
+    "transunion": "TransUnion LLC",
+    "trans union": "TransUnion LLC",
+    "tu": "TransUnion LLC",
+    "equifax": "Equifax Inc.",
+    "eq": "Equifax Inc.",
+    "experian": "Experian LLC",
+    "ex": "Experian LLC",
+    "exp": "Experian LLC",
+}
+
+
+def canonicalize_entity_name(name: str) -> str:
+    """
+    Convert entity name to canonical legal name.
+
+    Examples:
+        "TransUnion" -> "TransUnion LLC"
+        "transunion" -> "TransUnion LLC"
+        "EQUIFAX" -> "Equifax Inc."
+    """
+    if not name:
+        return name
+    lookup = name.lower().strip()
+    return CANONICAL_ENTITY_NAMES.get(lookup, name)
+
+
+# Violation type to statute auto-assignment
+# Maps violation types to their primary FCRA statute when not explicitly set
+VIOLATION_STATUTE_DEFAULTS = {
+    # Missing field violations -> §1681e(b) accuracy requirement
+    "missing_dofd": "15 U.S.C. § 1681e(b)",
+    "missing_date_opened": "15 U.S.C. § 1681e(b)",
+    "missing_dla": "15 U.S.C. § 1681e(b)",
+    "missing_payment_status": "15 U.S.C. § 1681e(b)",
+    "missing_original_creditor": "15 U.S.C. § 1681e(b)",
+    "missing_scheduled_payment": "15 U.S.C. § 1681e(b)",
+    # Balance/amount violations -> §1681e(b)
+    "negative_balance": "15 U.S.C. § 1681e(b)",
+    "past_due_exceeds_balance": "15 U.S.C. § 1681e(b)",
+    "balance_exceeds_high_credit": "15 U.S.C. § 1681e(b)",
+    "balance_exceeds_credit_limit": "15 U.S.C. § 1681e(b)",
+    # Date violations -> §1681e(b)
+    "future_date": "15 U.S.C. § 1681e(b)",
+    "dofd_after_date_opened": "15 U.S.C. § 1681e(b)",
+    # Cross-bureau mismatches -> §1681e(b)
+    "dofd_mismatch": "15 U.S.C. § 1681e(b)",
+    "balance_mismatch": "15 U.S.C. § 1681e(b)",
+    "status_mismatch": "15 U.S.C. § 1681e(b)",
+    # Temporal violations -> §1681c(a) obsolescence
+    "stale_reporting": "15 U.S.C. § 1681c(a)",
+    "re_aging": "15 U.S.C. § 1681c(a)",
+    "obsolete_account": "15 U.S.C. § 1681c(a)",
+    # Default fallback
+    "default": "15 U.S.C. § 1681e(b)",
+}
+
+
+def get_statute_for_violation(violation_type: str, explicit_statute: str = None) -> str:
+    """
+    Get the appropriate statute for a violation type.
+
+    Uses explicit statute if provided and non-empty, otherwise auto-assigns
+    based on violation type.
+    """
+    if explicit_statute and explicit_statute.strip():
+        return explicit_statute
+
+    v_type = violation_type.lower().replace(" ", "_") if violation_type else ""
+    return VIOLATION_STATUTE_DEFAULTS.get(v_type, VIOLATION_STATUTE_DEFAULTS["default"])
+
+
 # Canonical statute citations
 STATUTE_CITATIONS = {
     # FCRA - Credit Reporting Agency (CRA) obligations
@@ -93,13 +167,24 @@ RESPONSE_VIOLATION_MAP = {
 }
 
 
+TEST_FOOTER = """
+════════════════════════════════════════════════════════════════════════════════
+                         TEST DOCUMENT – NOT MAILED
+════════════════════════════════════════════════════════════════════════════════
+This letter was generated in test mode for preview purposes only.
+Do not mail, save to production records, or use for escalation.
+════════════════════════════════════════════════════════════════════════════════
+"""
+
+
 class ResponseLetterGenerator:
     """
     Generates formal FCRA enforcement letters based on dispute responses.
     """
 
-    def __init__(self):
+    def __init__(self, test_context: bool = False):
         self.generated_at = datetime.now()
+        self.test_context = test_context
 
     def generate_enforcement_letter(
         self,
@@ -164,7 +249,13 @@ class ResponseLetterGenerator:
         # Closing
         letter_parts.append(self._generate_closing(consumer))
 
-        return "\n\n".join(filter(None, letter_parts))
+        letter = "\n\n".join(filter(None, letter_parts))
+
+        # Append test footer if in test mode
+        if self.test_context:
+            letter += TEST_FOOTER
+
+        return letter
 
     def _generate_header(self, consumer: Dict[str, str], entity_name: str) -> str:
         """Generate letter header with date and addresses."""
@@ -316,28 +407,20 @@ Via Certified Mail, Return Receipt Requested"""
         return section
 
     def _generate_willful_notice(self, entity_type: str) -> str:
-        """Generate willful noncompliance notice under §616."""
-        return f"""NOTICE OF POTENTIAL WILLFUL NONCOMPLIANCE
+        """Generate rights-preservation notice (single sentence, no damages lecture)."""
+        return f"""RIGHTS PRESERVATION
 {'-' * 50}
 
-This letter serves as formal notice that continued noncompliance may constitute willful failure to comply with the requirements of the Fair Credit Reporting Act. Under {STATUTE_CITATIONS['fcra_616']}, any person who willfully fails to comply with any requirement imposed under this title with respect to any consumer is liable to that consumer in an amount equal to the sum of:
-
-(1) Any actual damages sustained by the consumer as a result of the failure or damages of not less than $100 and not more than $1,000;
-
-(2) Such amount of punitive damages as the court may allow; and
-
-(3) In the case of any successful action to enforce any liability under this section, the costs of the action together with reasonable attorney's fees as determined by the court.
-
-This notice is provided to establish knowledge of the violations asserted herein for purposes of any subsequent determination of willfulness."""
+Nothing in this correspondence shall be construed as a waiver of any rights or remedies available under 15 U.S.C. §§ 1681n or 1681o for negligent or willful noncompliance."""
 
     def _generate_closing(self, consumer: Dict[str, str]) -> str:
-        """Generate the closing and signature block."""
+        """Generate the closing and signature block (no regulatory cc at this stage)."""
         consumer_name = consumer.get('name', '[CONSUMER NAME]')
 
         return f"""RESPONSE REQUIRED
 {'-' * 50}
 
-A written response addressing each demanded action is required within fifteen (15) days of receipt of this notice. Failure to respond or inadequate response will be documented and may be submitted as evidence in subsequent regulatory complaints or civil proceedings.
+A written response addressing each demanded action is required within fifteen (15) days of receipt of this notice. Failure to respond or inadequate response will be documented and may be submitted as evidence in subsequent proceedings.
 
 All future correspondence regarding this matter should be directed to the undersigned at the address provided above.
 
@@ -353,10 +436,7 @@ ____________________________________
 Enclosures:
 - Copy of original dispute letter
 - Certified mail receipt
-- Supporting documentation
-
-cc: Consumer Financial Protection Bureau
-    [State Attorney General Consumer Protection Division]"""
+- Supporting documentation"""
 
 
 def generate_no_response_letter(
@@ -365,14 +445,18 @@ def generate_no_response_letter(
     entity_name: str,
     original_violations: List[Dict[str, Any]],
     dispute_date: datetime,
-    deadline_date: datetime
+    deadline_date: datetime,
+    test_context: bool = False,
 ) -> str:
     """
     Generate enforcement letter for NO_RESPONSE scenario.
 
     This is a convenience function for the most common enforcement scenario.
+
+    Args:
+        test_context: If True, appends test footer and bypasses deadline validation.
     """
-    generator = ResponseLetterGenerator()
+    generator = ResponseLetterGenerator(test_context=test_context)
 
     # Build violation based on entity type
     response_violation = RESPONSE_VIOLATION_MAP.get("NO_RESPONSE", {}).get(entity_type, {})
@@ -430,37 +514,56 @@ def generate_verified_response_letter(
     """
     Generate enforcement letter for VERIFIED response scenario.
 
-    When entity verifies disputed information without proper investigation.
+    Production-ready implementation:
+    - Single statutory theory: Verification Without Reasonable Investigation (§611(a)(1)(A))
+    - Canonical entity names (TransUnion LLC, Equifax Inc., Experian LLC)
+    - Original violations referenced as facts, not separate violation entries
+    - No damages lecture, single rights-preservation sentence
+    - No regulatory cc at this stage
     """
     generator = ResponseLetterGenerator()
 
-    response_violation = RESPONSE_VIOLATION_MAP.get("VERIFIED", {}).get(entity_type, {})
+    # Canonicalize entity name
+    canonical_entity = canonicalize_entity_name(entity_name)
 
+    # Build facts from original violations (referenced, not separate entries)
+    disputed_items_facts = []
+    for v in original_violations:
+        v_type = v.get("violation_type", v.get("type", ""))
+        creditor = v.get("creditor_name", "")
+        account_mask = v.get("account_number_masked", "")
+        description = v.get("description", "")
+
+        # Auto-assign statute if empty
+        explicit_statute = v.get("primary_statute", v.get("statute", ""))
+        statute = get_statute_for_violation(v_type, explicit_statute)
+
+        item_desc = f"{creditor}" if creditor else "Disputed tradeline"
+        if account_mask:
+            item_desc += f" ({account_mask})"
+        if v_type:
+            item_desc += f" - {v_type.replace('_', ' ').title()}"
+        if statute:
+            item_desc += f" [{statute}]"
+
+        disputed_items_facts.append(item_desc)
+
+    # Single violation entry: Verification Without Reasonable Investigation
+    # This is the ONLY statutory theory for VERIFIED response letters
     violations = [{
-        "type": response_violation.get("violation", "failure_to_investigate"),
-        "statute": response_violation.get("statute", ""),
+        "type": "verification_without_reasonable_investigation",
+        "statute": "fcra_611_a_1_A",  # 15 U.S.C. § 1681i(a)(1)(A)
         "facts": [
             f"Written dispute submitted on {dispute_date.strftime('%B %d, %Y')}",
-            f"Response received on {response_date.strftime('%B %d, %Y')} verifying disputed information",
-            "Verification performed without reasonable investigation into accuracy",
-            response_violation.get("description", "Verified without proper investigation")
-        ]
+            f"Response received on {response_date.strftime('%B %d, %Y')} claiming verification of disputed information",
+            f"{canonical_entity} failed to conduct a reasonable reinvestigation as required by statute",
+            "The disputed items include:",
+        ] + [f"    • {item}" for item in disputed_items_facts]
     }]
-
-    for v in original_violations:
-        violations.append({
-            "type": v.get("violation_type", v.get("type", "UNKNOWN")),
-            "statute": v.get("primary_statute", v.get("statute", "")),
-            "facts": [v.get("description", "Original disputed violation")],
-            "account": {
-                "creditor": v.get("creditor_name", ""),
-                "account_mask": v.get("account_number_masked", "")
-            }
-        })
 
     demanded_actions = [
         "Disclosure of the method of verification used for each disputed item",
-        "Production of all documents relied upon in verification",
+        "Production of all documents relied upon in the purported verification",
         "Identification of the furnisher(s) contacted and date(s) of contact",
         "Immediate reinvestigation using procedures that constitute a reasonable investigation",
         "Written results of reinvestigation within fifteen (15) days"
@@ -469,7 +572,7 @@ def generate_verified_response_letter(
     return generator.generate_enforcement_letter(
         consumer=consumer,
         entity_type=entity_type,
-        entity_name=entity_name,
+        entity_name=canonical_entity,
         violations=violations,
         demanded_actions=demanded_actions,
         dispute_date=dispute_date,

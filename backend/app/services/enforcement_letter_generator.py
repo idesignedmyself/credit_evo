@@ -35,7 +35,7 @@ PROHIBITED_OUTCOMES = {"INVESTIGATING", "UPDATED"}
 
 
 # =============================================================================
-# ENTITY REGISTRY
+# ENTITY REGISTRY (CANONICAL NAMES ONLY)
 # =============================================================================
 
 ENTITY_REGISTRY = {
@@ -58,6 +58,30 @@ ENTITY_REGISTRY = {
         "city_state_zip": "Allen, TX 75013",
     },
 }
+
+# Canonical entity name aliases for validation
+CANONICAL_ENTITY_ALIASES = {
+    "transunion": ["transunion", "trans union", "tu"],
+    "equifax": ["equifax", "efx"],
+    "experian": ["experian", "exp"],
+}
+
+
+def _normalize_entity_name(entity: str) -> Optional[str]:
+    """
+    Normalize entity name to canonical form.
+    Returns None if entity is not recognized.
+    """
+    entity_lower = entity.lower().strip()
+    for canonical, aliases in CANONICAL_ENTITY_ALIASES.items():
+        if entity_lower in aliases or entity_lower.startswith(canonical):
+            return canonical
+    return None
+
+
+def _is_canonical_entity(entity: str) -> bool:
+    """Check if entity name resolves to a canonical CRA."""
+    return _normalize_entity_name(entity) is not None
 
 
 # =============================================================================
@@ -150,7 +174,23 @@ class EnforcementLetterRequest:
     demands: List[str]
     delivery_method: str = "Certified Mail, Return Receipt Requested"
     dispute_date: Optional[str] = None
+    deadline_date: Optional[str] = None  # Required for NO_RESPONSE
     response_date: Optional[str] = None
+    test_context: bool = False  # Test mode - bypasses deadline validation
+
+
+# =============================================================================
+# TEST MODE CONSTANTS
+# =============================================================================
+
+TEST_FOOTER = """
+════════════════════════════════════════════════════════════════════════════════
+                         TEST DOCUMENT – NOT MAILED
+════════════════════════════════════════════════════════════════════════════════
+This letter was generated in test mode for preview purposes only.
+Do not mail, save to production records, or use for escalation.
+════════════════════════════════════════════════════════════════════════════════
+"""
 
 
 # =============================================================================
@@ -196,38 +236,170 @@ class EnforcementLetterGenerator:
 
     Generates formal correspondence for certified mail delivery.
     Does NOT generate letters for non-enforcement outcomes.
-    Filters out violations without valid statutes.
+
+    HARD GUARDS (raise errors, no silent fallback):
+    - NO_RESPONSE requires deadline_date AND deadline must have passed
+    - All violations must have valid statutes
+    - Entity must resolve to canonical CRA name
+    - Exactly ONE enforcement theory per letter
+    - Mixed response outcomes prohibited
     """
 
     def __init__(self, request: EnforcementLetterRequest):
+        # Store test mode flag
+        self.test_context = request.test_context
+
+        # Run all validation guards BEFORE any processing
         self._validate_outcome(request.response_outcome)
+        self._validate_entity(request.entity)
+
+        # Skip deadline validation in test mode
+        if not self.test_context:
+            self._validate_deadline_for_no_response(request)
+
+        self._validate_single_enforcement_theory(request)
+
         self.request = request
         self.outcome = EnforcementOutcome(request.response_outcome)
         self.letter_date = datetime.now().strftime("%B %d, %Y")
         self.entity_info = self._get_entity_info()
-        self._filter_and_validate_violations()
 
-    def _filter_and_validate_violations(self) -> None:
+        # Validate violations (raises on empty statutes)
+        self._validate_violations()
+
+    def _validate_entity(self, entity: str) -> None:
         """
-        Filter out violations without valid statutes.
-        Assign statutes where possible.
-        HARD RULE: No empty statutes in production letters.
+        HARD GUARD: Entity must resolve to a canonical CRA name.
+        No silent fallback to unknown entities.
         """
-        valid_violations = []
+        if not entity or not entity.strip():
+            raise ValueError(
+                "Entity name is required. Cannot generate letter without target entity."
+            )
 
-        for v in self.request.violations:
-            statute = _assign_statute(v, self.request.response_outcome)
-            if statute:
-                # Update violation with assigned statute
-                v.statute = statute
-                valid_violations.append(v)
-            # If no statute can be assigned, violation is silently dropped
+        if not _is_canonical_entity(entity):
+            canonical_names = list(ENTITY_REGISTRY.keys())
+            raise ValueError(
+                f"Non-canonical entity name: '{entity}'. "
+                f"Must be one of: {', '.join(n.title() for n in canonical_names)}"
+            )
 
-        self.request.violations = valid_violations
+    def _validate_single_enforcement_theory(self, request: EnforcementLetterRequest) -> None:
+        """
+        HARD GUARD: Exactly ONE enforcement theory per letter.
+        Mixed response outcomes are prohibited.
+        """
+        if not request.statutory_theory or not request.statutory_theory.strip():
+            raise ValueError(
+                "Statutory theory is required. Each letter must assert exactly ONE enforcement theory."
+            )
 
+        # Validate statutes list is not empty
+        if not request.statutes:
+            raise ValueError(
+                "At least one statute citation is required for enforcement letter."
+            )
+
+        # All statutes should belong to the same statutory family for coherent legal theory
+        statute_families = set()
+        for statute in request.statutes:
+            if "1681i(a)(1)" in statute:
+                statute_families.add("reinvestigation")
+            elif "1681i(a)(3)" in statute:
+                statute_families.add("frivolous")
+            elif "1681i(a)(5)" in statute:
+                statute_families.add("reinsertion")
+            elif "1681e(b)" in statute:
+                statute_families.add("accuracy")
+            elif "1681c(a)" in statute:
+                statute_families.add("obsolescence")
+            else:
+                statute_families.add("other")
+
+        if len(statute_families) > 2:  # Allow some overlap (e.g., accuracy + reinvestigation)
+            raise ValueError(
+                f"Mixed enforcement theories detected. Letter contains statutes from {len(statute_families)} "
+                f"different statutory families: {statute_families}. Use separate letters for each theory."
+            )
+
+    def _validate_deadline_for_no_response(self, request: EnforcementLetterRequest) -> None:
+        """
+        HARD GUARD: NO_RESPONSE requires dispute_date AND deadline_date AND deadline must have passed.
+        """
+        if request.response_outcome != "NO_RESPONSE":
+            return
+
+        if not request.dispute_date:
+            raise ValueError(
+                "Cannot generate NO_RESPONSE letter - dispute_date (mailed_date) is required"
+            )
+
+        if not request.deadline_date:
+            raise ValueError(
+                "Cannot generate NO_RESPONSE letter - deadline_date is required"
+            )
+
+        # Parse deadline and check if passed
+        try:
+            deadline_dt = datetime.strptime(request.deadline_date, "%Y-%m-%d").date()
+            today = datetime.now().date()
+            if today <= deadline_dt:
+                raise ValueError(
+                    f"Cannot generate NO_RESPONSE letter - deadline ({request.deadline_date}) has not passed"
+                )
+        except ValueError as e:
+            if "has not passed" in str(e):
+                raise
+            raise ValueError(
+                f"Invalid deadline_date format: {request.deadline_date}. Expected YYYY-MM-DD"
+            )
+
+    def _validate_violations(self) -> None:
+        """
+        HARD GUARD: All violations must have valid statutes.
+        No silent dropping - raises explicit error for each invalid violation.
+        """
         if not self.request.violations:
             raise ValueError(
-                "No violations with valid statutes. Cannot generate letter."
+                "At least one violation is required. Cannot generate empty enforcement letter."
+            )
+
+        violations_without_statutes = []
+        violations_with_empty_accounts = []
+
+        for i, v in enumerate(self.request.violations):
+            # Try to assign statute if missing
+            if not v.statute:
+                assigned = _assign_statute(v, self.request.response_outcome)
+                if assigned:
+                    v.statute = assigned
+                else:
+                    violations_without_statutes.append(
+                        f"Violation {i+1}: {v.violation_type} (no matching statute)"
+                    )
+
+            # Validate account is not empty
+            if not v.account or not v.account.strip():
+                violations_with_empty_accounts.append(
+                    f"Violation {i+1}: {v.violation_type} (missing account identifier)"
+                )
+
+        # Raise aggregated errors
+        errors = []
+        if violations_without_statutes:
+            errors.append(
+                f"Violations without valid statutes (cannot be silently dropped):\n  - " +
+                "\n  - ".join(violations_without_statutes)
+            )
+        if violations_with_empty_accounts:
+            errors.append(
+                f"Violations with missing account identifiers:\n  - " +
+                "\n  - ".join(violations_with_empty_accounts)
+            )
+
+        if errors:
+            raise ValueError(
+                "Validation failed - cannot generate letter:\n\n" + "\n\n".join(errors)
             )
 
     def _validate_outcome(self, outcome: str) -> None:
@@ -255,7 +427,7 @@ class EnforcementLetterGenerator:
 
     def generate(self) -> str:
         """Generate complete enforcement letter."""
-        return "\n".join([
+        sections = [
             self._letterhead(),
             self._addresses(),
             self._reference_block(),
@@ -266,7 +438,15 @@ class EnforcementLetterGenerator:
             self._demands_section(),
             self._preservation_clause(),
             self._closing(),
-        ])
+        ]
+
+        letter = "\n".join(sections)
+
+        # Append test footer in test mode
+        if self.test_context:
+            letter += TEST_FOOTER
+
+        return letter
 
     def _letterhead(self) -> str:
         """Date and delivery method."""
@@ -482,25 +662,46 @@ def generate_enforcement_letter(request_data: Dict) -> str:
     """
     Generate enforcement letter from request dictionary.
 
+    HARD GUARDS (all raise ValueError, no silent fallback):
+    - NO_RESPONSE blocked unless deadline_date exists AND today > deadline_date
+    - All violations must have valid statutes (no silent dropping)
+    - Entity must resolve to canonical CRA name (TransUnion, Equifax, Experian)
+    - Exactly ONE enforcement theory per letter
+    - Mixed response outcomes prohibited
+
     Args:
         request_data: Dictionary containing:
             - consumer: {name, address}
-            - entity: str
+            - entity: str (must be canonical: TransUnion, Equifax, Experian)
             - response_outcome: str (NO_RESPONSE, VERIFIED, REJECTED, REINSERTION)
-            - statutory_theory: str
-            - statutes: List[str]
-            - violations: List[{account, violation_type, facts, statute (optional)}]
+            - statutory_theory: str (required - single theory per letter)
+            - statutes: List[str] (required - must be from same statutory family)
+            - violations: List[{account, violation_type, facts, statute}]
+              - account: required
+              - violation_type: required
+              - facts: List[str]
+              - statute: auto-assigned if missing, error if unassignable
             - demands: List[str]
             - delivery: str (optional)
-            - dispute_date: str YYYY-MM-DD (optional)
+            - dispute_date: str YYYY-MM-DD (required for NO_RESPONSE)
+            - deadline_date: str YYYY-MM-DD (required for NO_RESPONSE, must be in past)
             - response_date: str YYYY-MM-DD (optional)
 
     Returns:
         Complete letter text ready for PDF generation.
 
     Raises:
-        ValueError: If response_outcome is INVESTIGATING or UPDATED.
-        ValueError: If no violations have valid statutes.
+        ValueError: If response_outcome is INVESTIGATING or UPDATED
+        ValueError: If response_outcome is NO_RESPONSE and deadline hasn't passed (unless test_context=True)
+        ValueError: If entity is not a canonical CRA name
+        ValueError: If any violation has empty statute that cannot be auto-assigned
+        ValueError: If statutory_theory is missing
+        ValueError: If statutes span multiple incompatible statutory families
+
+    Test Mode (test_context=True):
+        - Bypasses deadline validation for same-day testing
+        - Appends "TEST DOCUMENT – NOT MAILED" footer
+        - Do NOT save, mail, or escalate test letters
     """
     # Parse violations with optional statute
     violations = [
@@ -515,6 +716,8 @@ def generate_enforcement_letter(request_data: Dict) -> str:
 
     # Build request object
     consumer = request_data.get("consumer", {})
+    test_context = request_data.get("test_context", False)
+
     request = EnforcementLetterRequest(
         consumer_name=consumer.get("name", ""),
         consumer_address=consumer.get("address", ""),
@@ -526,7 +729,9 @@ def generate_enforcement_letter(request_data: Dict) -> str:
         demands=request_data.get("demands", []),
         delivery_method=request_data.get("delivery", "Certified Mail, Return Receipt Requested"),
         dispute_date=request_data.get("dispute_date"),
+        deadline_date=request_data.get("deadline_date"),
         response_date=request_data.get("response_date"),
+        test_context=test_context,
     )
 
     generator = EnforcementLetterGenerator(request)
@@ -536,3 +741,151 @@ def generate_enforcement_letter(request_data: Dict) -> str:
 def validate_enforcement_outcome(outcome: str) -> bool:
     """Check if outcome is enforcement-ready."""
     return outcome in [e.value for e in EnforcementOutcome]
+
+
+# =============================================================================
+# NO_RESPONSE LETTER GENERATOR (FINAL TEMPLATE)
+# =============================================================================
+
+def generate_no_response_letter(
+    consumer_name: str,
+    consumer_address: str,
+    entity: str,
+    accounts: List[str],
+    dispute_date: str,
+    deadline_date: str,
+    test_context: bool = False,
+) -> str:
+    """
+    Generate NO_RESPONSE enforcement letter with exact required structure.
+
+    Structure:
+    1. Header (Certified Mail)
+    2. Reference Line (Consumer + Entity + Outcome)
+    3. Statutory Framework - 15 U.S.C. § 1681i(a)(1)(A)
+    4. Timeline - Dispute sent, Deadline date, No response received
+    5. Demanded Actions - Deletion, Written confirmation
+    6. Rights Preservation (ONE sentence)
+    7. Signature
+
+    Prohibited: Damages lecture, CFPB/AG references, advisory language, mixed outcomes.
+
+    Test Mode (test_context=True):
+        - Bypasses deadline validation for same-day testing
+        - Appends "TEST DOCUMENT – NOT MAILED" footer
+        - Do NOT save, mail, or escalate test letters
+
+    Raises:
+        ValueError: If deadline_date has not passed (unless test_context=True)
+        ValueError: If entity is not canonical
+    """
+    # Validate deadline has passed (skip in test mode)
+    deadline_dt = datetime.strptime(deadline_date, "%Y-%m-%d").date()
+    today = datetime.now().date()
+    if not test_context and today <= deadline_dt:
+        raise ValueError(
+            f"Cannot generate NO_RESPONSE letter - deadline ({deadline_date}) has not passed"
+        )
+
+    # Validate entity
+    if not _is_canonical_entity(entity):
+        raise ValueError(
+            f"Non-canonical entity: '{entity}'. Must be TransUnion, Equifax, or Experian."
+        )
+
+    # Get entity info
+    entity_key = _normalize_entity_name(entity)
+    entity_info = ENTITY_REGISTRY[entity_key]
+    legal_name = entity_info["legal_name"]
+
+    # Format dates
+    dispute_dt = datetime.strptime(dispute_date, "%Y-%m-%d")
+    dispute_date_formatted = dispute_dt.strftime("%B %d, %Y")
+    deadline_date_formatted = deadline_dt.strftime("%B %d, %Y")
+    letter_date = datetime.now().strftime("%B %d, %Y")
+
+    # Format accounts
+    accounts_formatted = ", ".join(accounts) if len(accounts) > 1 else accounts[0] if accounts else "[Account]"
+
+    letter = f"""{letter_date}
+
+Certified Mail, Return Receipt Requested
+
+{legal_name}
+{entity_info["address_line_1"]}
+{entity_info["address_line_2"]}
+{entity_info["city_state_zip"]}
+
+        {consumer_name}
+        {consumer_address}
+
+RE:     Notice of Violation of Fair Credit Reporting Act
+        Consumer: {consumer_name}
+        Entity: {legal_name}
+        Enforcement Posture: Failure to Respond Within Statutory Period
+
+To Whom It May Concern:
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+                              STATUTORY FRAMEWORK
+
+                   15 U.S.C. § 1681i(a)(1)(A) - Duty to Reinvestigate
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Under 15 U.S.C. § 1681i(a)(1)(A), a consumer reporting agency that receives notice of a dispute from a consumer must, not later than 30 days after receiving the dispute, conduct a reasonable reinvestigation to determine whether the disputed information is inaccurate, and record the current status of the disputed information or delete the item from the file.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+                                   TIMELINE
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Dispute Sent:           {dispute_date_formatted}
+Statutory Deadline:     {deadline_date_formatted}
+Response Received:      NONE
+
+The undersigned consumer submitted a written dispute to {legal_name} regarding the following account(s): {accounts_formatted}.
+
+As of the date of this letter, {legal_name} has failed to provide any response. This failure to complete the reinvestigation within the statutory period constitutes a violation of 15 U.S.C. § 1681i(a)(1)(A).
+
+Under 15 U.S.C. § 1681i(a)(5)(A), information that cannot be verified must be promptly deleted from the consumer's file.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+                              DEMANDED ACTIONS
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+The consumer demands that {legal_name} immediately:
+
+        1.  Delete all disputed information from the consumer's file pursuant to 15 U.S.C. § 1681i(a)(5)(A).
+
+        2.  Provide written confirmation of deletion within five (5) business days.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+                           PRESERVATION OF RIGHTS
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Nothing in this correspondence shall be construed as a waiver of any rights or remedies available under 15 U.S.C. §§ 1681n or 1681o.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Respectfully submitted,
+
+
+
+
+__________________________________________
+{consumer_name}
+{letter_date}
+"""
+
+    # Append test footer in test mode
+    if test_context:
+        letter += TEST_FOOTER
+
+    return letter

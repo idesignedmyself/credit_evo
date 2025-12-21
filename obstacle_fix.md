@@ -13,6 +13,9 @@ This document tracks bugs, issues, and obstacles encountered during development 
 5. [B6: UI Semantic Layer - Violations vs Advisories](#b6-ui-semantic-layer---violations-vs-advisories)
 6. [B6: Metro 2 Field Citation Duplication](#b6-metro-2-field-citation-duplication)
 7. [B7: UserDB Attribute Mismatch in Letter Generation](#b7-userdb-attribute-mismatch-in-letter-generation)
+8. [B7: MUI Tooltip/Span Wrapper Breaking Select Dropdown](#b7-mui-tooltipspan-wrapper-breaking-select-dropdown)
+9. [B7: Test Mode Toggle Not Accessible for Response Selection](#b7-test-mode-toggle-not-accessible-for-response-selection)
+10. [B7: VERIFIED Letter Production Hardening](#b7-verified-letter-production-hardening)
 
 ---
 
@@ -211,6 +214,94 @@ Different severity levels warrant different UI treatment. Don't use alarming lan
 
 ### 5. Case Sensitivity
 Be intentional about text case. Credit report data is often ALL CAPS - decide whether to normalize or preserve.
+
+---
+
+## B7: MUI Tooltip/Span Wrapper Breaking Select Dropdown
+
+**Date:** December 20, 2024
+
+**Symptom:**
+Response type dropdown in Dispute Tracking showed all options as enabled (black text), but clicking any option did nothing. The selection wouldn't register.
+
+**Root Cause:**
+MUI's `<Tooltip>` component wraps children in a `<span>` by default. We also had an explicit `<span>` wrapper for handling tooltip display on disabled MenuItems. This double-wrapping broke MUI Select's internal click handling - the Select component expects MenuItem to be direct children without intermediate wrapper DOM elements.
+
+**Solution:**
+Only use the span wrapper for disabled items (where selection doesn't matter anyway). Enabled items get plain MenuItem with native HTML `title` attribute:
+```javascript
+// Disabled items: Use Tooltip + span wrapper (needed for tooltip on disabled element)
+if (isNoResponseBlocked) {
+  return (
+    <Tooltip key={key} title={disabledReason} placement="right" arrow>
+      <span>
+        <MenuItem value={key} disabled>{config.label}</MenuItem>
+      </span>
+    </Tooltip>
+  );
+}
+
+// Enabled items: Plain MenuItem with native title attribute
+// NO wrapper elements - this is critical for Select click handling to work
+return (
+  <MenuItem key={key} value={key} title={config.description}>
+    {config.label}
+  </MenuItem>
+);
+```
+
+**Files Modified:**
+- `frontend/src/pages/DisputesPage.jsx`
+
+---
+
+## B7: Test Mode Toggle Not Accessible for Response Selection
+
+**Date:** December 20, 2024
+
+**Symptom:**
+Test mode toggle was only in the letter generation dialog, but users needed to enable test mode BEFORE selecting NO_RESPONSE (which is deadline-gated). Chicken-and-egg problem: couldn't open letter dialog without selecting a response first.
+
+**Root Cause:**
+Test mode state existed but the toggle UI was only rendered inside the letter generation dialog. The response dropdown's deadline check ran before users could enable test mode.
+
+**Solution:**
+Added test mode toggle to the expanded dispute row, synced with the main testMode state:
+1. Added `testMode` prop to `ViolationResponseRow` component
+2. Added `onTestModeChange` callback to `ExpandedRowContent`
+3. Rendered toggle switch next to "Log Response from [entity]" header
+4. Updated `isNoResponseAvailable()` to bypass deadline check when `testMode === true`
+
+**Files Modified:**
+- `frontend/src/pages/DisputesPage.jsx`
+
+---
+
+## B7: VERIFIED Letter Production Hardening
+
+**Date:** December 20, 2024
+
+**Symptom:**
+VERIFIED enforcement letters included:
+- Non-canonical entity names ("TransUnion" instead of "TransUnion LLC")
+- Full damages lecture under willful notice section
+- CFPB/Attorney General cc references at bottom
+- Multiple violation entries (one per original violation) instead of single statutory theory
+- Empty statutes for some violation types
+
+**Root Cause:**
+Letter generator was designed for comprehensive output, not production legal correspondence. Multiple statutory theories dilute enforceability; damages lectures are premature at enforcement stage.
+
+**Solution:**
+Refactored `generate_verified_response_letter()` for production:
+1. **Canonical entity names:** Added `CANONICAL_ENTITY_NAMES` mapping and `canonicalize_entity_name()` function (TransUnion → TransUnion LLC, etc.)
+2. **Single rights-preservation sentence:** Replaced damages lecture with "Nothing in this correspondence shall be construed as a waiver of any rights or remedies available under 15 U.S.C. §§ 1681n or 1681o for negligent or willful noncompliance."
+3. **Removed regulatory cc:** No CFPB/AG references at this enforcement stage
+4. **Single statutory theory:** Only "Verification Without Reasonable Investigation" under §1681i(a)(1)(A). Original violations referenced as facts, not separate entries.
+5. **Auto-assign statutes:** Added `VIOLATION_STATUTE_DEFAULTS` mapping (e.g., Missing DOFD → §1681e(b))
+
+**Files Modified:**
+- `backend/app/services/enforcement/response_letter_generator.py`
 
 ---
 

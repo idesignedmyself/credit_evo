@@ -384,7 +384,7 @@ const LetterPage = () => {
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2, maxWidth: 500, mx: 'auto' }}>
                 Click below to add this letter to your dispute tracker. You'll enter the send date
-                on the Disputes page to start the 30-day response clock.
+                on the Disputes page to start the deadline clock.
               </Typography>
               {disputeError && (
                 <Alert severity="warning" sx={{ mb: 2, maxWidth: 500, mx: 'auto' }}>

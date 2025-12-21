@@ -158,6 +158,7 @@ export const requestArtifact = async (disputeId, artifactType) => {
  * @param {string} options.response_type - Response type to generate letter for (NO_RESPONSE, VERIFIED, etc.)
  * @param {string} options.violation_id - Specific violation to generate letter for
  * @param {boolean} options.include_willful_notice - Include willful noncompliance notice under §616
+ * @param {boolean} options.test_context - Test mode: bypasses deadline, appends test footer, blocks save/mail
  */
 export const generateResponseLetter = async (disputeId, options = {}) => {
   const response = await apiClient.post(`/disputes/${disputeId}/generate-response-letter`, {
@@ -165,6 +166,7 @@ export const generateResponseLetter = async (disputeId, options = {}) => {
     response_type: options.response_type || null,
     violation_id: options.violation_id || null,
     include_willful_notice: options.include_willful_notice !== false, // Default true
+    test_context: options.test_context || false,
   });
   return response.data;
 };
@@ -191,12 +193,14 @@ export const auditLetter = async (disputeId, options = {}) => {
  * @param {string} options.content - Letter content to save
  * @param {string} options.response_type - Response type (NO_RESPONSE, VERIFIED, etc.)
  * @param {string} options.violation_id - Specific violation this letter addresses
+ * @param {boolean} options.test_context - If true, will be blocked - test letters cannot be saved
  */
 export const saveResponseLetter = async (disputeId, options = {}) => {
   const response = await apiClient.post(`/disputes/${disputeId}/save-response-letter`, {
     content: options.content,
     response_type: options.response_type,
     violation_id: options.violation_id || null,
+    test_context: options.test_context || false,
   });
   return response.data;
 };

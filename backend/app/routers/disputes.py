@@ -141,12 +141,37 @@ async def log_response(
     User-authorized action - reports what response was received.
     System evaluates the response and creates violations as needed.
     """
+    from ..models.db_models import DisputeDB
+    from datetime import datetime
+
     service = DisputeService(db)
 
-    # Verify user owns this dispute
-    dispute = service.db.query(service.db.query.__self__.query(
-        type(service.db.query.__self__)
-    ).first().__class__).get(dispute_id)
+    # Get dispute and verify ownership
+    dispute = db.query(DisputeDB).filter(
+        DisputeDB.id == dispute_id,
+        DisputeDB.user_id == current_user.id
+    ).first()
+
+    if not dispute:
+        raise HTTPException(status_code=404, detail="Dispute not found")
+
+    # HARD GUARD: NO_RESPONSE requires tracking_started AND deadline must have passed
+    if request.response_type == ResponseType.NO_RESPONSE:
+        if not dispute.tracking_started or not dispute.dispute_date:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot log NO_RESPONSE - clock not started (mailed_date is required)"
+            )
+        if not dispute.deadline_date:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot log NO_RESPONSE - deadline not set"
+            )
+        if datetime.now().date() <= dispute.deadline_date:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot log NO_RESPONSE - deadline ({dispute.deadline_date.isoformat()}) has not passed"
+            )
 
     result = service.log_response(
         dispute_id=dispute_id,
@@ -355,6 +380,10 @@ class GenerateResponseLetterRequest(BaseModel):
         default=True,
         description="Include willful noncompliance notice under §616"
     )
+    test_context: bool = Field(
+        default=False,
+        description="Test mode - bypasses deadline validation, appends test footer, blocks save/mail/escalation"
+    )
 
 
 @router.post("/{dispute_id}/generate-response-letter", response_model=dict)
@@ -465,19 +494,37 @@ async def generate_response_letter(
     deadline_date = dispute.deadline_date
 
     if response_type == "NO_RESPONSE":
-        if not dispute_date or not deadline_date:
-            raise HTTPException(
-                status_code=400,
-                detail="Cannot generate NO_RESPONSE letter - dispute date or deadline not set"
-            )
+        # HARD GUARD: NO_RESPONSE requires mailed_date AND deadline must have passed
+        # Skip validation in test mode for same-day testing
+        if not request.test_context:
+            if not dispute.tracking_started or not dispute.dispute_date:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Cannot generate NO_RESPONSE letter - clock not started (mailed_date is required)"
+                )
+            if not dispute.deadline_date:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Cannot generate NO_RESPONSE letter - deadline not set"
+                )
+            if datetime.now().date() <= dispute.deadline_date:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Cannot generate NO_RESPONSE letter - deadline ({dispute.deadline_date.isoformat()}) has not passed"
+                )
+
+        # Use today's date for test mode if no dates set
+        test_dispute_date = dispute_date or datetime.now().date()
+        test_deadline_date = deadline_date or datetime.now().date()
 
         letter_content = generate_no_response_letter(
             consumer=consumer,
             entity_type=entity_type,
             entity_name=entity_name,
             original_violations=violations,
-            dispute_date=datetime.combine(dispute_date, datetime.min.time()),
-            deadline_date=datetime.combine(deadline_date, datetime.min.time()),
+            dispute_date=datetime.combine(test_dispute_date, datetime.min.time()),
+            deadline_date=datetime.combine(test_deadline_date, datetime.min.time()),
+            test_context=request.test_context,
         )
 
     elif response_type == "VERIFIED":
@@ -573,6 +620,7 @@ async def generate_response_letter(
         "entity_type": entity_type,
         "word_count": word_count,
         "violations": violations,
+        "test_context": request.test_context,
     }
 
 
@@ -585,6 +633,7 @@ class SaveResponseLetterRequest(BaseModel):
     content: str = Field(..., description="Letter content to save")
     response_type: str = Field(..., description="Response type (NO_RESPONSE, VERIFIED, etc.)")
     violation_id: Optional[str] = Field(None, description="Specific violation this letter addresses")
+    test_context: bool = Field(default=False, description="If true, block save - test letters cannot be saved")
 
 
 @router.post("/{dispute_id}/save-response-letter", response_model=dict)
@@ -598,9 +647,17 @@ async def save_response_letter(
     Save a response/enforcement letter to the letters table.
 
     This persists the letter so it appears on the My Letters page.
+    Test letters (test_context=True) cannot be saved.
     """
     from ..models.db_models import DisputeDB, LetterDB
     import uuid
+
+    # HARD BLOCK: Test letters cannot be saved to production
+    if request.test_context:
+        raise HTTPException(
+            status_code=400,
+            detail="Test letters cannot be saved. Disable test mode to save this letter."
+        )
 
     # Verify dispute exists and user owns it
     dispute = db.query(DisputeDB).filter(

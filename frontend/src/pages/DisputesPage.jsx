@@ -31,6 +31,8 @@ import {
   DialogContent,
   DialogActions,
   TextField,
+  Switch,
+  FormControlLabel,
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
@@ -64,6 +66,27 @@ import SaveIcon from '@mui/icons-material/Save';
 import { jsPDF } from 'jspdf';
 
 // =============================================================================
+// HELPER FUNCTIONS
+// =============================================================================
+
+/**
+ * Format date string from YYYY-MM-DD to "Month DD, YYYY"
+ */
+const formatDeadlineDate = (dateStr) => {
+  if (!dateStr) return null;
+  try {
+    const date = new Date(dateStr + 'T00:00:00'); // Ensure local timezone
+    return date.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+  } catch {
+    return dateStr;
+  }
+};
+
+// =============================================================================
 // EXPANDABLE ROW CONTENT
 // =============================================================================
 
@@ -71,12 +94,25 @@ import { jsPDF } from 'jspdf';
 // SINGLE VIOLATION RESPONSE ROW
 // =============================================================================
 
-const ViolationResponseRow = ({ violation, disputeId, entityName, onResponseLogged, onGenerateLetter }) => {
+const ViolationResponseRow = ({ violation, disputeId, entityName, onResponseLogged, onGenerateLetter, trackingStarted, deadlineDate, testMode }) => {
   const [responseType, setResponseType] = useState(violation.logged_response || '');
   const [responseDate, setResponseDate] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState(null);
+
+  // NO_RESPONSE is only available if:
+  // 1. testMode is enabled (bypass deadline check), OR
+  // 2. tracking started AND deadline has passed
+  const isNoResponseAvailable = () => {
+    if (testMode) return true; // Bypass in test mode
+    if (!trackingStarted || !deadlineDate) return false;
+    const deadline = new Date(deadlineDate);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    deadline.setHours(0, 0, 0, 0);
+    return today > deadline;
+  };
 
   const handleLogResponse = async () => {
     if (!responseType) {
@@ -102,17 +138,16 @@ const ViolationResponseRow = ({ violation, disputeId, entityName, onResponseLogg
     }
   };
 
-  // Determine if this response type warrants a letter
-  const canGenerateLetter = responseType && ['NO_RESPONSE', 'VERIFIED', 'REJECTED', 'REINSERTION_NO_NOTICE'].includes(responseType);
+  // Determine if this response type warrants enforcement letter
+  const canGenerateLetter = responseType && ['NO_RESPONSE', 'VERIFIED', 'REJECTED', 'REINSERTION'].includes(responseType);
 
   const getResponseChipColor = (type) => {
     switch (type) {
       case 'DELETED': return 'success';
       case 'VERIFIED': return 'warning';
-      case 'UPDATED': return 'info';
       case 'NO_RESPONSE': return 'error';
       case 'REJECTED': return 'error';
-      case 'INVESTIGATING': return 'default';
+      case 'REINSERTION': return 'error';
       default: return 'default';
     }
   };
@@ -192,7 +227,7 @@ const ViolationResponseRow = ({ violation, disputeId, entityName, onResponseLogg
 
       {/* Response Form */}
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems="flex-start">
-        <FormControl size="small" sx={{ minWidth: 180 }}>
+        <FormControl size="small" sx={{ minWidth: 220 }}>
           <InputLabel>Response *</InputLabel>
           <Select
             value={responseType}
@@ -201,13 +236,35 @@ const ViolationResponseRow = ({ violation, disputeId, entityName, onResponseLogg
             disabled={submitting}
           >
             <MenuItem value="">
-              <em>Select...</em>
+              <em>Select outcome...</em>
             </MenuItem>
-            {Object.entries(RESPONSE_TYPES).map(([key, config]) => (
-              <MenuItem key={key} value={key}>
-                {config.label}
-              </MenuItem>
-            ))}
+            {Object.entries(RESPONSE_TYPES).map(([key, config]) => {
+              const isNoResponseBlocked = key === 'NO_RESPONSE' && !isNoResponseAvailable();
+
+              // Disabled items: Use Tooltip + span wrapper (needed for tooltip on disabled element)
+              // Selection doesn't matter since the item is disabled anyway
+              if (isNoResponseBlocked) {
+                const disabledReason = !trackingStarted ? 'Start tracking first' : 'Deadline has not passed';
+                return (
+                  <Tooltip key={key} title={disabledReason} placement="right" arrow>
+                    <span>
+                      <MenuItem value={key} disabled>
+                        {config.label}
+                      </MenuItem>
+                    </span>
+                  </Tooltip>
+                );
+              }
+
+              // Enabled items: Plain MenuItem with native title attribute
+              // NO wrapper elements - this is critical for Select click handling to work
+              return (
+                <MenuItem key={key} value={key} title={config.description}>
+                  {config.label}
+                  {!config.enforcement && ' (resolution)'}
+                </MenuItem>
+              );
+            })}
           </Select>
         </FormControl>
 
@@ -242,19 +299,17 @@ const ViolationResponseRow = ({ violation, disputeId, entityName, onResponseLogg
         )}
       </Stack>
 
-      {/* Help text for response types that don't generate letters */}
-      {responseType && !canGenerateLetter && (
+      {/* Help text for resolution-only outcomes */}
+      {responseType === 'DELETED' && (
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>
-          {responseType === 'DELETED' && '✓ Item deleted - no enforcement letter needed. A 90-day reinsertion watch will be created.'}
-          {responseType === 'UPDATED' && '⚠ Verify if the update resolves the violation. If not, change response to "Verified" to generate a letter.'}
-          {responseType === 'INVESTIGATING' && '⏳ Waiting period - if no response after 15 days, change to "No Response" to generate a letter.'}
+          ✓ Item deleted - no enforcement letter needed. A 90-day reinsertion watch will be created.
         </Typography>
       )}
     </Box>
   );
 };
 
-const ExpandedRowContent = ({ dispute, onResponseLogged, onStartTracking, onGenerateLetter }) => {
+const ExpandedRowContent = ({ dispute, onResponseLogged, onStartTracking, onGenerateLetter, testMode, onTestModeChange }) => {
   const [timeline, setTimeline] = useState([]);
   const [loadingTimeline, setLoadingTimeline] = useState(true);
   const [error, setError] = useState(null);
@@ -303,7 +358,7 @@ const ExpandedRowContent = ({ dispute, onResponseLogged, onStartTracking, onGene
             Tracking not started
           </Typography>
           <Typography variant="body2">
-            Click "Start Tracking" and enter the date you mailed the letter to begin the 30-day response clock.
+            Click "Start Tracking" and enter the date you mailed the letter to start the deadline clock.
           </Typography>
         </Alert>
       )}
@@ -314,13 +369,13 @@ const ExpandedRowContent = ({ dispute, onResponseLogged, onStartTracking, onGene
           <Box>
             <Typography variant="caption" color="text.secondary">Deadline</Typography>
             <Typography variant="body2" sx={{ fontWeight: 500 }}>
-              {dispute.deadline_date}
+              {formatDeadlineDate(dispute.deadline_date) || 'Clock not started'}
             </Typography>
           </Box>
           <Box>
             <Typography variant="caption" color="text.secondary">Days Remaining</Typography>
             <Typography variant="body2" sx={{ fontWeight: 500 }}>
-              {dispute.days_to_deadline} days
+              {dispute.days_to_deadline !== null ? `${dispute.days_to_deadline} days` : '—'}
             </Typography>
           </Box>
           <Box>
@@ -373,12 +428,31 @@ const ExpandedRowContent = ({ dispute, onResponseLogged, onStartTracking, onGene
       <Divider sx={{ mb: 3 }} />
 
       {/* Per-Violation Response Section */}
-      <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
-        Log Response from {dispute.entity_name}
-      </Typography>
-      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-        Select how the bureau responded to each violation in your dispute letter
-      </Typography>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+        <Box>
+          <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+            Log Response from {dispute.entity_name}
+          </Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+            Select how the bureau responded to each violation in your dispute letter
+          </Typography>
+        </Box>
+        <Tooltip title="Test mode: Bypass deadline checks to preview NO_RESPONSE letters before deadline passes">
+          <FormControlLabel
+            control={
+              <Switch
+                size="small"
+                checked={testMode}
+                onChange={(e) => onTestModeChange?.(e.target.checked)}
+                color="warning"
+              />
+            }
+            label={<Typography variant="caption" color={testMode ? 'warning.main' : 'text.secondary'}>Test Mode</Typography>}
+            labelPlacement="start"
+            sx={{ m: 0 }}
+          />
+        </Tooltip>
+      </Box>
 
       {error && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
@@ -400,6 +474,9 @@ const ExpandedRowContent = ({ dispute, onResponseLogged, onStartTracking, onGene
               entityName={dispute.entity_name}
               onResponseLogged={onResponseLogged}
               onGenerateLetter={(v, responseType) => onGenerateLetter(dispute, v, responseType)}
+              trackingStarted={dispute.tracking_started}
+              deadlineDate={dispute.deadline_date}
+              testMode={testMode}
             />
           ))}
         </Box>
@@ -476,6 +553,7 @@ const DisputesPage = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState(null);
   const [letterWordCount, setLetterWordCount] = useState(0);
+  const [testMode, setTestMode] = useState(false);  // Test mode - bypasses deadline, blocks save
 
   useEffect(() => {
     const fetchDisputes = async () => {
@@ -594,6 +672,7 @@ const DisputesPage = () => {
         response_type: letterResponseType || null,
         violation_id: letterViolation?.violation_id || null,
         include_willful_notice: true,
+        test_context: testMode,
       });
       setLetterContent(result.content);
       setEditableContent(result.content);
@@ -670,6 +749,12 @@ const DisputesPage = () => {
   const handleSaveLetter = async () => {
     if (!letterDispute || !editableContent) return;
 
+    // Block save in test mode
+    if (testMode) {
+      setLetterError('Test letters cannot be saved. Disable test mode to save.');
+      return;
+    }
+
     setIsSaving(true);
     setLetterError(null);
 
@@ -678,6 +763,7 @@ const DisputesPage = () => {
         content: editableContent,
         response_type: letterResponseType,
         violation_id: letterViolation?.violation_id || null,
+        test_context: testMode,
       });
       setLastSaved(new Date());
       setLetterWordCount(editableContent.split(/\s+/).filter(w => w).length);
@@ -706,11 +792,11 @@ const DisputesPage = () => {
     );
   };
 
-  const getDeadlineChip = (days, trackingStarted) => {
-    if (!trackingStarted) {
-      return <Chip label="Not Started" size="small" color="info" variant="outlined" />;
+  const getDeadlineChip = (days, trackingStarted, deadlineDate) => {
+    if (!trackingStarted || deadlineDate === null) {
+      return <Chip label="Clock not started" size="small" color="info" variant="outlined" />;
     }
-    if (days === null) return <Chip label="N/A" size="small" variant="outlined" />;
+    if (days === null) return <Chip label="Clock not started" size="small" color="info" variant="outlined" />;
 
     let color = 'default';
     let variant = 'outlined';
@@ -723,7 +809,7 @@ const DisputesPage = () => {
 
     return (
       <Chip
-        label={`${days} days`}
+        label={formatDeadlineDate(deadlineDate)}
         size="small"
         color={color}
         variant={variant}
@@ -863,7 +949,7 @@ const DisputesPage = () => {
                       />
                     </TableCell>
                     <TableCell>{getStateChip(dispute.current_state)}</TableCell>
-                    <TableCell align="center">{getDeadlineChip(dispute.days_to_deadline, dispute.tracking_started)}</TableCell>
+                    <TableCell align="center">{getDeadlineChip(dispute.days_to_deadline, dispute.tracking_started, dispute.deadline_date)}</TableCell>
                     <TableCell>{getStatusChip(dispute.status)}</TableCell>
                     <TableCell>
                       {formatDateTime(dispute.created_at)}
@@ -905,6 +991,8 @@ const DisputesPage = () => {
                           onResponseLogged={handleResponseLogged}
                           onStartTracking={handleOpenTrackingDialog}
                           onGenerateLetter={handleOpenLetterDialog}
+                          testMode={testMode}
+                          onTestModeChange={setTestMode}
                         />
                       </Collapse>
                     </TableCell>
@@ -928,7 +1016,7 @@ const DisputesPage = () => {
         </DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-            Enter the date you mailed the dispute letter. The 30-day response clock will begin from this date.
+            Enter the date you mailed the dispute letter to start the deadline clock.
           </Typography>
 
           <LocalizationProvider dateAdapter={AdapterDayjs}>
@@ -958,8 +1046,8 @@ const DisputesPage = () => {
           {trackingSendDate && (
             <Alert severity="info" sx={{ mt: 2 }}>
               <Typography variant="body2">
-                <strong>Deadline will be:</strong>{' '}
-                {trackingSendDate.add(30, 'day').format('MMMM D, YYYY')} (30 days from send date)
+                <strong>Deadline:</strong>{' '}
+                {trackingSendDate.add(30, 'day').format('MMMM D, YYYY')}
               </Typography>
             </Alert>
           )}
@@ -1045,6 +1133,37 @@ const DisputesPage = () => {
                 </ul>
               </Alert>
 
+              {/* Test Mode Toggle */}
+              <Paper
+                variant="outlined"
+                sx={{
+                  p: 2,
+                  mt: 2,
+                  bgcolor: testMode ? '#fff3e0' : '#f9fafb',
+                  borderColor: testMode ? 'warning.main' : 'divider',
+                }}
+              >
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={testMode}
+                      onChange={(e) => setTestMode(e.target.checked)}
+                      color="warning"
+                    />
+                  }
+                  label={
+                    <Box>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        Test Mode
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Bypasses deadline validation for preview. Letter cannot be saved or mailed.
+                      </Typography>
+                    </Box>
+                  }
+                />
+              </Paper>
+
               <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 3, gap: 1 }}>
                 <Button onClick={handleCloseLetterDialog}>
                   Cancel
@@ -1054,14 +1173,33 @@ const DisputesPage = () => {
                   onClick={handleGenerateLetter}
                   disabled={letterLoading}
                   disableElevation
+                  color={testMode ? 'warning' : 'primary'}
                   startIcon={letterLoading ? <CircularProgress size={16} /> : <DescriptionIcon />}
                 >
-                  {letterLoading ? 'Generating...' : 'Generate Letter'}
+                  {letterLoading ? 'Generating...' : testMode ? 'Generate Test Letter' : 'Generate Letter'}
                 </Button>
               </Box>
             </Box>
           ) : (
             <Box>
+              {/* Test Mode Banner */}
+              {testMode && (
+                <Alert
+                  severity="warning"
+                  sx={{
+                    borderRadius: 0,
+                    '& .MuiAlert-message': { width: '100%' },
+                  }}
+                >
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                      TEST DOCUMENT – NOT FOR MAILING
+                    </Typography>
+                    <Chip label="Test Mode" size="small" color="warning" />
+                  </Box>
+                </Alert>
+              )}
+
               {/* Post-generation view with full toolbar */}
               <Paper
                 elevation={0}
@@ -1074,7 +1212,7 @@ const DisputesPage = () => {
                 {/* Header with title and action buttons */}
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, flexWrap: 'wrap', gap: 1 }}>
                   <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                    Generated Letter
+                    {testMode ? 'Test Letter Preview' : 'Generated Letter'}
                   </Typography>
                   <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                     <Button
@@ -1122,16 +1260,23 @@ const DisputesPage = () => {
                     >
                       Download
                     </Button>
-                    <Button
-                      size="small"
-                      startIcon={isSaving ? <CircularProgress size={16} /> : <SaveIcon />}
-                      onClick={handleSaveLetter}
-                      variant="contained"
-                      color="success"
-                      disabled={isSaving || !editableContent}
+                    <Tooltip
+                      title={testMode ? 'Test letters cannot be saved. Disable test mode first.' : ''}
+                      arrow
                     >
-                      {isSaving ? 'Saving...' : 'Save'}
-                    </Button>
+                      <span>
+                        <Button
+                          size="small"
+                          startIcon={isSaving ? <CircularProgress size={16} /> : <SaveIcon />}
+                          onClick={handleSaveLetter}
+                          variant="contained"
+                          color="success"
+                          disabled={isSaving || !editableContent || testMode}
+                        >
+                          {isSaving ? 'Saving...' : 'Save'}
+                        </Button>
+                      </span>
+                    </Tooltip>
                   </Box>
                 </Box>
 
