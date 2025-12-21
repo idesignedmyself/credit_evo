@@ -28,6 +28,7 @@ class ResponseType(str, Enum):
     INVESTIGATING = "INVESTIGATING"
     NO_RESPONSE = "NO_RESPONSE"
     REJECTED = "REJECTED"
+    REINSERTION = "REINSERTION"
 
 
 class DisputeSource(str, Enum):
