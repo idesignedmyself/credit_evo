@@ -8,12 +8,21 @@ ROLE: U.S. consumer credit compliance enforcement engine.
 - Cites statutes in canonical USC format only
 - Treats all violations as assertions unless explicitly marked "resolved"
 - Assumes recipient is legally sophisticated
+
+Phase 2 Integration:
+- VERIFIED and REJECTED letters support contradiction-first narratives
+- Contradictions appear in "PROVABLE FACTUAL INACCURACIES" section after header
+- NO_RESPONSE, REINSERTION, DELETED remain unchanged
 """
 
 from datetime import datetime
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, TYPE_CHECKING
 from uuid import UUID
 import textwrap
+
+# Type hint for Contradiction without creating import dependency
+if TYPE_CHECKING:
+    from ..audit.contradiction_engine import Contradiction
 
 
 # Canonical entity names (legal names for correspondence)
@@ -175,6 +184,93 @@ This letter was generated in test mode for preview purposes only.
 Do not mail, save to production records, or use for escalation.
 ════════════════════════════════════════════════════════════════════════════════
 """
+
+
+# =============================================================================
+# PHASE 2: CONTRADICTION NARRATIVE FORMATTER
+# =============================================================================
+
+# Severity display order (CRITICAL first)
+SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+
+
+def format_contradiction_section(contradictions: List[Any]) -> Optional[str]:
+    """
+    Format contradictions into "PROVABLE FACTUAL INACCURACIES" section.
+
+    Args:
+        contradictions: List of Contradiction objects or dicts with fields:
+            - type, severity, description, impact, proof_hint (optional)
+
+    Returns:
+        Formatted section string, or None if no contradictions
+    """
+    if not contradictions:
+        return None
+
+    # Sort by severity (CRITICAL → HIGH → MEDIUM → LOW)
+    def get_severity_key(c):
+        if hasattr(c, 'severity'):
+            sev = c.severity.value if hasattr(c.severity, 'value') else str(c.severity)
+        elif isinstance(c, dict):
+            sev = c.get('severity', 'low')
+            sev = sev.value if hasattr(sev, 'value') else str(sev)
+        else:
+            sev = 'low'
+        return SEVERITY_ORDER.get(sev.lower(), 99)
+
+    sorted_contradictions = sorted(contradictions, key=get_severity_key)
+
+    section = f"""PROVABLE FACTUAL INACCURACIES
+{'=' * 50}
+
+The following data elements reported by the furnisher are factually impossible and cannot be verified because they are demonstrably false:
+"""
+
+    for i, c in enumerate(sorted_contradictions, 1):
+        # Extract fields (support both Contradiction objects and dicts)
+        if hasattr(c, 'description'):
+            # Contradiction dataclass
+            severity = c.severity.value if hasattr(c.severity, 'value') else str(c.severity)
+            description = c.description
+            impact = c.impact
+            proof_hint = getattr(c, 'proof_hint', None)
+            rule_code = getattr(c, 'rule_code', None)
+            bureau_claim = getattr(c, 'bureau_claim', None)
+            contradiction = getattr(c, 'contradiction', None)
+        else:
+            # Dict format
+            severity = c.get('severity', 'MEDIUM')
+            severity = severity.value if hasattr(severity, 'value') else str(severity)
+            description = c.get('description', '')
+            impact = c.get('impact', '')
+            proof_hint = c.get('proof_hint')
+            rule_code = c.get('rule_code')
+            bureau_claim = c.get('bureau_claim')
+            contradiction = c.get('contradiction')
+
+        severity_upper = severity.upper()
+
+        section += f"\n{i}. [{severity_upper}] {description}"
+
+        # Add bureau claim vs contradiction if available (facts first)
+        if bureau_claim and contradiction:
+            section += f"\n   • Reported: {bureau_claim}"
+            section += f"\n   • Actual: {contradiction}"
+
+        # Add impact
+        if impact:
+            section += f"\n   • Impact: {impact}"
+
+        # Add proof hint if present (optional)
+        if proof_hint:
+            section += f"\n   • Evidence: {proof_hint}"
+
+    section += f"""
+
+These inaccuracies are not matters of interpretation or opinion. They represent mathematical or temporal impossibilities that cannot be verified through any reasonable investigation because they are objectively false."""
+
+    return section
 
 
 class ResponseLetterGenerator:
@@ -509,7 +605,8 @@ def generate_verified_response_letter(
     entity_name: str,
     original_violations: List[Dict[str, Any]],
     dispute_date: datetime,
-    response_date: datetime
+    response_date: datetime,
+    contradictions: Optional[List[Any]] = None,
 ) -> str:
     """
     Generate enforcement letter for VERIFIED response scenario.
@@ -520,13 +617,16 @@ def generate_verified_response_letter(
     - Original violations referenced as facts, not separate violation entries
     - No damages lecture, single rights-preservation sentence
     - No regulatory cc at this stage
-    """
-    generator = ResponseLetterGenerator()
 
+    Phase 2 Integration:
+    - If contradictions provided, inserts PROVABLE FACTUAL INACCURACIES section after header
+    - Facts first, statutes second
+    - Contradictions sorted by severity (CRITICAL → HIGH → MEDIUM)
+    """
     # Canonicalize entity name
     canonical_entity = canonicalize_entity_name(entity_name)
 
-    # Build facts from original violations (referenced, not separate entries)
+    # Build disputed items with auto-assigned statutes
     disputed_items_facts = []
     for v in original_violations:
         v_type = v.get("violation_type", v.get("type", ""))
@@ -548,38 +648,136 @@ def generate_verified_response_letter(
 
         disputed_items_facts.append(item_desc)
 
-    # Single violation entry: Verification Without Reasonable Investigation
-    # This is the ONLY statutory theory for VERIFIED response letters
-    violations = [{
-        "type": "verification_without_reasonable_investigation",
-        "statute": "fcra_611_a_1_A",  # 15 U.S.C. § 1681i(a)(1)(A)
-        "facts": [
-            f"Written dispute submitted on {dispute_date.strftime('%B %d, %Y')}",
-            f"Response received on {response_date.strftime('%B %d, %Y')} claiming verification of disputed information",
-            f"{canonical_entity} failed to conduct a reasonable reinvestigation as required by statute",
-            "The disputed items include:",
-        ] + [f"    • {item}" for item in disputed_items_facts]
-    }]
+    # Build the letter content directly (custom structure for VERIFIED with contradictions)
+    letter_parts = []
 
-    demanded_actions = [
-        "Disclosure of the method of verification used for each disputed item",
-        "Production of all documents relied upon in the purported verification",
-        "Identification of the furnisher(s) contacted and date(s) of contact",
-        "Immediate reinvestigation using procedures that constitute a reasonable investigation",
-        "Written results of reinvestigation within fifteen (15) days"
-    ]
+    # Header
+    today = datetime.now().strftime("%B %d, %Y")
+    consumer_name = consumer.get('name', '[CONSUMER NAME]')
+    consumer_address = consumer.get('address', '[CONSUMER ADDRESS]')
 
-    return generator.generate_enforcement_letter(
-        consumer=consumer,
-        entity_type=entity_type,
-        entity_name=canonical_entity,
-        violations=violations,
-        demanded_actions=demanded_actions,
-        dispute_date=dispute_date,
-        response_date=response_date,
-        response_type="VERIFIED",
-        include_willful_notice=True
-    )
+    header = f"""{consumer_name}
+{consumer_address}
+
+{today}
+
+{canonical_entity}
+Consumer Dispute Department
+[ADDRESS ON FILE]
+
+Via Certified Mail, Return Receipt Requested"""
+    letter_parts.append(header)
+
+    # Subject line
+    subject = "RE: FORMAL NOTICE OF STATUTORY VIOLATION - Verification Without Reasonable Investigation"
+    letter_parts.append(subject)
+
+    # PHASE 2: Insert PROVABLE FACTUAL INACCURACIES section if contradictions exist
+    contradiction_section = format_contradiction_section(contradictions)
+    if contradiction_section:
+        letter_parts.append(contradiction_section)
+
+    # Opening paragraph
+    opening = f"""On {dispute_date.strftime('%B %d, %Y')}, {consumer_name} submitted a written dispute to {canonical_entity} regarding inaccurate information appearing in {consumer_name}'s consumer file.
+
+{canonical_entity}, as a credit reporting agency subject to the Fair Credit Reporting Act (FCRA), 15 U.S.C. § 1681 et seq., bears specific statutory obligations upon receipt of a consumer dispute.
+
+{canonical_entity}'s verification response fails to satisfy its statutory obligations and compounds its liability."""
+    letter_parts.append(opening)
+
+    # STATUTORY FRAMEWORK - lead with contradictions context if present
+    if contradiction_section:
+        statutory_framework = f"""STATUTORY FRAMEWORK
+{'=' * 50}
+
+Under 15 U.S.C. § 1681i(a)(1)(A), upon receiving notice of a dispute, a consumer reporting agency shall conduct a reasonable reinvestigation to determine whether the disputed information is inaccurate.
+
+The provable factual inaccuracies documented above demonstrate that no reasonable investigation was conducted. Information that is mathematically or temporally impossible cannot be "verified" through any legitimate investigative process. {canonical_entity}'s claim of verification is therefore facially deficient."""
+    else:
+        statutory_framework = f"""STATUTORY FRAMEWORK
+{'=' * 50}
+
+Under 15 U.S.C. § 1681i(a)(1)(A), upon receiving notice of a dispute, a consumer reporting agency shall conduct a reasonable reinvestigation to determine whether the disputed information is inaccurate.
+
+{canonical_entity}'s claim of verification fails to satisfy this statutory standard."""
+    letter_parts.append(statutory_framework)
+
+    # VIOLATION SECTION
+    violation_section = f"""STATUTORY VIOLATION
+{'=' * 50}
+
+Violation: Verification Without Reasonable Investigation
+Statute: 15 U.S.C. § 1681i(a)(1)(A)
+
+Established Facts:
+    - Written dispute submitted on {dispute_date.strftime('%B %d, %Y')}
+    - Response received on {response_date.strftime('%B %d, %Y')} claiming verification of disputed information
+    - {canonical_entity} failed to conduct a reasonable reinvestigation as required by statute
+
+Disputed Items:"""
+
+    for item in disputed_items_facts:
+        violation_section += f"\n    • {item}"
+
+    letter_parts.append(violation_section)
+
+    # TIMELINE SECTION
+    timeline = f"""TIMELINE OF EVENTS
+{'-' * 50}
+
+Dispute Submitted: {dispute_date.strftime('%B %d, %Y')}
+Response Received: {response_date.strftime('%B %d, %Y')}
+Response Type: VERIFIED (Claimed)"""
+    letter_parts.append(timeline)
+
+    # DEMANDED ACTIONS
+    demands = f"""DEMANDED ACTIONS
+{'-' * 50}
+
+The following actions are demanded within fifteen (15) days of receipt of this notice:
+
+1. Disclosure of the method of verification used for each disputed item
+
+2. Production of all documents relied upon in the purported verification
+
+3. Identification of the furnisher(s) contacted and date(s) of contact
+
+4. Immediate reinvestigation using procedures that constitute a reasonable investigation
+
+5. Written results of reinvestigation within fifteen (15) days"""
+    letter_parts.append(demands)
+
+    # RIGHTS PRESERVATION
+    rights = f"""RIGHTS PRESERVATION
+{'-' * 50}
+
+Nothing in this correspondence shall be construed as a waiver of any rights or remedies available under 15 U.S.C. §§ 1681n or 1681o for negligent or willful noncompliance."""
+    letter_parts.append(rights)
+
+    # CLOSING
+    closing = f"""RESPONSE REQUIRED
+{'-' * 50}
+
+A written response addressing each demanded action is required within fifteen (15) days of receipt of this notice. Failure to respond or inadequate response will be documented and may be submitted as evidence in subsequent proceedings.
+
+All future correspondence regarding this matter should be directed to the undersigned at the address provided above.
+
+
+
+Respectfully submitted,
+
+
+
+____________________________________
+{consumer_name}
+
+Enclosures:
+- Copy of original dispute letter
+- Certified mail receipt
+- Supporting documentation"""
+    letter_parts.append(closing)
+
+    return "\n\n".join(letter_parts)
 
 
 def generate_rejected_response_letter(
@@ -592,6 +790,7 @@ def generate_rejected_response_letter(
     rejection_reason: str = None,
     has_5_day_notice: bool = False,
     has_specific_reason: bool = False,
+    contradictions: Optional[List[Any]] = None,
 ) -> str:
     """
     Generate enforcement letter for REJECTED (Frivolous/Irrelevant) response scenario.
@@ -604,6 +803,11 @@ def generate_rejected_response_letter(
     - All violations assigned statutes (no empty statutes)
     - No damages lecture, single rights-preservation sentence
     - No regulatory cc at this stage
+
+    Phase 2 Integration:
+    - If contradictions provided, inserts PROVABLE FACTUAL INACCURACIES section after header
+    - Facts first, statutes second
+    - Contradictions sorted by severity (CRITICAL → HIGH → MEDIUM)
     """
     # Canonicalize entity name
     canonical_entity = canonicalize_entity_name(entity_name)
@@ -655,14 +859,35 @@ Via Certified Mail, Return Receipt Requested"""
     subject = "RE: FORMAL NOTICE OF STATUTORY VIOLATION - Improper Frivolous/Irrelevant Determination"
     letter_parts.append(subject)
 
+    # PHASE 2: Insert PROVABLE FACTUAL INACCURACIES section if contradictions exist
+    contradiction_section = format_contradiction_section(contradictions)
+    if contradiction_section:
+        letter_parts.append(contradiction_section)
+
     # Opening paragraph
     opening = f"""On {dispute_date.strftime('%B %d, %Y')}, {consumer_name} submitted a written dispute to {canonical_entity} regarding inaccurate information appearing in {consumer_name}'s consumer file.
 
 {canonical_entity}'s determination that this dispute is frivolous or irrelevant fails to comply with statutory requirements."""
     letter_parts.append(opening)
 
-    # STATUTORY FRAMEWORK SECTION (new requirement)
-    statutory_framework = f"""STATUTORY FRAMEWORK
+    # STATUTORY FRAMEWORK SECTION - lead with contradictions context if present
+    if contradiction_section:
+        statutory_framework = f"""STATUTORY FRAMEWORK
+{'=' * 50}
+
+Under 15 U.S.C. § 1681i(a)(3)(B), a consumer reporting agency may treat a dispute as frivolous or irrelevant ONLY if:
+
+(i) The consumer fails to provide sufficient information to investigate the disputed information; AND
+
+(ii) The agency provides written notice to the consumer within five (5) business days that:
+    (A) Informs the consumer of the determination and reasons for it; AND
+    (B) Identifies any information required to investigate the disputed item.
+
+The provable factual inaccuracies documented above demonstrate that the disputed information is objectively false. A dispute identifying mathematically or temporally impossible data cannot be deemed "frivolous" - such data must be deleted regardless of furnisher confirmation.
+
+{canonical_entity} has failed to satisfy these statutory prerequisites for a valid frivolous determination."""
+    else:
+        statutory_framework = f"""STATUTORY FRAMEWORK
 {'=' * 50}
 
 Under 15 U.S.C. § 1681i(a)(3)(B), a consumer reporting agency may treat a dispute as frivolous or irrelevant ONLY if:

@@ -133,6 +133,37 @@ class ViolationType(str, Enum):
     POST_SETTLEMENT_NEGATIVE = "post_settlement_negative"  # Late markers reported AFTER account closed/settled
     MISSING_TRADELINE_INCONSISTENCY = "missing_tradeline_inconsistency"  # Account missing from some bureaus (explains score gaps)
 
+    # ==========================================================================
+    # PHASE-1 DETERMINISTIC CONTRADICTIONS
+    # These are PROVABLE IMPOSSIBILITIES - math/logic violations that force deletion
+    # ==========================================================================
+
+    # Temporal Impossibilities (CRITICAL) - T-series
+    PAYMENT_HISTORY_EXCEEDS_ACCOUNT_AGE = "payment_history_exceeds_account_age"  # T2: More history months than account has existed
+    CHARGEOFF_BEFORE_LAST_PAYMENT = "chargeoff_before_last_payment"  # T3: Charged off before last payment was made
+    DELINQUENCY_LADDER_INVERSION = "delinquency_ladder_inversion"  # T4: 90-day date before 30-day date (impossible sequence)
+
+    # DOFD/Aging Contradictions (HIGH) - D-series
+    DOFD_INFERRED_MISMATCH = "dofd_inferred_mismatch"  # D2: Reported DOFD != first late inferred from payment history
+    # Note: D1 (Missing DOFD with negative status) uses existing CHARGEOFF_MISSING_DOFD
+    # Note: D3 (Over 7 years) uses existing OBSOLETE_ACCOUNT
+
+    # Mathematical Impossibilities (HIGH) - M-series
+    BALANCE_EXCEEDS_LEGAL_MAX = "balance_exceeds_legal_max"  # M1: Balance > max possible with interest cap
+    BALANCE_INCREASE_AFTER_CHARGEOFF = "balance_increase_after_chargeoff"  # M2: Balance went UP after chargeoff without activity
+
+    # Status/Field Contradictions (MEDIUM) - S-series
+    PAID_STATUS_WITH_DELINQUENCIES = "paid_status_with_delinquencies"  # S1: Status=Paid but late payments exist in history
+    CLOSED_ACCOUNT_POST_ACTIVITY = "closed_account_post_activity"  # S2: Activity reported after account was closed
+
+    # PHASE-2.1 ADDITIONAL CONTRADICTIONS
+    # Stale/Outdated Data (MEDIUM) - X-series
+    STALE_DATA = "stale_data"  # X1: Last activity older than recent status updates
+    # Missing Original Creditor Elevated (MEDIUM) - K-series
+    MISSING_ORIGINAL_CREDITOR_ELEVATED = "missing_original_creditor_elevated"  # K1: Collection/debt buyer without OC
+    # Missing Scheduled Payment Contradiction (MEDIUM) - P-series
+    MISSING_SCHEDULED_PAYMENT_CONTRADICTION = "missing_scheduled_payment_contradiction"  # P1: Scheduled payment exists but no history
+
 
 class Severity(str, Enum):
     CRITICAL = "critical"  # Highest severity - potential legal violations
