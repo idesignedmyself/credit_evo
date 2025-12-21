@@ -541,6 +541,220 @@ File: `app/routers/letters.py`
 | Paid medical still reporting | `app/services/audit/rules.py` (`SingleBureauRules.check_medical_debt_compliance`) |
 | Post-settlement negative (zombie history) | `app/services/audit/rules.py` (`SingleBureauRules.check_post_settlement_reporting`) |
 | Missing tradeline (cross-bureau gap) | `app/services/audit/cross_bureau_rules.py` (`CrossBureauRules.check_missing_tradelines`) |
+| Contradiction Engine (all rules) | `app/services/audit/contradiction_engine.py` |
+| Phase 1 contradictions (D1-A2) | `app/services/audit/contradiction_engine.py` (`_check_phase1_contradictions`) |
+| Phase 2.1 contradictions (X1, K1, P1) | `app/services/audit/contradiction_engine.py` (`_check_phase21_contradictions`) |
+| Contradiction ViolationType enums | `app/models/ssot.py` |
+| Primary remedy determination | `app/services/enforcement/response_letter_generator.py` (`determine_primary_remedy`) |
+| Dynamic demanded actions | `app/services/enforcement/response_letter_generator.py` (`generate_demanded_actions`) |
+
+---
+
+## Contradiction Engine (Dec 2025)
+
+### Overview
+
+The Contradiction Engine is a deterministic audit system that detects internal data contradictions within tradeline data. Unlike violation rules that check regulatory compliance, contradictions identify logical impossibilities that prove data inaccuracy.
+
+**Primary File:** `app/services/audit/contradiction_engine.py`
+
+### Architecture
+
+```
+app/services/audit/
+├── contradiction_engine.py    # Contradiction detection engine
+├── rules.py                   # Existing violation rules (separate)
+└── engine.py                  # Main audit orchestration
+```
+
+### Contradiction vs Violation
+
+| Aspect | Violation | Contradiction |
+|--------|-----------|---------------|
+| What it detects | Regulatory non-compliance | Logical impossibility |
+| Example | Missing DOFD (Metro 2 required) | Balance increased after charge-off |
+| Legal basis | FCRA §623, Metro 2 standards | Data accuracy / self-refutation |
+| Use case | Initial dispute letter | Response enforcement letter |
+
+### Phase 1 Contradictions (Core Rules)
+
+| ID | Name | Severity | Detection Logic |
+|----|------|----------|-----------------|
+| D1 | Missing DOFD on Derogatory | CRITICAL | Derogatory status but no DOFD date |
+| T1 | DOFD Before Open Date | HIGH | DOFD predates account open date |
+| S1 | Status/Balance Contradiction | HIGH | Chargeoff/Collection but $0 balance |
+| S2 | Closed Status Active Payments | HIGH | Closed status with recent scheduled payment |
+| B1 | Negative Balance Contradiction | HIGH | Balance reported as negative |
+| M1 | Balance Exceeds Original (Collection) | HIGH | Collection balance > original debt |
+| M2 | Balance Increase After Chargeoff | HIGH | Balance increased post-chargeoff |
+| A1 | Impossible Payment History | MEDIUM | Payments reported before account opened |
+| A2 | Payment Amount Exceeds Balance | MEDIUM | Payment > balance (installment only) |
+
+### Phase 2.1 Contradictions (Additional Rules)
+
+| ID | Name | Severity | Detection Logic |
+|----|------|----------|-----------------|
+| X1 | Stale Data | MEDIUM | Last activity date older than status updates |
+| K1 | Missing Original Creditor Elevated | MEDIUM | Collection/debt buyer without original creditor |
+| P1 | Missing Scheduled Payment | MEDIUM | Scheduled payment exists but no payment history |
+
+### Key Classes
+
+**ContradictionEngine:**
+```python
+class ContradictionEngine:
+    """Deterministic contradiction detection engine."""
+
+    def analyze_account(self, account: Dict[str, Any]) -> List[Contradiction]:
+        """Run all contradiction checks on a single account."""
+
+    def analyze_accounts(self, accounts: List[Dict[str, Any]]) -> Dict[str, List[Contradiction]]:
+        """Run contradiction analysis on multiple accounts."""
+```
+
+**Contradiction (dataclass):**
+```python
+@dataclass
+class Contradiction:
+    rule_id: str           # e.g., "D1", "T1", "M2"
+    rule_name: str         # e.g., "MISSING_DOFD_DEROGATORY"
+    severity: str          # CRITICAL, HIGH, MEDIUM
+    field_a: str           # First field in contradiction
+    value_a: Any           # Value of first field
+    field_b: str           # Second field in contradiction
+    value_b: Any           # Value of second field
+    explanation: str       # Human-readable explanation
+    violation_type: str    # ViolationType enum value
+```
+
+### Detection Methods (contradiction_engine.py)
+
+| Method | Rules Checked | Lines |
+|--------|---------------|-------|
+| `_check_phase1_contradictions()` | D1, T1, S1, S2, B1, M1, M2, A1, A2 | ~50-200 |
+| `_check_phase21_contradictions()` | X1, K1, P1 | ~200-300 |
+| `_check_d1_missing_dofd()` | D1 | Individual |
+| `_check_t1_dofd_before_open()` | T1 | Individual |
+| `_check_s1_status_balance()` | S1 | Individual |
+| `_check_s2_closed_active_payments()` | S2 | Individual |
+| `_check_b1_negative_balance()` | B1 | Individual |
+| `_check_m1_balance_exceeds_original()` | M1 | Individual |
+| `_check_m2_balance_increase_chargeoff()` | M2 | Individual |
+| `_check_a1_impossible_payment_history()` | A1 | Individual |
+| `_check_a2_payment_exceeds_balance()` | A2 | Individual |
+| `_check_x1_stale_data()` | X1 | Individual |
+| `_check_k1_missing_original_creditor_elevated()` | K1 | Individual |
+| `_check_p1_missing_scheduled_payment()` | P1 | Individual |
+
+### ViolationType Enums (ssot.py)
+
+Phase 1 and 2.1 contradictions are mapped to ViolationType enums for consistency:
+
+```python
+# PHASE-1 CONTRADICTIONS
+MISSING_DOFD_DEROGATORY = "missing_dofd_derogatory"  # D1: CRITICAL
+DOFD_BEFORE_OPEN_DATE = "dofd_before_open_date"      # T1: HIGH
+STATUS_BALANCE_CONTRADICTION = "status_balance_contradiction"  # S1: HIGH
+CLOSED_STATUS_ACTIVE_PAYMENTS = "closed_status_active_payments"  # S2: HIGH
+NEGATIVE_BALANCE_CONTRADICTION = "negative_balance_contradiction"  # B1: HIGH
+BALANCE_EXCEEDS_ORIGINAL_COLLECTION = "balance_exceeds_original_collection"  # M1: HIGH
+BALANCE_INCREASE_AFTER_CHARGEOFF = "balance_increase_after_chargeoff"  # M2: HIGH
+IMPOSSIBLE_PAYMENT_HISTORY = "impossible_payment_history"  # A1: MEDIUM
+PAYMENT_AMOUNT_EXCEEDS_BALANCE = "payment_amount_exceeds_balance"  # A2: MEDIUM
+
+# PHASE-2.1 ADDITIONAL CONTRADICTIONS
+STALE_DATA = "stale_data"  # X1: MEDIUM
+MISSING_ORIGINAL_CREDITOR_ELEVATED = "missing_original_creditor_elevated"  # K1: MEDIUM
+MISSING_SCHEDULED_PAYMENT_CONTRADICTION = "missing_scheduled_payment_contradiction"  # P1: MEDIUM
+```
+
+### Quick Reference - Contradiction Engine
+
+| Task | File |
+|------|------|
+| Add new contradiction rule | `app/services/audit/contradiction_engine.py` |
+| Add ViolationType for contradiction | `app/models/ssot.py` |
+| View contradiction severity levels | `app/services/audit/contradiction_engine.py` → `Severity` class |
+| Run contradiction analysis | `ContradictionEngine().analyze_account(account)` |
+| Test contradictions | `test_contradiction_engine.py` |
+
+---
+
+## Phase 3: Deterministic Demand Prioritization (Dec 2025)
+
+### Overview
+
+Phase 3 introduces deterministic demand prioritization that analyzes contradiction severity to determine the primary remedy and ordered Demanded Actions for VERIFIED and REJECTED response letters.
+
+**Primary File:** `app/services/enforcement/response_letter_generator.py`
+
+### Primary Remedy Types
+
+| Remedy | When Applied |
+|--------|--------------|
+| `IMMEDIATE_DELETION` | Any CRITICAL contradiction OR 2+ HIGH contradictions |
+| `CORRECTION_WITH_DOCUMENTATION` | 1 HIGH contradiction OR any MEDIUM contradictions |
+| `STANDARD_PROCEDURAL` | No contradictions detected |
+
+### Determination Rules (Deterministic)
+
+```python
+def determine_primary_remedy(contradictions: Optional[List[Any]]) -> str:
+    """
+    Rules:
+    1. If any contradiction has severity = CRITICAL → IMMEDIATE_DELETION
+    2. Else if 2+ contradictions have severity = HIGH → IMMEDIATE_DELETION
+    3. Else if 1 HIGH or any MEDIUM contradictions exist → CORRECTION_WITH_DOCUMENTATION
+    4. Else → STANDARD_PROCEDURAL (fall back to statutory demands)
+    """
+```
+
+### Demanded Actions by Remedy
+
+**IMMEDIATE_DELETION:**
+1. Immediately delete the disputed tradeline
+2. Provide written confirmation within 5 business days
+3. Notify all entities to whom data was furnished
+
+**CORRECTION_WITH_DOCUMENTATION:**
+1. Correct and update all inaccurate data fields
+2. Provide documentation supporting corrections
+3. Furnish corrected data to all agencies
+
+**STANDARD_PROCEDURAL:**
+1. Complete investigation within statutory timeframe
+2. Provide results in writing per 15 USC §1681i(a)(6)
+
+### Integration with Response Letters
+
+Only VERIFIED and REJECTED letters use Phase 3 logic:
+
+```python
+# In generate_verified_letter():
+primary_remedy = determine_primary_remedy(contradictions)
+actions = generate_demanded_actions(primary_remedy, canonical_entity, "VERIFIED")
+demands = format_demanded_actions_section(actions)
+letter_parts.append(demands)
+```
+
+NO_RESPONSE and REINSERTION letters remain unchanged (they have fixed statutory demands).
+
+### Key Functions (response_letter_generator.py)
+
+| Function | Purpose | Lines |
+|----------|---------|-------|
+| `determine_primary_remedy()` | Analyze contradictions → remedy type | ~100-140 |
+| `generate_demanded_actions()` | Remedy → ordered action list | ~145-200 |
+| `format_demanded_actions_section()` | Action list → formatted letter section | ~205-230 |
+
+### Quick Reference - Phase 3
+
+| Task | File |
+|------|------|
+| Modify remedy determination logic | `app/services/enforcement/response_letter_generator.py` → `determine_primary_remedy()` |
+| Add new remedy type | `app/services/enforcement/response_letter_generator.py` → `PrimaryRemedy` class |
+| Modify demanded actions | `app/services/enforcement/response_letter_generator.py` → `generate_demanded_actions()` |
+| Test Phase 3 logic | `test_contradiction_engine.py` → Phase 3 tests |
 
 ---
 
