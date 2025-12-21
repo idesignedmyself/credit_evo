@@ -396,6 +396,60 @@ through any reasonable investigation because they are objectively false.
 
 ---
 
+## Phase 3: Deterministic Demand Prioritization
+
+Phase 3 determines the **primary remedy** (DELETE vs CORRECT vs DOCUMENT) based on contradiction severity and orders the Demanded Actions section accordingly.
+
+### Remedy Determination Rules
+
+| Condition | Primary Remedy |
+|-----------|---------------|
+| Any CRITICAL contradiction | IMMEDIATE_DELETION |
+| 2+ HIGH contradictions | IMMEDIATE_DELETION |
+| 1 HIGH or any MEDIUM | CORRECTION_WITH_DOCUMENTATION |
+| No contradictions | STANDARD_PROCEDURAL |
+
+### Usage
+
+```python
+from app.services.enforcement.response_letter_generator import (
+    determine_primary_remedy,
+    generate_demanded_actions,
+    PrimaryRemedy,
+)
+
+# Determine remedy from contradictions
+remedy = determine_primary_remedy(contradictions)
+
+# Generate ordered demands
+actions = generate_demanded_actions(remedy, "TransUnion LLC", "VERIFIED")
+```
+
+### Demanded Actions by Remedy
+
+**IMMEDIATE_DELETION:**
+1. IMMEDIATE DELETION of disputed tradeline(s)
+2. Written confirmation of deletion within 5 business days
+3. Notification to parties who received reports in preceding 6 months
+4. Disclosure of verification method (VERIFIED) / Withdrawal of frivolous determination (REJECTED)
+
+**CORRECTION_WITH_DOCUMENTATION:**
+1. Immediate correction with supporting documentation
+2. Production of all documents relied upon
+3. Identification of furnisher(s) contacted
+4. Method disclosure / Investigation results
+
+**STANDARD_PROCEDURAL:**
+- Falls back to standard statutory demands (no contradiction-based prioritization)
+
+### Integration
+
+- Only affects VERIFIED and REJECTED letters
+- NO_RESPONSE and REINSERTION remain unchanged
+- Remedy determination is deterministic and auditable
+
+---
+
 ## Testing
 
 Run the test suite:
@@ -410,32 +464,35 @@ Expected output:
 ============================================================
 PHASE-1 CONTRADICTION ENGINE TEST SUITE
 ============================================================
-  [PASS] T1-T4, D1-D3, M1-M2, S1-S2, Clean Account, Sorting
   TOTAL: 13/13 tests passed
 ============================================================
 
 ============================================================
 PHASE-2.1 ADDITIONAL CONTRADICTION RULES
 ============================================================
-  [PASS] X1 (Stale Data)
-  [PASS] K1 (Missing OC Elevated)
-  [PASS] K1 (OC Present - No Violation)
-  [PASS] P1 (Missing Scheduled Payment)
-  [PASS] P1 (Has History - No Violation)
   TOTAL: 5/5 tests passed
+============================================================
+
+============================================================
+PHASE-3: DETERMINISTIC DEMAND PRIORITIZATION
+============================================================
+  [PASS] CRITICAL → IMMEDIATE_DELETION
+  [PASS] 2+ HIGH → IMMEDIATE_DELETION
+  [PASS] 1 HIGH → CORRECTION
+  [PASS] MEDIUM → CORRECTION
+  [PASS] No contradictions → STANDARD
+  [PASS] VERIFIED letter deletion demand
+  [PASS] REJECTED letter correction demand
+  TOTAL: 7/7 tests passed
 ============================================================
 
 ============================================================
 PHASE 2: CONTRADICTION-FIRST LETTER INTEGRATION TESTS
 ============================================================
-  [PASS] VERIFIED with contradictions
-  [PASS] VERIFIED without contradictions
-  [PASS] REJECTED with contradictions
-  [PASS] NO_RESPONSE unchanged
   TOTAL: 4/4 tests passed
 ============================================================
 
-GRAND TOTAL: 22/22 tests passed
+GRAND TOTAL: 29/29 tests passed
 ```
 
 ---

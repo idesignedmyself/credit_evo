@@ -495,6 +495,287 @@ def run_phase21_tests():
     return passed == total
 
 
+# =============================================================================
+# PHASE 3: DEMAND PRIORITIZATION TESTS
+# =============================================================================
+
+def test_phase3_critical_severity_deletion():
+    """Phase 3: CRITICAL severity → IMMEDIATE DELETION."""
+    print("\n=== Phase 3: CRITICAL → IMMEDIATE DELETION ===")
+
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "response_letter_generator",
+        "app/services/enforcement/response_letter_generator.py"
+    )
+    rlg = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(rlg)
+
+    # T1 is CRITICAL severity
+    account = {
+        "account_id": "TEST-CRITICAL",
+        "creditor_name": "Test Bank",
+        "open_date": "2023-01-15",
+        "dofd": "2022-06-01",  # Before open = CRITICAL
+    }
+
+    contradictions = detect_contradictions(account)
+    remedy = rlg.determine_primary_remedy(contradictions)
+
+    print(f"  1 CRITICAL contradiction")
+    print(f"  Remedy: {remedy}")
+    print(f"  Expected: IMMEDIATE_DELETION")
+
+    return remedy == rlg.PrimaryRemedy.IMMEDIATE_DELETION
+
+
+def test_phase3_two_high_severity_deletion():
+    """Phase 3: 2+ HIGH severity → IMMEDIATE DELETION."""
+    print("\n=== Phase 3: 2+ HIGH → IMMEDIATE DELETION ===")
+
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "response_letter_generator",
+        "app/services/enforcement/response_letter_generator.py"
+    )
+    rlg = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(rlg)
+
+    # Create account with 2 HIGH contradictions
+    # D1 (missing DOFD) and M2 (balance increase after chargeoff) are both HIGH
+    account = {
+        "account_id": "TEST-TWO-HIGH",
+        "creditor_name": "Collection Agency",
+        "status": "Chargeoff",
+        "dofd": None,  # D1 - HIGH
+        "chargeoff_balance": 5000,
+        "reported_balance": 8000,  # M2 - HIGH
+    }
+
+    contradictions = detect_contradictions(account)
+    high_count = sum(1 for c in contradictions if c.severity.value.lower() == 'high')
+    remedy = rlg.determine_primary_remedy(contradictions)
+
+    print(f"  HIGH contradictions: {high_count}")
+    print(f"  Remedy: {remedy}")
+    print(f"  Expected: IMMEDIATE_DELETION (if 2+ HIGH)")
+
+    return remedy == rlg.PrimaryRemedy.IMMEDIATE_DELETION and high_count >= 2
+
+
+def test_phase3_one_high_correction():
+    """Phase 3: 1 HIGH → CORRECTION WITH DOCUMENTATION."""
+    print("\n=== Phase 3: 1 HIGH → CORRECTION ===")
+
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "response_letter_generator",
+        "app/services/enforcement/response_letter_generator.py"
+    )
+    rlg = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(rlg)
+
+    # Create account with only 1 HIGH contradiction (M2)
+    # Note: Include dofd to avoid triggering D1 (missing DOFD)
+    account = {
+        "account_id": "TEST-ONE-HIGH",
+        "creditor_name": "Test Creditor",
+        "status": "Chargeoff",
+        "dofd": "2023-01-01",  # Has DOFD to avoid D1
+        "open_date": "2020-01-01",  # Open date before DOFD to avoid T1
+        "chargeoff_balance": 5000,
+        "reported_balance": 8000,  # M2 - HIGH (60% increase)
+    }
+
+    contradictions = detect_contradictions(account)
+    high_count = sum(1 for c in contradictions if c.severity.value.lower() == 'high')
+    remedy = rlg.determine_primary_remedy(contradictions)
+
+    print(f"  HIGH contradictions: {high_count}")
+    print(f"  Remedy: {remedy}")
+    print(f"  Expected: CORRECTION_WITH_DOCUMENTATION (if exactly 1 HIGH)")
+
+    return remedy == rlg.PrimaryRemedy.CORRECTION_WITH_DOCUMENTATION and high_count == 1
+
+
+def test_phase3_medium_only_correction():
+    """Phase 3: MEDIUM only → CORRECTION WITH DOCUMENTATION."""
+    print("\n=== Phase 3: MEDIUM → CORRECTION ===")
+
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "response_letter_generator",
+        "app/services/enforcement/response_letter_generator.py"
+    )
+    rlg = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(rlg)
+
+    # Create account with only MEDIUM contradiction (S1 or X1)
+    account = {
+        "account_id": "TEST-MEDIUM",
+        "creditor_name": "Test Creditor",
+        "status": "Paid",
+        "payment_history": [
+            {"status": "30", "month": 1, "year": 2023},
+        ],  # S1 - MEDIUM
+    }
+
+    contradictions = detect_contradictions(account)
+    remedy = rlg.determine_primary_remedy(contradictions)
+
+    print(f"  1 MEDIUM contradiction (S1)")
+    print(f"  Remedy: {remedy}")
+    print(f"  Expected: CORRECTION_WITH_DOCUMENTATION")
+
+    return remedy == rlg.PrimaryRemedy.CORRECTION_WITH_DOCUMENTATION
+
+
+def test_phase3_no_contradictions_standard():
+    """Phase 3: No contradictions → STANDARD PROCEDURAL."""
+    print("\n=== Phase 3: No Contradictions → STANDARD ===")
+
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "response_letter_generator",
+        "app/services/enforcement/response_letter_generator.py"
+    )
+    rlg = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(rlg)
+
+    remedy = rlg.determine_primary_remedy(None)
+
+    print(f"  No contradictions")
+    print(f"  Remedy: {remedy}")
+    print(f"  Expected: STANDARD_PROCEDURAL")
+
+    # Also test empty list
+    remedy_empty = rlg.determine_primary_remedy([])
+    print(f"  Empty list remedy: {remedy_empty}")
+
+    return (remedy == rlg.PrimaryRemedy.STANDARD_PROCEDURAL and
+            remedy_empty == rlg.PrimaryRemedy.STANDARD_PROCEDURAL)
+
+
+def test_phase3_verified_letter_deletion_demand():
+    """Phase 3: VERIFIED letter with CRITICAL → leads with IMMEDIATE DELETION."""
+    print("\n=== Phase 3: VERIFIED Letter with Deletion Demand ===")
+
+    from datetime import datetime, timedelta
+
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "response_letter_generator",
+        "app/services/enforcement/response_letter_generator.py"
+    )
+    rlg = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(rlg)
+
+    # T1 is CRITICAL
+    account = {
+        "account_id": "TEST-LETTER",
+        "creditor_name": "Test Bank",
+        "open_date": "2023-01-15",
+        "dofd": "2022-06-01",
+    }
+
+    contradictions = detect_contradictions(account)
+
+    letter = rlg.generate_verified_response_letter(
+        consumer={"name": "Test User", "address": "123 Test St"},
+        entity_type="CRA",
+        entity_name="TransUnion",
+        original_violations=[{"violation_type": "test", "creditor_name": "Test"}],
+        dispute_date=datetime.now() - timedelta(days=45),
+        response_date=datetime.now() - timedelta(days=10),
+        contradictions=contradictions,
+    )
+
+    has_immediate_deletion = "IMMEDIATE DELETION" in letter
+    deletion_before_other = letter.find("IMMEDIATE DELETION") < letter.find("Disclosure of")
+
+    print(f"  Has 'IMMEDIATE DELETION': {has_immediate_deletion}")
+    print(f"  Deletion is first demand: {deletion_before_other}")
+
+    return has_immediate_deletion and deletion_before_other
+
+
+def test_phase3_rejected_letter_correction_demand():
+    """Phase 3: REJECTED letter with MEDIUM → leads with correction demand."""
+    print("\n=== Phase 3: REJECTED Letter with Correction Demand ===")
+
+    from datetime import datetime, timedelta
+
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "response_letter_generator",
+        "app/services/enforcement/response_letter_generator.py"
+    )
+    rlg = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(rlg)
+
+    # S1 is MEDIUM
+    account = {
+        "account_id": "TEST-MEDIUM-LETTER",
+        "creditor_name": "Test Creditor",
+        "status": "Paid",
+        "payment_history": [{"status": "30", "month": 1, "year": 2023}],
+    }
+
+    contradictions = detect_contradictions(account)
+
+    letter = rlg.generate_rejected_response_letter(
+        consumer={"name": "Test User", "address": "123 Test St"},
+        entity_type="CRA",
+        entity_name="Experian",
+        original_violations=[{"violation_type": "test", "creditor_name": "Test"}],
+        dispute_date=datetime.now() - timedelta(days=30),
+        rejection_date=datetime.now() - timedelta(days=5),
+        contradictions=contradictions,
+    )
+
+    has_correction = "Immediate correction" in letter
+    no_immediate_deletion = "IMMEDIATE DELETION" not in letter
+
+    print(f"  Has 'Immediate correction': {has_correction}")
+    print(f"  No 'IMMEDIATE DELETION': {no_immediate_deletion}")
+
+    return has_correction and no_immediate_deletion
+
+
+def run_phase3_tests():
+    """Run Phase 3 demand prioritization tests."""
+    print("\n" + "=" * 60)
+    print("PHASE-3: DETERMINISTIC DEMAND PRIORITIZATION")
+    print("=" * 60)
+
+    results = {
+        "CRITICAL → IMMEDIATE_DELETION": test_phase3_critical_severity_deletion(),
+        "2+ HIGH → IMMEDIATE_DELETION": test_phase3_two_high_severity_deletion(),
+        "1 HIGH → CORRECTION": test_phase3_one_high_correction(),
+        "MEDIUM → CORRECTION": test_phase3_medium_only_correction(),
+        "No contradictions → STANDARD": test_phase3_no_contradictions_standard(),
+        "VERIFIED letter deletion demand": test_phase3_verified_letter_deletion_demand(),
+        "REJECTED letter correction demand": test_phase3_rejected_letter_correction_demand(),
+    }
+
+    print("\n" + "=" * 60)
+    print("PHASE-3 TEST RESULTS")
+    print("=" * 60)
+
+    passed = sum(1 for v in results.values() if v)
+    total = len(results)
+
+    for test_name, passed_flag in results.items():
+        status = "PASS" if passed_flag else "FAIL"
+        print(f"  [{status}] {test_name}")
+
+    print("\n" + "-" * 60)
+    print(f"  TOTAL: {passed}/{total} tests passed")
+    print("=" * 60)
+
+    return passed == total
+
+
 def run_all_tests():
     """Run all contradiction engine tests."""
     print("=" * 60)
@@ -770,9 +1051,12 @@ if __name__ == "__main__":
     # Run Phase 2.1 tests (new rules)
     phase21_success = run_phase21_tests()
 
+    # Run Phase 3 tests (demand prioritization)
+    phase3_success = run_phase3_tests()
+
     # Run Phase 2 tests (letter integration)
     phase2_success = run_phase2_tests()
 
     # Exit with success only if all tests pass
-    all_passed = phase1_success and phase21_success and phase2_success
+    all_passed = phase1_success and phase21_success and phase3_success and phase2_success
     sys.exit(0 if all_passed else 1)

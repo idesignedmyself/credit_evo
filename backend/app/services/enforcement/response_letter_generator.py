@@ -273,6 +273,192 @@ These inaccuracies are not matters of interpretation or opinion. They represent 
     return section
 
 
+# =============================================================================
+# PHASE 3: DETERMINISTIC DEMAND PRIORITIZATION
+# =============================================================================
+
+class PrimaryRemedy:
+    """Primary remedy types determined by contradiction severity."""
+    IMMEDIATE_DELETION = "IMMEDIATE_DELETION"
+    CORRECTION_WITH_DOCUMENTATION = "CORRECTION_WITH_DOCUMENTATION"
+    STANDARD_PROCEDURAL = "STANDARD_PROCEDURAL"
+
+
+def determine_primary_remedy(contradictions: Optional[List[Any]]) -> str:
+    """
+    Determine primary remedy based on contradiction severity.
+
+    Rules (deterministic):
+    1. If any contradiction has severity = CRITICAL → IMMEDIATE DELETION
+    2. Else if 2+ contradictions have severity = HIGH → IMMEDIATE DELETION
+    3. Else if 1 HIGH or any MEDIUM contradictions exist → CORRECTION WITH DOCUMENTATION
+    4. Else → Fall back to standard procedural/statutory demands
+
+    Args:
+        contradictions: List of Contradiction objects or dicts
+
+    Returns:
+        PrimaryRemedy constant string
+    """
+    if not contradictions:
+        return PrimaryRemedy.STANDARD_PROCEDURAL
+
+    # Count by severity
+    critical_count = 0
+    high_count = 0
+    medium_count = 0
+
+    for c in contradictions:
+        # Extract severity (support both Contradiction objects and dicts)
+        if hasattr(c, 'severity'):
+            sev = c.severity.value if hasattr(c.severity, 'value') else str(c.severity)
+        elif isinstance(c, dict):
+            sev = c.get('severity', 'low')
+            sev = sev.value if hasattr(sev, 'value') else str(sev)
+        else:
+            sev = 'low'
+
+        sev_lower = sev.lower()
+
+        if sev_lower == 'critical':
+            critical_count += 1
+        elif sev_lower == 'high':
+            high_count += 1
+        elif sev_lower == 'medium':
+            medium_count += 1
+
+    # Apply deterministic rules
+    # Rule 1: Any CRITICAL → IMMEDIATE DELETION
+    if critical_count > 0:
+        return PrimaryRemedy.IMMEDIATE_DELETION
+
+    # Rule 2: 2+ HIGH → IMMEDIATE DELETION
+    if high_count >= 2:
+        return PrimaryRemedy.IMMEDIATE_DELETION
+
+    # Rule 3: 1 HIGH or any MEDIUM → CORRECTION WITH DOCUMENTATION
+    if high_count >= 1 or medium_count >= 1:
+        return PrimaryRemedy.CORRECTION_WITH_DOCUMENTATION
+
+    # Rule 4: Fallback
+    return PrimaryRemedy.STANDARD_PROCEDURAL
+
+
+def generate_demanded_actions(
+    primary_remedy: str,
+    entity_name: str,
+    response_type: str = "VERIFIED",
+) -> List[str]:
+    """
+    Generate demanded actions ordered by primary remedy.
+
+    Args:
+        primary_remedy: PrimaryRemedy constant
+        entity_name: Canonical entity name for letter
+        response_type: VERIFIED or REJECTED
+
+    Returns:
+        List of demanded action strings, ordered by priority
+    """
+    actions = []
+
+    if primary_remedy == PrimaryRemedy.IMMEDIATE_DELETION:
+        # Lead with deletion demand - no ambiguity
+        actions.append(
+            f"IMMEDIATE DELETION of the disputed tradeline(s) from {entity_name}'s consumer file. "
+            f"The factual impossibilities documented herein cannot be corrected because they are "
+            f"demonstrably false. Under 15 U.S.C. § 1681e(b), information that cannot be verified "
+            f"as accurate must be deleted."
+        )
+        actions.append(
+            "Written confirmation of deletion sent to consumer within five (5) business days"
+        )
+        actions.append(
+            "Notification to all parties who received consumer reports containing the disputed "
+            "information within the preceding six (6) months"
+        )
+        # Secondary demands
+        if response_type == "VERIFIED":
+            actions.append(
+                "Disclosure of the purported verification method, if any was actually conducted"
+            )
+        elif response_type == "REJECTED":
+            actions.append(
+                "Withdrawal of the frivolous/irrelevant determination"
+            )
+
+    elif primary_remedy == PrimaryRemedy.CORRECTION_WITH_DOCUMENTATION:
+        # Lead with correction demand + documentation requirement
+        actions.append(
+            "Immediate correction of the inaccurate data elements identified herein, with "
+            "supporting documentation demonstrating the corrected information is complete and accurate"
+        )
+        actions.append(
+            f"Production of all documents relied upon by {entity_name} in reporting the disputed information"
+        )
+        actions.append(
+            "Identification of the furnisher(s) contacted and date(s) of contact during any investigation"
+        )
+        if response_type == "VERIFIED":
+            actions.append(
+                "Disclosure of the method of verification used for each disputed item"
+            )
+            actions.append(
+                "Written results of reinvestigation within fifteen (15) days"
+            )
+        elif response_type == "REJECTED":
+            actions.append(
+                "Withdrawal of the frivolous/irrelevant determination and immediate investigation "
+                "of the disputed items in compliance with 15 U.S.C. § 1681i(a)(1)(A)"
+            )
+            actions.append(
+                "Written results of investigation within thirty (30) days of original dispute submission"
+            )
+
+    else:
+        # Standard procedural demands (fallback - no contradictions)
+        if response_type == "VERIFIED":
+            actions = [
+                "Disclosure of the method of verification used for each disputed item",
+                "Production of all documents relied upon in the purported verification",
+                "Identification of the furnisher(s) contacted and date(s) of contact",
+                "Immediate reinvestigation using procedures that constitute a reasonable investigation",
+                "Written results of reinvestigation within fifteen (15) days",
+            ]
+        elif response_type == "REJECTED":
+            actions = [
+                "Withdrawal of the frivolous/irrelevant determination",
+                "Immediate investigation of the disputed items in compliance with 15 U.S.C. § 1681i(a)(1)(A)",
+                "Written results of investigation within thirty (30) days of original dispute submission",
+                "If maintaining frivolous determination: Written notice identifying SPECIFIC information "
+                "required to investigate, as mandated by § 1681i(a)(3)(B)(ii)",
+            ]
+
+    return actions
+
+
+def format_demanded_actions_section(actions: List[str]) -> str:
+    """
+    Format demanded actions into letter section.
+
+    Args:
+        actions: List of action strings
+
+    Returns:
+        Formatted section string
+    """
+    section = f"""DEMANDED ACTIONS
+{'-' * 50}
+
+The following actions are demanded within fifteen (15) days of receipt of this notice:
+"""
+
+    for i, action in enumerate(actions, 1):
+        section += f"\n\n{i}. {action}"
+
+    return section
+
+
 class ResponseLetterGenerator:
     """
     Generates formal FCRA enforcement letters based on dispute responses.
@@ -730,21 +916,10 @@ Response Received: {response_date.strftime('%B %d, %Y')}
 Response Type: VERIFIED (Claimed)"""
     letter_parts.append(timeline)
 
-    # DEMANDED ACTIONS
-    demands = f"""DEMANDED ACTIONS
-{'-' * 50}
-
-The following actions are demanded within fifteen (15) days of receipt of this notice:
-
-1. Disclosure of the method of verification used for each disputed item
-
-2. Production of all documents relied upon in the purported verification
-
-3. Identification of the furnisher(s) contacted and date(s) of contact
-
-4. Immediate reinvestigation using procedures that constitute a reasonable investigation
-
-5. Written results of reinvestigation within fifteen (15) days"""
+    # PHASE 3: DEMANDED ACTIONS - Dynamic based on contradiction severity
+    primary_remedy = determine_primary_remedy(contradictions)
+    actions = generate_demanded_actions(primary_remedy, canonical_entity, "VERIFIED")
+    demands = format_demanded_actions_section(actions)
     letter_parts.append(demands)
 
     # RIGHTS PRESERVATION
@@ -931,16 +1106,10 @@ Rejection Received: {rejection_date.strftime('%B %d, %Y')}
 Identification of Required Information: NOT PROVIDED"""
     letter_parts.append(timeline)
 
-    # DEMANDED ACTIONS
-    demands = f"""DEMANDED ACTIONS
-{'-' * 50}
-
-The following actions are demanded within fifteen (15) days of receipt of this notice:
-
-1. Withdrawal of the frivolous/irrelevant determination
-2. Immediate investigation of the disputed items in compliance with 15 U.S.C. § 1681i(a)(1)(A)
-3. Written results of investigation within thirty (30) days of original dispute submission
-4. If maintaining frivolous determination: Written notice identifying SPECIFIC information required to investigate, as mandated by § 1681i(a)(3)(B)(ii)"""
+    # PHASE 3: DEMANDED ACTIONS - Dynamic based on contradiction severity
+    primary_remedy = determine_primary_remedy(contradictions)
+    actions = generate_demanded_actions(primary_remedy, canonical_entity, "REJECTED")
+    demands = format_demanded_actions_section(actions)
     letter_parts.append(demands)
 
     # RIGHTS PRESERVATION (single sentence, no damages lecture)
