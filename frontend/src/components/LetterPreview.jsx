@@ -88,7 +88,29 @@ const LetterPreview = ({ letter, isLoading, error, onRegenerate, isRegenerating,
         y += lineHeight;
       });
 
-      const filename = `dispute_letter_${new Date().toISOString().split('T')[0]}.pdf`;
+      // Build filename based on response type
+      const responseType = letter?.response_type || currentLetter?.response_type;
+      const dateStr = new Date().toISOString().split('T')[0];
+      let filename;
+
+      if (responseType) {
+        // Map response type to readable filename prefix
+        const typeMap = {
+          'NO_RESPONSE': 'no_response',
+          'VERIFIED': 'verified',
+          'REJECTED': 'frivolous_rejected',
+          'REINSERTION': 'reinsertion',
+          'REINSERTION_NO_NOTICE': 'reinsertion',
+          'DELETED': 'deleted',
+          'UPDATED': 'updated',
+          'INVESTIGATING': 'investigating',
+        };
+        const prefix = typeMap[responseType] || responseType.toLowerCase();
+        filename = `${prefix}_dispute_letter_${dateStr}.pdf`;
+      } else {
+        filename = `dispute_letter_${dateStr}.pdf`;
+      }
+
       pdf.save(filename);
     }
   };
@@ -104,11 +126,27 @@ const LetterPreview = ({ letter, isLoading, error, onRegenerate, isRegenerating,
   };
 
   const handlePrint = () => {
+    // Build title based on response type
+    const responseType = letter?.response_type || currentLetter?.response_type;
+    const typeLabels = {
+      'NO_RESPONSE': 'No Response',
+      'VERIFIED': 'Verified',
+      'REJECTED': 'Frivolous/Rejected',
+      'REINSERTION': 'Reinsertion',
+      'REINSERTION_NO_NOTICE': 'Reinsertion',
+      'DELETED': 'Deleted',
+      'UPDATED': 'Updated',
+      'INVESTIGATING': 'Investigating',
+    };
+    const title = responseType
+      ? `${typeLabels[responseType] || responseType} Dispute Letter`
+      : 'Dispute Letter';
+
     const printWindow = window.open('', '_blank');
     printWindow.document.write(`
       <html>
         <head>
-          <title>Dispute Letter</title>
+          <title>${title}</title>
           <style>
             body { font-family: 'Times New Roman', serif; font-size: 12pt; line-height: 1.6; margin: 1in; }
             p { margin-bottom: 1em; }
