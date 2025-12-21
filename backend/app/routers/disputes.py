@@ -547,21 +547,17 @@ async def generate_response_letter(
         )
 
     elif response_type in ("REINSERTION_NO_NOTICE", "REINSERTION") or request.letter_type == "reinsertion":
-        # Get reinsertion response data if logged
-        response = db.query(DisputeResponseDB).filter(
-            DisputeResponseDB.dispute_id == dispute_id,
-            DisputeResponseDB.response_type == ResponseType.REINSERTION
-        ).first()
-
-        # Get reinsertion watch data for deletion date
+        # Reinsertion is detected via ReinsertionWatch, not logged as a response type
+        # Get reinsertion watch data for deletion and detection dates
         from ..models.db_models import ReinsertionWatchDB
 
         watch = db.query(ReinsertionWatchDB).filter(
             ReinsertionWatchDB.dispute_id == dispute_id
         ).first()
 
-        # Determine dates
-        reinsertion_date = response.response_date if response else datetime.now().date()
+        # Determine dates from watch data
+        # reinsertion_detected comes from watch, deletion date from monitoring_start
+        reinsertion_date = watch.reinsertion_detected if watch and hasattr(watch, 'reinsertion_detected') and watch.reinsertion_detected else datetime.now().date()
         deletion_date = watch.monitoring_start if watch else None
         notice_received_date = None  # Will be set if notice was received
 
