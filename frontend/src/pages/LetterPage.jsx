@@ -32,6 +32,7 @@ const LetterPage = () => {
   const [searchParams] = useSearchParams();
   const letterId = searchParams.get('letterId');
   const letterType = searchParams.get('type'); // 'response' for response letters
+  const responseTypeFromUrl = searchParams.get('responseType'); // REINSERTION, VERIFIED, etc.
   const isResponseLetter = letterType === 'response';
   const navigate = useNavigate();
   const [isCreatingDispute, setIsCreatingDispute] = React.useState(false);
@@ -354,7 +355,11 @@ const LetterPage = () => {
 
       {/* Letter Preview */}
       <LetterPreview
-        letter={currentLetter}
+        letter={{
+          ...currentLetter,
+          // Use URL param as fallback if letter doesn't have response_type
+          response_type: currentLetter?.response_type || responseTypeFromUrl,
+        }}
         isLoading={isGeneratingLetter}
         error={error}
         onRegenerate={currentLetter ? handleRegenerate : null}
