@@ -582,6 +582,175 @@ def generate_verified_response_letter(
     )
 
 
+def generate_rejected_response_letter(
+    consumer: Dict[str, str],
+    entity_type: str,
+    entity_name: str,
+    original_violations: List[Dict[str, Any]],
+    dispute_date: datetime,
+    rejection_date: datetime,
+    rejection_reason: str = None,
+    has_5_day_notice: bool = False,
+    has_specific_reason: bool = False,
+) -> str:
+    """
+    Generate enforcement letter for REJECTED (Frivolous/Irrelevant) response scenario.
+
+    Production-ready implementation:
+    - Single statutory theory: Improper Frivolous Determination under §1681i(a)(3)(B)
+    - Canonical entity names (TransUnion LLC, Equifax Inc., Experian LLC)
+    - Statutory Framework section explaining legal requirements
+    - Timeline noting failure to provide written notice with specific deficiencies
+    - All violations assigned statutes (no empty statutes)
+    - No damages lecture, single rights-preservation sentence
+    - No regulatory cc at this stage
+    """
+    # Canonicalize entity name
+    canonical_entity = canonicalize_entity_name(entity_name)
+
+    # Build disputed items with auto-assigned statutes
+    disputed_items = []
+    for v in original_violations:
+        v_type = v.get("violation_type", v.get("type", ""))
+        creditor = v.get("creditor_name", "")
+        account_mask = v.get("account_number_masked", "")
+
+        # Auto-assign statute if empty
+        explicit_statute = v.get("primary_statute", v.get("statute", ""))
+        statute = get_statute_for_violation(v_type, explicit_statute)
+
+        item_desc = f"{creditor}" if creditor else "Disputed tradeline"
+        if account_mask:
+            item_desc += f" ({account_mask})"
+        if v_type:
+            item_desc += f" - {v_type.replace('_', ' ').title()}"
+
+        disputed_items.append({
+            "description": item_desc,
+            "statute": statute,
+            "type": v_type,
+        })
+
+    # Build the letter content directly (custom structure for REJECTED)
+    letter_parts = []
+
+    # Header
+    today = datetime.now().strftime("%B %d, %Y")
+    consumer_name = consumer.get('name', '[CONSUMER NAME]')
+    consumer_address = consumer.get('address', '[CONSUMER ADDRESS]')
+
+    header = f"""{consumer_name}
+{consumer_address}
+
+{today}
+
+{canonical_entity}
+Consumer Dispute Department
+[ADDRESS ON FILE]
+
+Via Certified Mail, Return Receipt Requested"""
+    letter_parts.append(header)
+
+    # Subject line
+    subject = "RE: FORMAL NOTICE OF STATUTORY VIOLATION - Improper Frivolous/Irrelevant Determination"
+    letter_parts.append(subject)
+
+    # Opening paragraph
+    opening = f"""On {dispute_date.strftime('%B %d, %Y')}, {consumer_name} submitted a written dispute to {canonical_entity} regarding inaccurate information appearing in {consumer_name}'s consumer file.
+
+{canonical_entity}'s determination that this dispute is frivolous or irrelevant fails to comply with statutory requirements."""
+    letter_parts.append(opening)
+
+    # STATUTORY FRAMEWORK SECTION (new requirement)
+    statutory_framework = f"""STATUTORY FRAMEWORK
+{'=' * 50}
+
+Under 15 U.S.C. § 1681i(a)(3)(B), a consumer reporting agency may treat a dispute as frivolous or irrelevant ONLY if:
+
+(i) The consumer fails to provide sufficient information to investigate the disputed information; AND
+
+(ii) The agency provides written notice to the consumer within five (5) business days that:
+    (A) Informs the consumer of the determination and reasons for it; AND
+    (B) Identifies any information required to investigate the disputed item.
+
+{canonical_entity} has failed to satisfy these statutory prerequisites for a valid frivolous determination."""
+    letter_parts.append(statutory_framework)
+
+    # VIOLATION SECTION - Primary violation is the improper frivolous determination
+    violation_section = f"""STATUTORY VIOLATION
+{'=' * 50}
+
+Violation: Improper Frivolous/Irrelevant Determination
+Statute: 15 U.S.C. § 1681i(a)(3)(B)
+
+Established Facts:
+    - Written dispute submitted on {dispute_date.strftime('%B %d, %Y')}
+    - {canonical_entity} rejected the dispute as frivolous/irrelevant on {rejection_date.strftime('%B %d, %Y')}
+    - {canonical_entity} failed to provide written notice identifying specific information required to investigate
+    - {canonical_entity} failed to identify which element(s) of the dispute were allegedly deficient
+
+Disputed Items:"""
+
+    for item in disputed_items:
+        violation_section += f"\n    • {item['description']} [{item['statute']}]"
+
+    letter_parts.append(violation_section)
+
+    # TIMELINE SECTION
+    timeline = f"""TIMELINE OF EVENTS
+{'-' * 50}
+
+Dispute Submitted: {dispute_date.strftime('%B %d, %Y')}
+Rejection Received: {rejection_date.strftime('%B %d, %Y')}
+5-Day Written Notice with Specific Deficiencies: NOT PROVIDED
+Identification of Required Information: NOT PROVIDED"""
+    letter_parts.append(timeline)
+
+    # DEMANDED ACTIONS
+    demands = f"""DEMANDED ACTIONS
+{'-' * 50}
+
+The following actions are demanded within fifteen (15) days of receipt of this notice:
+
+1. Withdrawal of the frivolous/irrelevant determination
+2. Immediate investigation of the disputed items in compliance with 15 U.S.C. § 1681i(a)(1)(A)
+3. Written results of investigation within thirty (30) days of original dispute submission
+4. If maintaining frivolous determination: Written notice identifying SPECIFIC information required to investigate, as mandated by § 1681i(a)(3)(B)(ii)"""
+    letter_parts.append(demands)
+
+    # RIGHTS PRESERVATION (single sentence, no damages lecture)
+    rights = f"""RIGHTS PRESERVATION
+{'-' * 50}
+
+Nothing in this correspondence shall be construed as a waiver of any rights or remedies available under 15 U.S.C. §§ 1681n or 1681o for negligent or willful noncompliance."""
+    letter_parts.append(rights)
+
+    # CLOSING (no regulatory cc)
+    closing = f"""RESPONSE REQUIRED
+{'-' * 50}
+
+A written response addressing each demanded action is required within fifteen (15) days of receipt of this notice. Failure to respond or inadequate response will be documented and may be submitted as evidence in subsequent proceedings.
+
+All future correspondence regarding this matter should be directed to the undersigned at the address provided above.
+
+
+
+Respectfully submitted,
+
+
+
+____________________________________
+{consumer_name}
+
+Enclosures:
+- Copy of original dispute letter
+- Certified mail receipt
+- Supporting documentation"""
+    letter_parts.append(closing)
+
+    return "\n\n".join(letter_parts)
+
+
 def generate_reinsertion_letter(
     consumer: Dict[str, str],
     entity_name: str,

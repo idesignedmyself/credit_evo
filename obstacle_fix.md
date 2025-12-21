@@ -16,6 +16,7 @@ This document tracks bugs, issues, and obstacles encountered during development 
 8. [B7: MUI Tooltip/Span Wrapper Breaking Select Dropdown](#b7-mui-tooltipspan-wrapper-breaking-select-dropdown)
 9. [B7: Test Mode Toggle Not Accessible for Response Selection](#b7-test-mode-toggle-not-accessible-for-response-selection)
 10. [B7: VERIFIED Letter Production Hardening](#b7-verified-letter-production-hardening)
+11. [B7: REJECTED/FRIVOLOUS Letter Production Hardening](#b7-rejectedfrivolous-letter-production-hardening)
 
 ---
 
@@ -302,6 +303,37 @@ Refactored `generate_verified_response_letter()` for production:
 
 **Files Modified:**
 - `backend/app/services/enforcement/response_letter_generator.py`
+
+---
+
+## B7: REJECTED/FRIVOLOUS Letter Production Hardening
+
+**Date:** December 20, 2024
+
+**Symptom:**
+REJECTED/FRIVOLOUS enforcement letters included:
+- Non-canonical entity names ("TransUnion" instead of "TransUnion LLC")
+- Missing statutory framework explaining §1681i(a)(3)(B) requirements
+- No timeline showing failure to provide required 5-day written notice
+- Violations without assigned statutes
+- Damages language and CFPB/AG cc references
+
+**Root Cause:**
+Letter generator lacked specific handling for REJECTED response type. The frivolous determination requires specific statutory elements: the 5-day notice requirement, identification of specific deficiencies, and proper statutory framework citation.
+
+**Solution:**
+Created new `generate_rejected_response_letter()` function for production:
+1. **Canonical entity names:** Uses shared `canonicalize_entity_name()` function
+2. **STATUTORY FRAMEWORK section:** Full breakdown of 15 U.S.C. § 1681i(a)(3)(B) requirements
+3. **Timeline with deficiency tracking:** Shows "5-Day Written Notice with Specific Deficiencies: NOT PROVIDED"
+4. **Auto-assign statutes:** All disputed items get statute assignments (e.g., Missing DOFD → 15 U.S.C. § 1681e(b))
+5. **Single statutory theory:** Improper Frivolous/Irrelevant Determination under §1681i(a)(3)(B)
+6. **Rights-preservation clause:** Single sentence, no damages lecture
+7. **No regulatory cc:** Clean ending without CFPB/AG references
+
+**Files Modified:**
+- `backend/app/services/enforcement/response_letter_generator.py`
+- `backend/app/routers/disputes.py`
 
 ---
 
