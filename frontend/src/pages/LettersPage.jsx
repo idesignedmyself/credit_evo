@@ -2,7 +2,7 @@
  * Credit Engine 2.0 - Letters Page
  * Displays all saved dispute letters for the user
  */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -22,6 +22,12 @@ import {
   Tooltip,
   Collapse,
   Stack,
+  Divider,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
 } from '@mui/material';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -29,8 +35,14 @@ import AddIcon from '@mui/icons-material/Add';
 import TrackChangesIcon from '@mui/icons-material/TrackChanges';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import GavelIcon from '@mui/icons-material/Gavel';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import PrintIcon from '@mui/icons-material/Print';
+import DownloadIcon from '@mui/icons-material/Download';
+import CloseIcon from '@mui/icons-material/Close';
+import { jsPDF } from 'jspdf';
 import { letterApi } from '../api';
-import { createDisputeFromLetter } from '../api/disputeApi';
+import { createDisputeFromLetter, RESPONSE_TYPES } from '../api/disputeApi';
 
 // Utility to detect if string is a UUID (old data format)
 const isUUID = (str) => {
@@ -58,6 +70,20 @@ const LettersPage = () => {
   const [deletingId, setDeletingId] = useState(null);
   const [trackingId, setTrackingId] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
+  const [expandedResponseId, setExpandedResponseId] = useState(null);
+
+  // Response letter dialog state
+  const [viewDialogOpen, setViewDialogOpen] = useState(false);
+  const [viewingLetter, setViewingLetter] = useState(null);
+
+  // Separate letters by category
+  const disputeLetters = useMemo(() => {
+    return letters.filter(l => !l.letter_category || l.letter_category === 'dispute');
+  }, [letters]);
+
+  const responseLetters = useMemo(() => {
+    return letters.filter(l => l.letter_category === 'response');
+  }, [letters]);
 
   const fetchLetters = async () => {
     setIsLoading(true);
@@ -80,7 +106,12 @@ const LettersPage = () => {
     // Navigate to letter page with letterId
     // Use a placeholder report_id if null (orphaned letters still work via letterId query param)
     const reportId = letter.report_id || 'view';
-    navigate(`/letter/${reportId}?letterId=${letter.letter_id}`);
+    const isResponseLetter = letter.letter_category === 'response';
+    const queryParams = new URLSearchParams({
+      letterId: letter.letter_id,
+      ...(isResponseLetter && { type: 'response', responseType: letter.response_type || '' }),
+    });
+    navigate(`/letter/${reportId}?${queryParams.toString()}`);
   };
 
   const handleDelete = async (letterId) => {
@@ -168,6 +199,34 @@ const LettersPage = () => {
     setExpandedId(expandedId === letterId ? null : letterId);
   };
 
+  const handleToggleResponseExpand = (letterId) => {
+    setExpandedResponseId(expandedResponseId === letterId ? null : letterId);
+  };
+
+  const getResponseTypeChip = (responseType) => {
+    const typeInfo = RESPONSE_TYPES[responseType];
+    const label = typeInfo?.label || responseType?.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) || 'Unknown';
+
+    // Color mapping based on response type
+    const colorMap = {
+      NO_RESPONSE: 'error',
+      VERIFIED: 'warning',
+      DELETED: 'success',
+      UPDATED: 'info',
+      INVESTIGATING: 'default',
+      REJECTED: 'error',
+    };
+
+    return (
+      <Chip
+        label={label}
+        size="small"
+        color={colorMap[responseType] || 'default'}
+        variant="filled"
+      />
+    );
+  };
+
   const getLetterTypeChip = (letterType) => {
     return letterType === 'legal' ? (
       <Chip label="Legal" size="small" color="primary" variant="filled" />
@@ -229,7 +288,9 @@ const LettersPage = () => {
           </Button>
         </Paper>
       ) : (
-        /* Letters Table */
+        <>
+        {/* Dispute Letters Section */}
+        {disputeLetters.length > 0 && (
         <TableContainer
           component={Paper}
           elevation={0}
@@ -249,7 +310,7 @@ const LettersPage = () => {
               </TableRow>
             </TableHead>
             <TableBody>
-              {letters.map((letter, index) => (
+              {disputeLetters.map((letter, index) => (
                 <React.Fragment key={letter.letter_id}>
                   {/* Main Row */}
                   <TableRow
@@ -268,7 +329,7 @@ const LettersPage = () => {
                     </TableCell>
                     <TableCell>
                       <Chip
-                        label={letters.length - index}
+                        label={disputeLetters.length - index}
                         size="small"
                         variant="outlined"
                         sx={{ fontWeight: 600 }}
@@ -337,7 +398,7 @@ const LettersPage = () => {
                       <Collapse in={expandedId === letter.letter_id} timeout="auto" unmountOnExit>
                         <Box sx={{ p: 3, bgcolor: '#fafafa' }}>
                           <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 2 }}>
-                            Violations Disputed in Letter {letters.length - index}
+                            Violations Disputed in Letter {disputeLetters.length - index}
                           </Typography>
                           {(() => {
                             // Filter violation types, excluding UUIDs (old data)
@@ -405,6 +466,137 @@ const LettersPage = () => {
             </TableBody>
           </Table>
         </TableContainer>
+        )}
+
+        {/* Response Letters Section */}
+        {responseLetters.length > 0 && (
+          <>
+            <Divider sx={{ my: 4 }} />
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 3 }}>
+              <GavelIcon color="primary" />
+              <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                Response Letters
+              </Typography>
+              <Chip label={responseLetters.length} size="small" color="primary" />
+            </Box>
+            <TableContainer
+              component={Paper}
+              elevation={0}
+              sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 3 }}
+            >
+              <Table sx={{ minWidth: 650 }}>
+                <TableHead sx={{ bgcolor: '#f9fafb' }}>
+                  <TableRow>
+                    <TableCell sx={{ fontWeight: 'bold', width: 50 }}></TableCell>
+                    <TableCell sx={{ fontWeight: 'bold', width: 80 }}>ID</TableCell>
+                    <TableCell sx={{ fontWeight: 'bold' }}>Entity</TableCell>
+                    <TableCell sx={{ fontWeight: 'bold' }}>Response Type</TableCell>
+                    <TableCell align="center" sx={{ fontWeight: 'bold' }}>Word Count</TableCell>
+                    <TableCell sx={{ fontWeight: 'bold' }}>Created</TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 'bold' }}>Actions</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {responseLetters.map((letter, index) => (
+                    <React.Fragment key={letter.letter_id}>
+                      {/* Main Row */}
+                      <TableRow
+                        sx={{
+                          cursor: 'pointer',
+                          '&:last-child td, &:last-child th': { border: expandedResponseId === letter.letter_id ? 0 : undefined },
+                          bgcolor: expandedResponseId === letter.letter_id ? '#f0f7ff' : 'inherit',
+                        }}
+                        hover
+                        onClick={() => handleToggleResponseExpand(letter.letter_id)}
+                      >
+                        <TableCell>
+                          <IconButton size="small">
+                            {expandedResponseId === letter.letter_id ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                          </IconButton>
+                        </TableCell>
+                        <TableCell>
+                          <Chip
+                            label={responseLetters.length - index}
+                            size="small"
+                            variant="outlined"
+                            color="primary"
+                            sx={{ fontWeight: 600 }}
+                          />
+                        </TableCell>
+                        <TableCell component="th" scope="row" sx={{ fontWeight: 500 }}>
+                          {letter.bureau?.toUpperCase() || 'N/A'}
+                        </TableCell>
+                        <TableCell>{getResponseTypeChip(letter.response_type)}</TableCell>
+                        <TableCell align="center">
+                          <Chip
+                            label={letter.word_count || 0}
+                            size="small"
+                            variant="outlined"
+                          />
+                        </TableCell>
+                        <TableCell color="text.secondary">
+                          {formatDateTime(letter.created_at)}
+                        </TableCell>
+                        <TableCell align="right" onClick={(e) => e.stopPropagation()}>
+                          <IconButton
+                            color="primary"
+                            size="small"
+                            onClick={() => handleView(letter)}
+                            title="View Letter"
+                          >
+                            <VisibilityIcon />
+                          </IconButton>
+                          <IconButton
+                            color="error"
+                            size="small"
+                            onClick={() => handleDelete(letter.letter_id)}
+                            disabled={deletingId === letter.letter_id}
+                            title="Delete Letter"
+                          >
+                            {deletingId === letter.letter_id ? (
+                              <CircularProgress size={20} />
+                            ) : (
+                              <DeleteIcon />
+                            )}
+                          </IconButton>
+                        </TableCell>
+                      </TableRow>
+
+                      {/* Expanded Content Row */}
+                      <TableRow>
+                        <TableCell colSpan={7} sx={{ p: 0, borderBottom: expandedResponseId === letter.letter_id ? '1px solid' : 0, borderColor: 'divider' }}>
+                          <Collapse in={expandedResponseId === letter.letter_id} timeout="auto" unmountOnExit>
+                            <Box sx={{ p: 3, bgcolor: '#fafafa' }}>
+                              <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 2 }}>
+                                Letter Preview
+                              </Typography>
+                              <Paper
+                                variant="outlined"
+                                sx={{
+                                  p: 2,
+                                  maxHeight: 200,
+                                  overflow: 'auto',
+                                  bgcolor: 'white',
+                                  fontFamily: 'monospace',
+                                  fontSize: '0.85rem',
+                                  whiteSpace: 'pre-wrap',
+                                }}
+                              >
+                                {letter.content?.substring(0, 500) || 'No content available'}
+                                {letter.content?.length > 500 && '...'}
+                              </Paper>
+                            </Box>
+                          </Collapse>
+                        </TableCell>
+                      </TableRow>
+                    </React.Fragment>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </>
+        )}
+        </>
       )}
     </Box>
   );

@@ -185,6 +185,23 @@ export const auditLetter = async (disputeId, options = {}) => {
 };
 
 /**
+ * Save a response/enforcement letter to the letters table
+ * @param {string} disputeId - ID of the dispute
+ * @param {Object} options - Save options
+ * @param {string} options.content - Letter content to save
+ * @param {string} options.response_type - Response type (NO_RESPONSE, VERIFIED, etc.)
+ * @param {string} options.violation_id - Specific violation this letter addresses
+ */
+export const saveResponseLetter = async (disputeId, options = {}) => {
+  const response = await apiClient.post(`/disputes/${disputeId}/save-response-letter`, {
+    content: options.content,
+    response_type: options.response_type,
+    violation_id: options.violation_id || null,
+  });
+  return response.data;
+};
+
+/**
  * Letter type options for UI
  */
 export const LETTER_TYPES = {
@@ -210,14 +227,20 @@ export const ENTITY_NAMES = {
   COLLECTOR: [], // Populated from violations
 };
 
+// ENFORCEMENT-READY response types only
+// INVESTIGATING and UPDATED are states, not enforcement outcomes - removed from UI
 export const RESPONSE_TYPES = {
-  DELETED: { value: 'DELETED', label: 'Deleted', description: 'Entity removed the disputed item' },
-  VERIFIED: { value: 'VERIFIED', label: 'Verified', description: 'Entity claims information is accurate' },
-  UPDATED: { value: 'UPDATED', label: 'Updated', description: 'Entity modified the reported data' },
-  INVESTIGATING: { value: 'INVESTIGATING', label: 'Investigating', description: 'Entity claims investigation is ongoing' },
-  NO_RESPONSE: { value: 'NO_RESPONSE', label: 'No Response', description: 'Deadline passed with no communication' },
-  REJECTED: { value: 'REJECTED', label: 'Rejected / Frivolous', description: 'Entity refuses to investigate' },
+  DELETED: { value: 'DELETED', label: 'Deleted', description: 'Entity removed the disputed item', enforcement: false },
+  VERIFIED: { value: 'VERIFIED', label: 'Verified', description: 'Entity claims information is accurate', enforcement: true },
+  NO_RESPONSE: { value: 'NO_RESPONSE', label: 'No Response', description: 'Deadline passed with no communication', enforcement: true },
+  REJECTED: { value: 'REJECTED', label: 'Rejected / Frivolous', description: 'Entity refuses to investigate', enforcement: true },
+  REINSERTION: { value: 'REINSERTION', label: 'Reinsertion', description: 'Previously deleted item reappeared without notice', enforcement: true },
 };
+
+// For dropdowns that should only show enforcement-ready outcomes
+export const ENFORCEMENT_OUTCOMES = Object.fromEntries(
+  Object.entries(RESPONSE_TYPES).filter(([_, v]) => v.enforcement)
+);
 
 export const DISPUTE_SOURCES = {
   DIRECT: { value: 'DIRECT', label: 'Direct to Entity', days: 30 },

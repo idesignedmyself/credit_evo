@@ -25,7 +25,7 @@ import { jsPDF } from 'jspdf';
 import { useUIStore } from '../state';
 import { copyLetterToClipboard, formatToneLabel } from '../utils';
 
-const LetterPreview = ({ letter, isLoading, error, onRegenerate, isRegenerating, stats }) => {
+const LetterPreview = ({ letter, isLoading, error, onRegenerate, isRegenerating, stats, isResponseLetter = false }) => {
   const [copied, setCopied] = React.useState(false);
   const [isEditing, setIsEditing] = React.useState(false);
   const autosaveTimerRef = useRef(null);
@@ -185,7 +185,7 @@ const LetterPreview = ({ letter, isLoading, error, onRegenerate, isRegenerating,
       >
         {/* Action Bar - All buttons together */}
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, flexWrap: 'wrap', gap: 1 }}>
-          <Typography variant="h6">Generated Letter</Typography>
+          <Typography variant="h6">{isResponseLetter ? 'Generated Response Letter' : 'Generated Letter'}</Typography>
           <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             {onRegenerate && (
               <Button

@@ -31,6 +31,8 @@ const LetterPage = () => {
   const { reportId } = useParams();
   const [searchParams] = useSearchParams();
   const letterId = searchParams.get('letterId');
+  const letterType = searchParams.get('type'); // 'response' for response letters
+  const isResponseLetter = letterType === 'response';
   const navigate = useNavigate();
   const [isCreatingDispute, setIsCreatingDispute] = React.useState(false);
   const [disputeError, setDisputeError] = React.useState(null);
@@ -219,23 +221,27 @@ const LetterPage = () => {
       {/* Page Header */}
       <Box sx={{ textAlign: 'center', mb: 4 }}>
         <Typography variant="h4" component="h1" gutterBottom sx={{ fontWeight: 'bold' }}>
-          Generate Dispute Letter
+          {isResponseLetter ? 'Generate Response Letter' : 'Generate Dispute Letter'}
         </Typography>
         <Typography variant="body1" color="text.secondary">
-          Customize and generate your FCRA-compliant dispute letter
+          {isResponseLetter
+            ? 'View your FCRA enforcement correspondence'
+            : 'Customize and generate your FCRA-compliant dispute letter'}
         </Typography>
       </Box>
 
-      {/* Stepper */}
-      <Box sx={{ width: '100%', mb: 4, maxWidth: 600, mx: 'auto' }}>
-        <Stepper activeStep={2} alternativeLabel>
-          {steps.map((label) => (
-            <Step key={label}>
-              <StepLabel>{label}</StepLabel>
-            </Step>
-          ))}
-        </Stepper>
-      </Box>
+      {/* Stepper - Hide for response letters */}
+      {!isResponseLetter && (
+        <Box sx={{ width: '100%', mb: 4, maxWidth: 600, mx: 'auto' }}>
+          <Stepper activeStep={2} alternativeLabel>
+            {steps.map((label) => (
+              <Step key={label}>
+                <StepLabel>{label}</StepLabel>
+              </Step>
+            ))}
+          </Stepper>
+        </Box>
+      )}
 
       {error && (
         <Alert severity="error" sx={{ mb: 3, borderRadius: 2 }}>
@@ -243,72 +249,108 @@ const LetterPage = () => {
         </Alert>
       )}
 
-      {/* Letter Customization Section */}
-      <Box sx={{ mb: 4 }}>
-        <ToneSelector />
-      </Box>
-
-      {/* Action Bar */}
-      <Paper
-        elevation={0}
-        sx={{
-          p: 2,
-          mb: 4,
-          bgcolor: currentLetter ? '#e8f5e9' : '#e3f2fd',
-          border: '1px solid',
-          borderColor: currentLetter ? '#a5d6a7' : '#bbdefb',
-          borderRadius: 2,
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: 2,
-        }}
-      >
-        <Box>
-          <Typography
-            variant="subtitle1"
-            sx={{ fontWeight: 'bold', color: currentLetter ? 'success.dark' : 'primary.main' }}
-          >
-            {currentLetter ? 'Letter Generated' : 'Ready to Generate'}
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            {selectedViolationIds.length} violation{selectedViolationIds.length !== 1 ? 's' : ''} selected
-          </Typography>
+      {/* Letter Customization Section - Hide for response letters */}
+      {!isResponseLetter && (
+        <Box sx={{ mb: 4 }}>
+          <ToneSelector />
         </Box>
-        <Stack direction="row" spacing={1}>
+      )}
+
+      {/* Action Bar - Different for response letters */}
+      {isResponseLetter ? (
+        <Paper
+          elevation={0}
+          sx={{
+            p: 2,
+            mb: 4,
+            bgcolor: '#e8f5e9',
+            border: '1px solid',
+            borderColor: '#a5d6a7',
+            borderRadius: 2,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          }}
+        >
+          <Box>
+            <Typography variant="subtitle1" sx={{ fontWeight: 'bold', color: 'success.dark' }}>
+              Response Letter
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              FCRA enforcement correspondence
+            </Typography>
+          </Box>
           <Button
             variant="text"
             startIcon={<ArrowBackIcon />}
-            onClick={handleBack}
+            onClick={() => navigate('/letters')}
             size="small"
           >
-            Back
+            Back to Letters
           </Button>
-          {currentLetter ? (
-            <Button
-              variant="outlined"
-              size="large"
-              onClick={handleRegenerate}
-              disabled={isGeneratingLetter}
-              startIcon={<AutoAwesomeIcon />}
+        </Paper>
+      ) : (
+        <Paper
+          elevation={0}
+          sx={{
+            p: 2,
+            mb: 4,
+            bgcolor: currentLetter ? '#e8f5e9' : '#e3f2fd',
+            border: '1px solid',
+            borderColor: currentLetter ? '#a5d6a7' : '#bbdefb',
+            borderRadius: 2,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: 2,
+          }}
+        >
+          <Box>
+            <Typography
+              variant="subtitle1"
+              sx={{ fontWeight: 'bold', color: currentLetter ? 'success.dark' : 'primary.main' }}
             >
-              {isGeneratingLetter ? 'Regenerating...' : 'Regenerate'}
-            </Button>
-          ) : (
+              {currentLetter ? 'Letter Generated' : 'Ready to Generate'}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              {selectedViolationIds.length} violation{selectedViolationIds.length !== 1 ? 's' : ''} selected
+            </Typography>
+          </Box>
+          <Stack direction="row" spacing={1}>
             <Button
-              variant="contained"
-              size="large"
-              onClick={handleGenerate}
-              disabled={isGeneratingLetter || selectedViolationIds.length === 0}
-              startIcon={<AutoAwesomeIcon />}
-              disableElevation
+              variant="text"
+              startIcon={<ArrowBackIcon />}
+              onClick={handleBack}
+              size="small"
             >
-              {isGeneratingLetter ? 'Generating...' : 'Generate Letter'}
+              Back
             </Button>
-          )}
-        </Stack>
-      </Paper>
+            {currentLetter ? (
+              <Button
+                variant="outlined"
+                size="large"
+                onClick={handleRegenerate}
+                disabled={isGeneratingLetter}
+                startIcon={<AutoAwesomeIcon />}
+              >
+                {isGeneratingLetter ? 'Regenerating...' : 'Regenerate'}
+              </Button>
+            ) : (
+              <Button
+                variant="contained"
+                size="large"
+                onClick={handleGenerate}
+                disabled={isGeneratingLetter || selectedViolationIds.length === 0}
+                startIcon={<AutoAwesomeIcon />}
+                disableElevation
+              >
+                {isGeneratingLetter ? 'Generating...' : 'Generate Letter'}
+              </Button>
+            )}
+          </Stack>
+        </Paper>
+      )}
 
       {/* Letter Preview */}
       <LetterPreview
@@ -318,47 +360,50 @@ const LetterPage = () => {
         onRegenerate={currentLetter ? handleRegenerate : null}
         isRegenerating={isGeneratingLetter}
         stats={stats}
+        isResponseLetter={isResponseLetter}
       />
 
       {currentLetter && (
         <>
-          {/* Track Dispute CTA */}
-          <Paper
-            elevation={0}
-            sx={{
-              p: 3,
-              mt: 4,
-              borderRadius: 3,
-              border: '2px solid',
-              borderColor: 'primary.main',
-              backgroundColor: '#e3f2fd',
-              textAlign: 'center',
-            }}
-          >
-            <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 1 }}>
-              Track This Dispute
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2, maxWidth: 500, mx: 'auto' }}>
-              Click below to add this letter to your dispute tracker. You'll enter the send date
-              on the Disputes page to start the 30-day response clock.
-            </Typography>
-            {disputeError && (
-              <Alert severity="warning" sx={{ mb: 2, maxWidth: 500, mx: 'auto' }}>
-                {disputeError}
-              </Alert>
-            )}
-            <Button
-              variant="contained"
-              size="large"
-              startIcon={<SendIcon />}
-              onClick={handleTrackDispute}
-              disabled={isCreatingDispute}
-              disableElevation
-              sx={{ px: 4 }}
+          {/* Track Dispute CTA - Hide for response letters (already linked to dispute) */}
+          {!isResponseLetter && (
+            <Paper
+              elevation={0}
+              sx={{
+                p: 3,
+                mt: 4,
+                borderRadius: 3,
+                border: '2px solid',
+                borderColor: 'primary.main',
+                backgroundColor: '#e3f2fd',
+                textAlign: 'center',
+              }}
             >
-              {isCreatingDispute ? 'Creating...' : 'Start Tracking Process'}
-            </Button>
-          </Paper>
+              <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 1 }}>
+                Track This Dispute
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2, maxWidth: 500, mx: 'auto' }}>
+                Click below to add this letter to your dispute tracker. You'll enter the send date
+                on the Disputes page to start the 30-day response clock.
+              </Typography>
+              {disputeError && (
+                <Alert severity="warning" sx={{ mb: 2, maxWidth: 500, mx: 'auto' }}>
+                  {disputeError}
+                </Alert>
+              )}
+              <Button
+                variant="contained"
+                size="large"
+                startIcon={<SendIcon />}
+                onClick={handleTrackDispute}
+                disabled={isCreatingDispute}
+                disableElevation
+                sx={{ px: 4 }}
+              >
+                {isCreatingDispute ? 'Creating...' : 'Start Tracking Process'}
+              </Button>
+            </Paper>
+          )}
 
           {/* Violation Types Summary */}
           {Object.keys(violationsByType).length > 0 && (

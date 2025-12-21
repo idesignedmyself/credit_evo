@@ -948,10 +948,13 @@ async def list_all_letters(
         {
             "letter_id": letter.id,
             "report_id": letter.report_id,  # May be NULL if report was deleted
+            "dispute_id": letter.dispute_id,  # For response letters
             "created_at": letter.created_at.isoformat() if letter.created_at else None,
             "bureau": letter.bureau,
             "tone": letter.tone,
             "letter_type": get_letter_type(letter.tone),
+            "letter_category": getattr(letter, 'letter_category', 'dispute') or 'dispute',  # "dispute" or "response"
+            "response_type": getattr(letter, 'response_type', None),  # For response letters: NO_RESPONSE, VERIFIED, etc.
             "word_count": letter.word_count,
             "violation_count": len(letter.violations_cited or []),
             "violations_cited": letter.violations_cited or [],  # Array of violation type strings
@@ -959,6 +962,7 @@ async def list_all_letters(
             "account_numbers": letter.account_numbers or [],  # Array of masked account numbers
             "accounts": len(letter.accounts_disputed or []),
             "has_edits": letter.edited_content is not None,
+            "content": letter.edited_content or letter.content,  # For previews - returns edited version if exists
         }
         for letter in letters
     ]

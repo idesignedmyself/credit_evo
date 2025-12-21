@@ -182,11 +182,14 @@ class LetterDB(Base):
     id = Column(String(36), primary_key=True)  # UUID
     report_id = Column(String(36), ForeignKey("reports.id", ondelete="SET NULL"), nullable=True)  # Letters persist when reports deleted
     user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)  # Direct ownership for orphaned letters
+    dispute_id = Column(String(36), ForeignKey("disputes.id", ondelete="SET NULL"), nullable=True, index=True)  # For response letters
 
     content = Column(Text, nullable=False)
     edited_content = Column(Text, nullable=True)  # User-edited version
     bureau = Column(String(50), default="transunion")
     tone = Column(String(50), default="formal")
+    letter_category = Column(String(20), default="dispute")  # "dispute" or "response"
+    response_type = Column(String(50), nullable=True)  # For response letters: NO_RESPONSE, VERIFIED, etc.
 
     # Metadata
     accounts_disputed = Column(JSON)  # List of creditor names

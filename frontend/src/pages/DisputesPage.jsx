@@ -46,6 +46,7 @@ import {
   deleteDispute,
   startTracking,
   generateResponseLetter,
+  saveResponseLetter,
   RESPONSE_TYPES,
   ESCALATION_STATES,
   LETTER_TYPES,
@@ -55,6 +56,12 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import DescriptionIcon from '@mui/icons-material/Description';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DownloadIcon from '@mui/icons-material/Download';
+import PrintIcon from '@mui/icons-material/Print';
+import AutorenewIcon from '@mui/icons-material/Autorenew';
+import EditIcon from '@mui/icons-material/Edit';
+import VisibilityIcon from '@mui/icons-material/Visibility';
+import SaveIcon from '@mui/icons-material/Save';
+import { jsPDF } from 'jspdf';
 
 // =============================================================================
 // EXPANDABLE ROW CONTENT
@@ -460,10 +467,15 @@ const DisputesPage = () => {
   const [letterDispute, setLetterDispute] = useState(null);
   const [letterViolation, setLetterViolation] = useState(null);
   const [letterContent, setLetterContent] = useState('');
+  const [editableContent, setEditableContent] = useState('');
   const [letterLoading, setLetterLoading] = useState(false);
   const [letterError, setLetterError] = useState(null);
   const [letterResponseType, setLetterResponseType] = useState('');
   const [copiedToClipboard, setCopiedToClipboard] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [lastSaved, setLastSaved] = useState(null);
+  const [letterWordCount, setLetterWordCount] = useState(0);
 
   useEffect(() => {
     const fetchDisputes = async () => {
@@ -549,9 +561,13 @@ const DisputesPage = () => {
     setLetterDispute(dispute);
     setLetterViolation(violation);
     setLetterContent('');
+    setEditableContent('');
     setLetterError(null);
     setLetterResponseType(responseType || '');
     setCopiedToClipboard(false);
+    setIsEditing(false);
+    setLastSaved(null);
+    setLetterWordCount(0);
     setLetterDialogOpen(true);
   };
 
@@ -560,7 +576,10 @@ const DisputesPage = () => {
     setLetterDispute(null);
     setLetterViolation(null);
     setLetterContent('');
+    setEditableContent('');
     setLetterError(null);
+    setIsEditing(false);
+    setLastSaved(null);
   };
 
   const handleGenerateLetter = async () => {
@@ -577,6 +596,9 @@ const DisputesPage = () => {
         include_willful_notice: true,
       });
       setLetterContent(result.content);
+      setEditableContent(result.content);
+      setLetterWordCount(result.word_count || result.content.split(/\s+/).filter(w => w).length);
+      setLastSaved(null); // Reset last saved when generating new
     } catch (err) {
       console.error('Failed to generate letter:', err);
       setLetterError(err.response?.data?.detail || err.message || 'Failed to generate letter');
@@ -587,7 +609,7 @@ const DisputesPage = () => {
 
   const handleCopyLetter = async () => {
     try {
-      await navigator.clipboard.writeText(letterContent);
+      await navigator.clipboard.writeText(editableContent || letterContent);
       setCopiedToClipboard(true);
       setTimeout(() => setCopiedToClipboard(false), 2000);
     } catch (err) {
@@ -595,16 +617,81 @@ const DisputesPage = () => {
     }
   };
 
-  const handleDownloadLetter = () => {
-    const blob = new Blob([letterContent], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `enforcement_letter_${letterDispute?.entity_name || 'dispute'}_${new Date().toISOString().split('T')[0]}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  const handlePrintLetter = () => {
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Enforcement Letter</title>
+          <style>
+            body { font-family: 'Times New Roman', serif; font-size: 12pt; line-height: 1.6; margin: 1in; }
+            p { margin-bottom: 1em; }
+          </style>
+        </head>
+        <body>
+          <pre style="white-space: pre-wrap; font-family: inherit;">${editableContent || letterContent || ''}</pre>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.print();
+  };
+
+  const handleDownloadPDF = () => {
+    const content = editableContent || letterContent;
+    if (!content) return;
+
+    const pdf = new jsPDF({ unit: 'pt', format: 'letter' });
+    const margin = 50;
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const maxWidth = pageWidth - (margin * 2);
+
+    pdf.setFont('times', 'normal');
+    pdf.setFontSize(12);
+
+    const lines = pdf.splitTextToSize(content, maxWidth);
+    let y = margin;
+    const lineHeight = 18;
+
+    lines.forEach((line) => {
+      if (y + lineHeight > pageHeight - margin) {
+        pdf.addPage();
+        y = margin;
+      }
+      pdf.text(line, margin, y);
+      y += lineHeight;
+    });
+
+    const filename = `enforcement_letter_${letterDispute?.entity_name || 'dispute'}_${new Date().toISOString().split('T')[0]}.pdf`;
+    pdf.save(filename);
+  };
+
+  const handleSaveLetter = async () => {
+    if (!letterDispute || !editableContent) return;
+
+    setIsSaving(true);
+    setLetterError(null);
+
+    try {
+      await saveResponseLetter(letterDispute.id, {
+        content: editableContent,
+        response_type: letterResponseType,
+        violation_id: letterViolation?.violation_id || null,
+      });
+      setLastSaved(new Date());
+      setLetterWordCount(editableContent.split(/\s+/).filter(w => w).length);
+    } catch (err) {
+      console.error('Failed to save letter:', err);
+      setLetterError(err.response?.data?.detail || err.message || 'Failed to save letter');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleEditableContentChange = (newContent) => {
+    setEditableContent(newContent);
+    setLetterWordCount(newContent.split(/\s+/).filter(w => w).length);
   };
 
   const getStateChip = (state) => {
@@ -899,32 +986,20 @@ const DisputesPage = () => {
         maxWidth="md"
         fullWidth
       >
-        <DialogTitle sx={{ fontWeight: 600, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          Generate Enforcement Letter
-          {letterContent && (
-            <Stack direction="row" spacing={1}>
-              <Tooltip title={copiedToClipboard ? 'Copied!' : 'Copy to Clipboard'}>
-                <IconButton size="small" onClick={handleCopyLetter} color={copiedToClipboard ? 'success' : 'default'}>
-                  <ContentCopyIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-              <Tooltip title="Download as Text">
-                <IconButton size="small" onClick={handleDownloadLetter}>
-                  <DownloadIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-            </Stack>
-          )}
-        </DialogTitle>
-        <DialogContent>
+        <DialogContent sx={{ p: 0 }}>
           {letterError && (
-            <Alert severity="error" sx={{ mb: 2 }} onClose={() => setLetterError(null)}>
+            <Alert severity="error" sx={{ m: 2, mb: 0 }} onClose={() => setLetterError(null)}>
               {letterError}
             </Alert>
           )}
 
           {!letterContent ? (
-            <Box>
+            <Box sx={{ p: 3 }}>
+              {/* Pre-generation view */}
+              <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>
+                Generate Enforcement Letter
+              </Typography>
+
               {/* Show violation info */}
               <Paper variant="outlined" sx={{ p: 2, mb: 3, bgcolor: '#f9fafb' }}>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
@@ -969,51 +1044,167 @@ const DisputesPage = () => {
                   <li>Willful noncompliance notice (§616)</li>
                 </ul>
               </Alert>
+
+              <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 3, gap: 1 }}>
+                <Button onClick={handleCloseLetterDialog}>
+                  Cancel
+                </Button>
+                <Button
+                  variant="contained"
+                  onClick={handleGenerateLetter}
+                  disabled={letterLoading}
+                  disableElevation
+                  startIcon={letterLoading ? <CircularProgress size={16} /> : <DescriptionIcon />}
+                >
+                  {letterLoading ? 'Generating...' : 'Generate Letter'}
+                </Button>
+              </Box>
             </Box>
           ) : (
             <Box>
+              {/* Post-generation view with full toolbar */}
               <Paper
-                variant="outlined"
+                elevation={0}
                 sx={{
-                  p: 3,
-                  maxHeight: 500,
-                  overflow: 'auto',
-                  bgcolor: '#fafafa',
-                  fontFamily: 'monospace',
-                  fontSize: '0.85rem',
-                  whiteSpace: 'pre-wrap',
-                  lineHeight: 1.6,
+                  p: 2,
+                  borderBottom: '1px solid',
+                  borderColor: 'divider',
                 }}
               >
-                {letterContent}
+                {/* Header with title and action buttons */}
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, flexWrap: 'wrap', gap: 1 }}>
+                  <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                    Generated Letter
+                  </Typography>
+                  <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                    <Button
+                      size="small"
+                      startIcon={<AutorenewIcon />}
+                      onClick={() => {
+                        setLetterContent('');
+                        setEditableContent('');
+                        setLastSaved(null);
+                      }}
+                      variant="outlined"
+                    >
+                      Regenerate
+                    </Button>
+                    <Button
+                      size="small"
+                      startIcon={isEditing ? <VisibilityIcon /> : <EditIcon />}
+                      onClick={() => setIsEditing(!isEditing)}
+                      variant="outlined"
+                    >
+                      {isEditing ? 'View' : 'Edit'}
+                    </Button>
+                    <Button
+                      size="small"
+                      startIcon={<ContentCopyIcon />}
+                      onClick={handleCopyLetter}
+                      variant="outlined"
+                      color={copiedToClipboard ? 'success' : 'inherit'}
+                    >
+                      {copiedToClipboard ? 'Copied!' : 'Copy'}
+                    </Button>
+                    <Button
+                      size="small"
+                      startIcon={<PrintIcon />}
+                      onClick={handlePrintLetter}
+                      variant="outlined"
+                    >
+                      Print
+                    </Button>
+                    <Button
+                      size="small"
+                      startIcon={<DownloadIcon />}
+                      onClick={handleDownloadPDF}
+                      variant="contained"
+                    >
+                      Download
+                    </Button>
+                    <Button
+                      size="small"
+                      startIcon={isSaving ? <CircularProgress size={16} /> : <SaveIcon />}
+                      onClick={handleSaveLetter}
+                      variant="contained"
+                      color="success"
+                      disabled={isSaving || !editableContent}
+                    >
+                      {isSaving ? 'Saving...' : 'Save'}
+                    </Button>
+                  </Box>
+                </Box>
+
+                {/* Stats row */}
+                <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <Chip label={`${letterWordCount} words`} size="small" />
+                  {lastSaved && (
+                    <Typography variant="caption" color="success.main" sx={{ ml: 'auto' }}>
+                      Last saved: {lastSaved.toLocaleTimeString()}
+                    </Typography>
+                  )}
+                </Box>
               </Paper>
+
+              <Divider />
+
+              {/* Letter Content - Edit or View Mode */}
+              <Box sx={{ p: 2 }}>
+                {isEditing ? (
+                  <TextField
+                    fullWidth
+                    multiline
+                    minRows={20}
+                    maxRows={30}
+                    value={editableContent}
+                    onChange={(e) => handleEditableContentChange(e.target.value)}
+                    variant="outlined"
+                    placeholder="Edit your letter here..."
+                    sx={{
+                      '& .MuiInputBase-root': {
+                        fontFamily: '"Times New Roman", Times, serif',
+                        fontSize: '12pt',
+                        lineHeight: 1.6,
+                        backgroundColor: '#ffffff',
+                      },
+                    }}
+                  />
+                ) : (
+                  <Box
+                    sx={{
+                      bgcolor: '#f8fafc',
+                      border: '1px solid #e2e8f0',
+                      borderRadius: 2,
+                      p: 3,
+                      maxHeight: 500,
+                      overflow: 'auto',
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        bgcolor: 'white',
+                        color: '#111',
+                        fontFamily: '"Times New Roman", Times, serif',
+                        fontSize: '12pt',
+                        lineHeight: 1.8,
+                        whiteSpace: 'pre-wrap',
+                      }}
+                    >
+                      {editableContent || letterContent}
+                    </Box>
+                  </Box>
+                )}
+              </Box>
+
+              {/* Footer actions */}
+              <Box sx={{ display: 'flex', justifyContent: 'flex-end', p: 2, borderTop: '1px solid', borderColor: 'divider' }}>
+                <Button onClick={handleCloseLetterDialog}>
+                  Close
+                </Button>
+              </Box>
             </Box>
           )}
         </DialogContent>
-        <DialogActions sx={{ p: 2.5 }}>
-          <Button onClick={handleCloseLetterDialog}>
-            {letterContent ? 'Close' : 'Cancel'}
-          </Button>
-          {!letterContent && (
-            <Button
-              variant="contained"
-              onClick={handleGenerateLetter}
-              disabled={letterLoading}
-              disableElevation
-              startIcon={letterLoading ? <CircularProgress size={16} /> : <DescriptionIcon />}
-            >
-              {letterLoading ? 'Generating...' : 'Generate Letter'}
-            </Button>
-          )}
-          {letterContent && (
-            <Button
-              variant="outlined"
-              onClick={() => setLetterContent('')}
-            >
-              Generate New
-            </Button>
-          )}
-        </DialogActions>
       </Dialog>
     </Box>
   );

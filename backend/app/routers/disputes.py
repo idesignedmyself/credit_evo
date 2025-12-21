@@ -560,6 +560,9 @@ async def generate_response_letter(
             include_willful_notice=request.include_willful_notice,
         )
 
+    # Calculate word count
+    word_count = len(letter_content.split()) if letter_content else 0
+
     return {
         "dispute_id": dispute_id,
         "letter_type": request.letter_type,
@@ -568,6 +571,91 @@ async def generate_response_letter(
         "generated_at": datetime.now().isoformat(),
         "entity_name": entity_name,
         "entity_type": entity_type,
+        "word_count": word_count,
+        "violations": violations,
+    }
+
+
+# =============================================================================
+# SAVE RESPONSE LETTER
+# =============================================================================
+
+class SaveResponseLetterRequest(BaseModel):
+    """Request to save a response letter."""
+    content: str = Field(..., description="Letter content to save")
+    response_type: str = Field(..., description="Response type (NO_RESPONSE, VERIFIED, etc.)")
+    violation_id: Optional[str] = Field(None, description="Specific violation this letter addresses")
+
+
+@router.post("/{dispute_id}/save-response-letter", response_model=dict)
+async def save_response_letter(
+    dispute_id: str,
+    request: SaveResponseLetterRequest,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user),
+):
+    """
+    Save a response/enforcement letter to the letters table.
+
+    This persists the letter so it appears on the My Letters page.
+    """
+    from ..models.db_models import DisputeDB, LetterDB
+    import uuid
+
+    # Verify dispute exists and user owns it
+    dispute = db.query(DisputeDB).filter(
+        DisputeDB.id == dispute_id,
+        DisputeDB.user_id == current_user.id
+    ).first()
+
+    if not dispute:
+        raise HTTPException(status_code=404, detail="Dispute not found")
+
+    # Get violations for metadata
+    all_violations = dispute.original_violation_data or []
+
+    # Filter to specific violation if provided
+    if request.violation_id:
+        violations = [
+            v for v in all_violations
+            if str(v.get('violation_id', '')) == str(request.violation_id)
+            or str(v.get('id', '')) == str(request.violation_id)
+        ]
+    else:
+        violations = all_violations
+
+    # Build metadata arrays
+    accounts_disputed = list(set(v.get('creditor_name', '') for v in violations if v.get('creditor_name')))
+    violations_cited = [v.get('violation_type', '') for v in violations if v.get('violation_type')]
+    account_numbers = [v.get('account_number_masked', '') for v in violations if v.get('account_number_masked')]
+
+    # Calculate word count
+    word_count = len(request.content.split()) if request.content else 0
+
+    # Create letter record
+    letter_id = str(uuid.uuid4())
+    letter_db = LetterDB(
+        id=letter_id,
+        user_id=current_user.id,
+        dispute_id=dispute_id,
+        content=request.content,
+        bureau=dispute.entity_name or "Unknown",
+        tone="enforcement",
+        letter_category="response",
+        response_type=request.response_type,
+        accounts_disputed=accounts_disputed,
+        violations_cited=violations_cited,
+        account_numbers=account_numbers,
+        word_count=word_count,
+    )
+    db.add(letter_db)
+    db.commit()
+
+    return {
+        "status": "saved",
+        "letter_id": letter_id,
+        "word_count": word_count,
+        "dispute_id": dispute_id,
     }
 
 
