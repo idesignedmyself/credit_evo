@@ -408,6 +408,12 @@ class CopilotRecommendation:
     report_id: Optional[str] = None
     generated_at: datetime = field(default_factory=datetime.utcnow)
 
+    # Execution Ledger correlation ID
+    # Generated at Copilot decision time, passed to Response Engine, Ledger,
+    # Bureau intake, and Re-audit diffing. Survives suppressions, retries,
+    # silent updates, and delayed responses.
+    dispute_session_id: Optional[str] = None
+
     # Goal and target state
     goal: CreditGoal = CreditGoal.CREDIT_HYGIENE
     target_state: Optional[TargetCreditState] = None

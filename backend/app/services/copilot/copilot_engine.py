@@ -13,13 +13,18 @@ This engine is:
 - Read-only: Does not modify credit data
 - Explainable: Every recommendation has explicit rationale
 - Conservative: Errs on side of caution with risk warnings
+
+Execution Ledger Integration (B7):
+- Generates dispute_session_id at decision time
+- Reads aggregated signals from CopilotSignalCacheDB
+- Never writes to the ledger (Copilot is read-only)
 """
 
 from __future__ import annotations
 
 from dataclasses import asdict, replace
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 from uuid import uuid4
 
 from app.models.copilot_models import (
@@ -36,6 +41,10 @@ from app.models.copilot_models import (
     SkipRationale,
     TargetCreditState,
 )
+
+# Conditional import to avoid circular dependency at import time
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 
 class CopilotEngine:
@@ -79,6 +88,7 @@ class CopilotEngine:
         contradictions: Optional[List[Dict[str, Any]]] = None,
         user_id: Optional[str] = None,
         report_id: Optional[str] = None,
+        db_session: Optional["Session"] = None,
     ) -> CopilotRecommendation:
         """
         Main analysis entry point.
@@ -89,6 +99,7 @@ class CopilotEngine:
             contradictions: List of contradiction dicts from contradiction engine
             user_id: Optional user ID for tracking
             report_id: Optional report ID for tracking
+            db_session: Optional database session for ledger integration
 
         Returns:
             CopilotRecommendation with prioritized attack plan and skip list
@@ -99,12 +110,35 @@ class CopilotEngine:
         violations = violations or []
         contradictions = contradictions or []
 
+        # Generate dispute_session_id for Execution Ledger correlation
+        # This ID links the entire enforcement lifecycle
+        dispute_session_id = None
+        ledger_signals = {}
+        if db_session and user_id and report_id:
+            from ..enforcement.dispute_session import DisputeSessionService
+            from ..enforcement.execution_ledger import ExecutionLedgerService
+
+            session_service = DisputeSessionService(db_session)
+            dispute_session_id = session_service.create_session(
+                user_id=user_id,
+                report_id=report_id,
+                credit_goal=goal.value,
+            )
+
+            # Read aggregated signals from ledger (Copilot never writes)
+            ledger_service = ExecutionLedgerService(db_session)
+            ledger_signals = ledger_service.get_all_copilot_signals("GLOBAL")
+
         # Step 1: Convert inputs to Blockers
         blockers = self._identify_blockers(goal, target, violations, contradictions)
 
         # Step 2: Apply dependency gates BEFORE scoring
         blockers = self._apply_dofd_stability_gate(blockers)
         blockers = self._apply_ownership_gate(blockers)
+
+        # Step 2.5: Apply ledger signals to adjust risk scores
+        if ledger_signals:
+            blockers = self._apply_ledger_signals(blockers, ledger_signals)
 
         # Step 3: Identify items to skip
         skips = self._identify_skips(blockers)
@@ -132,6 +166,7 @@ class CopilotEngine:
             user_id=user_id,
             report_id=report_id,
             generated_at=datetime.utcnow(),
+            dispute_session_id=dispute_session_id,
             goal=goal,
             target_state=target,
             current_gap_summary=gap_summary,
@@ -385,6 +420,69 @@ class CopilotEngine:
                     # Add to risk factors for transparency
                     if "ownership_unclear" not in b.risk_factors:
                         b.risk_factors.append("ownership_unclear")
+
+        return blockers
+
+    def _apply_ledger_signals(
+        self,
+        blockers: List[Blocker],
+        signals: Dict[str, float],
+    ) -> List[Blocker]:
+        """
+        Apply aggregated ledger signals to adjust blocker risk scores.
+
+        Signals read from CopilotSignalCacheDB:
+        - reinsertion_rate: Raise REINSERTION_LIKELY if high
+        - dofd_change_rate: Enforce DOFD gate earlier if high
+        - verification_spike_rate: Raise TACTICAL_VERIFICATION_RISK if high
+        - deletion_durability: Increase deletability confidence if high
+
+        Copilot NEVER writes to the ledger. Signals are inputs only.
+        No permanent blocks. No self-modifying rules.
+        Deterministic replay always possible.
+        """
+        # Thresholds for signal effects
+        HIGH_REINSERTION_THRESHOLD = 0.3  # 30% reinsertion rate = high risk
+        HIGH_VERIFICATION_THRESHOLD = 0.5  # 50% verification rate = spike
+        HIGH_DOFD_CHANGE_THRESHOLD = 0.2  # 20% DOFD change rate = concern
+        HIGH_DURABILITY_THRESHOLD = 70  # 70+ durability = reliable
+
+        reinsertion_rate = signals.get("reinsertion_rate", 0.0)
+        verification_rate = signals.get("verification_spike_rate", 0.0)
+        dofd_change_rate = signals.get("dofd_change_rate", 0.0)
+        durability = signals.get("deletion_durability", 0.0)
+
+        for b in blockers:
+            # High reinsertion rate → increase reinsertion risk
+            if reinsertion_rate >= HIGH_REINSERTION_THRESHOLD:
+                if not b.reinsertion_risk:
+                    b.reinsertion_risk = True
+                    b.risk_score = min(5, b.risk_score + 1)
+                    if "ledger_reinsertion_signal" not in b.risk_factors:
+                        b.risk_factors.append("ledger_reinsertion_signal")
+
+            # High verification spike → increase tactical risk for low deletability
+            if verification_rate >= HIGH_VERIFICATION_THRESHOLD:
+                if b.deletability == "LOW":
+                    b.risk_score = min(5, b.risk_score + 1)
+                    if "ledger_verification_spike" not in b.risk_factors:
+                        b.risk_factors.append("ledger_verification_spike")
+
+            # High DOFD change rate → enforce DOFD gate more strictly
+            if dofd_change_rate >= HIGH_DOFD_CHANGE_THRESHOLD:
+                if b.category in {"balance", "status", "payment_history"}:
+                    if not b.dofd_unstable:
+                        # Don't mark as unstable, but add risk
+                        b.risk_score = min(5, b.risk_score + 1)
+                        if "ledger_dofd_signal" not in b.risk_factors:
+                            b.risk_factors.append("ledger_dofd_signal")
+
+            # High durability → increase confidence in deletability
+            if durability >= HIGH_DURABILITY_THRESHOLD:
+                if b.deletability == "MEDIUM":
+                    # Consider upgrading, but don't directly change
+                    # Just reduce risk slightly to favor this action
+                    b.risk_score = max(0, b.risk_score - 1)
 
         return blockers
 

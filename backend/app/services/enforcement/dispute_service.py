@@ -19,6 +19,12 @@ The system is the LEGAL DECISION-MAKER. The system:
 - Escalates disputes based on entity conduct
 - Detects reinsertions and creates automatic violations
 - Applies FDCPA guardrails to ensure correct statute citation
+
+EXECUTION LEDGER INTEGRATION (B7):
+- Executions born at confirm_mailing() (AUTHORITY MOMENT)
+- Responses emitted at log_response()
+- Suppression events emitted when action is intentionally blocked
+- All events linked by dispute_session_id
 """
 from datetime import date, datetime, timedelta
 from typing import Optional, List, Dict, Any, Tuple
@@ -30,13 +36,15 @@ from sqlalchemy.orm import Session
 from ...models.db_models import (
     DisputeDB, DisputeResponseDB, PaperTrailDB, ReinsertionWatchDB,
     EscalationState, ResponseType, EntityType, ActorType, DisputeSource,
-    DisputeStatus
+    DisputeStatus, SuppressionReason, LetterDB, UserDB
 )
 from .state_machine import EscalationStateMachine, AutomaticTransitionTriggers
 from .deadline_engine import DeadlineEngine
 from .response_evaluator import ResponseEvaluator, FDCPA1692gGuardrail
 from .reinsertion_detector import ReinsertionDetector
 from .cross_entity_intelligence import CrossEntityIntelligence
+from .execution_ledger import ExecutionLedgerService
+from .dispute_session import DisputeSessionService
 
 
 # =============================================================================
@@ -63,6 +71,9 @@ class DisputeService:
         self.response_evaluator = ResponseEvaluator(db_session)
         self.reinsertion_detector = ReinsertionDetector(db_session)
         self.cross_entity = CrossEntityIntelligence(db_session)
+        # Execution Ledger services (B7)
+        self.ledger = ExecutionLedgerService(db_session)
+        self.session_service = DisputeSessionService(db_session)
 
     # =========================================================================
     # DISPUTE CREATION
@@ -180,6 +191,7 @@ class DisputeService:
         has_specific_reason: bool = None,
         has_missing_info_request: bool = None,
         evidence_path: str = None,
+        dispute_session_id: str = None,
     ) -> Dict[str, Any]:
         """
         Log a response from an entity.
@@ -191,10 +203,14 @@ class DisputeService:
         - Triggers state transitions based on evaluation
         - Starts REINSERTION WATCH if response is DELETED (90-day monitoring)
         - Runs cross-entity analysis for pattern detection
+
+        EXECUTION LEDGER: Emits execution response event.
         """
         dispute = self.db.query(DisputeDB).get(dispute_id)
         if not dispute:
             return {"error": "Dispute not found"}
+
+        evidence_hash = self._hash_file(evidence_path) if evidence_path else None
 
         # Create response record
         response = DisputeResponseDB(
@@ -210,7 +226,7 @@ class DisputeService:
             has_specific_reason=has_specific_reason,
             has_missing_info_request=has_missing_info_request,
             evidence_path=evidence_path,
-            evidence_hash=self._hash_file(evidence_path) if evidence_path else None,
+            evidence_hash=evidence_hash,
         )
         self.db.add(response)
 
@@ -221,10 +237,11 @@ class DisputeService:
             event_type="response_logged",
             actor=ActorType.USER,
             description=f"Response logged: {response_type.value}",
-            evidence_hash=response.evidence_hash,
+            evidence_hash=evidence_hash,
             event_metadata={
                 "response_type": response_type.value,
                 "response_date": (response_date or date.today()).isoformat(),
+                "dispute_session_id": dispute_session_id,
             }
         )
         self.db.add(paper_trail)
@@ -234,6 +251,36 @@ class DisputeService:
 
         # Evaluate response (system action)
         evaluation = self.response_evaluator.evaluate_response(dispute, response)
+
+        # =================================================================
+        # EXECUTION LEDGER: Emit response event
+        # =================================================================
+        # Find the execution event for this dispute
+        execution = self.ledger.get_execution_for_dispute(dispute_id)
+
+        if execution:
+            # Detect field changes for ledger tracking
+            balance_changed = "balance" in (updated_fields or {})
+            dofd_changed = "dofd" in (updated_fields or {}) or "date_of_first_delinquency" in (updated_fields or {})
+            status_changed = "status" in (updated_fields or {}) or "account_status" in (updated_fields or {})
+
+            # Use the execution's session ID if not provided
+            session_id = dispute_session_id or execution.dispute_session_id
+
+            self.ledger.emit_execution_response(
+                execution_id=execution.id,
+                dispute_session_id=session_id,
+                response_type=response_type.value,
+                response_received_at=datetime.combine(response_date or date.today(), datetime.min.time()),
+                bureau=dispute.entity_name if dispute.entity_type == EntityType.CRA else None,
+                response_reason=rejection_reason,
+                document_hash=evidence_hash,
+                artifact_pointer=evidence_path,
+                balance_changed=balance_changed,
+                dofd_changed=dofd_changed,
+                status_changed=status_changed,
+                reinsertion_flag=response_type == ResponseType.REINSERTION,
+            )
 
         # Transition state based on evaluation
         if evaluation.get("next_state"):
@@ -269,6 +316,7 @@ class DisputeService:
             "response_type": response_type.value,
             "evaluation": evaluation,
             "current_state": dispute.current_state.value,
+            "execution_response_logged": execution is not None,
         }
 
     # =========================================================================
@@ -280,16 +328,47 @@ class DisputeService:
         dispute_id: str,
         mailed_date: date,
         tracking_number: str = None,
+        dispute_session_id: str = None,
     ) -> Dict[str, Any]:
         """
         Confirm that dispute letter was mailed.
 
         User-authorized action - starts the deadline clock.
         This is also the "Start Tracking" action for disputes created without a date.
+
+        EXECUTION LEDGER: This is the AUTHORITY MOMENT.
+        Executions are born here, not at plan-time.
         """
         dispute = self.db.query(DisputeDB).get(dispute_id)
         if not dispute:
             return {"error": "Dispute not found"}
+
+        # Get user for credit goal context
+        user = self.db.query(UserDB).filter(UserDB.id == dispute.user_id).first()
+        credit_goal = user.credit_goal if user else "credit_hygiene"
+
+        # Generate dispute_session_id if not provided
+        if not dispute_session_id:
+            dispute_session_id = self.session_service.create_session(
+                user_id=dispute.user_id,
+                report_id=dispute.original_violation_data.get("report_id") if dispute.original_violation_data else None,
+                credit_goal=credit_goal,
+            )
+
+        # Check suppression conditions before emitting execution event
+        suppression = self._check_suppression_conditions(
+            dispute_session_id=dispute_session_id,
+            user_id=dispute.user_id,
+            account_fingerprint=dispute.account_fingerprint,
+            credit_goal=credit_goal,
+        )
+
+        if suppression:
+            return {
+                "error": "Action suppressed",
+                "reason": suppression["reason"],
+                "suppression_code": suppression["code"],
+            }
 
         # Check if this is starting tracking for the first time
         is_first_tracking = not dispute.tracking_started
@@ -320,6 +399,7 @@ class DisputeService:
                     new_base_date=mailed_date,
                     days=30 if dispute.source == DisputeSource.DIRECT else 45,
                 )
+            deadline_date = dispute.deadline_date
             event_type = "mailing_confirmed"
             description = f"Dispute letter mailed on {mailed_date.isoformat()}"
 
@@ -335,9 +415,38 @@ class DisputeService:
                 "tracking_number": tracking_number,
                 "deadline_date": dispute.deadline_date.isoformat() if dispute.deadline_date else None,
                 "is_first_tracking": is_first_tracking,
+                "dispute_session_id": dispute_session_id,
             }
         )
         self.db.add(paper_trail)
+
+        # =================================================================
+        # EXECUTION LEDGER: Emit execution event (AUTHORITY MOMENT)
+        # =================================================================
+        letter = self.db.query(LetterDB).filter(LetterDB.id == dispute.letter_id).first() if dispute.letter_id else None
+        violation_data = dispute.original_violation_data or {}
+
+        execution_event = self.ledger.emit_execution_event(
+            dispute_session_id=dispute_session_id,
+            user_id=dispute.user_id,
+            executed_at=datetime.combine(mailed_date, datetime.min.time()),
+            action_type=self._infer_action_type(violation_data),
+            credit_goal=credit_goal,
+            report_id=violation_data.get("report_id"),
+            account_id=violation_data.get("account_id"),
+            dispute_id=dispute.id,
+            letter_id=dispute.letter_id,
+            violation_type=violation_data.get("violation_type"),
+            contradiction_rule=violation_data.get("rule_code"),
+            bureau=violation_data.get("bureau") or (dispute.entity_name if dispute.entity_type == EntityType.CRA else None),
+            furnisher_type=violation_data.get("furnisher_type"),
+            creditor_name=violation_data.get("creditor_name") or dispute.entity_name,
+            account_fingerprint=dispute.account_fingerprint,
+            gate_applied=violation_data.get("gate_applied"),
+            risk_flags=violation_data.get("risk_flags"),
+            document_hash=self._hash_content(letter.content if letter else None),
+            due_by=datetime.combine(dispute.deadline_date, datetime.min.time()) if dispute.deadline_date else None,
+        )
 
         self.db.commit()
 
@@ -347,6 +456,8 @@ class DisputeService:
             "deadline_date": dispute.deadline_date.isoformat() if dispute.deadline_date else None,
             "tracking_number": tracking_number,
             "tracking_started": dispute.tracking_started,
+            "dispute_session_id": dispute_session_id,
+            "execution_id": execution_event.id,
         }
 
     # =========================================================================
@@ -572,3 +683,105 @@ class DisputeService:
                 return hashlib.sha256(f.read()).hexdigest()
         except Exception:
             return None
+
+    def _hash_content(self, content: str) -> Optional[str]:
+        """Generate SHA-256 hash of content string."""
+        if not content:
+            return None
+        return hashlib.sha256(content.encode()).hexdigest()
+
+    def _infer_action_type(self, violation_data: Dict[str, Any]) -> str:
+        """
+        Infer action type from violation data.
+
+        Maps violation characteristics to action types:
+        - DELETE_DEMAND: For contradictions, FCRA obsolete items
+        - CORRECT_DEMAND: For inaccuracies that can be corrected
+        - MOV_DEMAND: For verification challenges
+        - DOFD_DEMAND: For DOFD-related issues
+        - OWNERSHIP_CHAIN_DEMAND: For collection/debt buyer chain issues
+        """
+        if not violation_data:
+            return "DELETE_DEMAND"
+
+        rule_code = violation_data.get("rule_code", "")
+        violation_type = str(violation_data.get("violation_type", "")).lower()
+        furnisher_type = str(violation_data.get("furnisher_type", "")).upper()
+
+        # DOFD issues
+        if rule_code in {"D1", "D2", "D3"} or "dofd" in violation_type:
+            return "DOFD_DEMAND"
+
+        # Ownership chain issues
+        if furnisher_type in {"COLLECTION", "DEBT_BUYER", "COLLECTOR"}:
+            if not violation_data.get("has_original_creditor"):
+                return "OWNERSHIP_CHAIN_DEMAND"
+
+        # Contradictions = DELETE_DEMAND
+        if violation_data.get("source_type") == "CONTRADICTION":
+            return "DELETE_DEMAND"
+
+        # High severity = DELETE_DEMAND
+        severity = str(violation_data.get("severity", "")).upper()
+        if severity in {"CRITICAL", "HIGH"}:
+            return "DELETE_DEMAND"
+
+        # Medium severity = CORRECT_DEMAND
+        if severity == "MEDIUM":
+            return "CORRECT_DEMAND"
+
+        # Default
+        return "DELETE_DEMAND"
+
+    def _check_suppression_conditions(
+        self,
+        dispute_session_id: str,
+        user_id: str,
+        account_fingerprint: Optional[str],
+        credit_goal: str,
+    ) -> Optional[Dict[str, str]]:
+        """
+        Check if action should be suppressed.
+
+        Suppression reasons:
+        - DUPLICATE_IN_FLIGHT: Already have a pending execution for this account
+        - COOLDOWN_ACTIVE: Too soon since last execution for this account
+
+        Returns None if no suppression, otherwise dict with reason and code.
+        Emits suppression event to ledger for admin/audit tracking.
+        """
+        if not account_fingerprint:
+            return None
+
+        # Check for duplicate in-flight
+        if self.session_service.has_pending_execution(account_fingerprint, user_id):
+            self.ledger.emit_suppression_event(
+                dispute_session_id=dispute_session_id,
+                user_id=user_id,
+                suppression_reason=SuppressionReason.DUPLICATE_IN_FLIGHT,
+                credit_goal=credit_goal,
+            )
+            return {
+                "reason": "A dispute is already in progress for this account",
+                "code": SuppressionReason.DUPLICATE_IN_FLIGHT.value,
+            }
+
+        # Check cooldown (30 days between executions on same account)
+        last_execution = self.session_service.get_last_execution_date(
+            account_fingerprint, user_id
+        )
+        if last_execution:
+            days_since = (datetime.utcnow() - last_execution).days
+            if days_since < 30:
+                self.ledger.emit_suppression_event(
+                    dispute_session_id=dispute_session_id,
+                    user_id=user_id,
+                    suppression_reason=SuppressionReason.COOLDOWN_ACTIVE,
+                    credit_goal=credit_goal,
+                )
+                return {
+                    "reason": f"Cooldown active. Last dispute sent {days_since} days ago. Wait {30 - days_since} more days.",
+                    "code": SuppressionReason.COOLDOWN_ACTIVE.value,
+                }
+
+        return None

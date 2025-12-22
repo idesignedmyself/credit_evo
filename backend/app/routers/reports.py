@@ -25,7 +25,7 @@ from ..services.parsing import parse_identityiq_html
 from ..services.audit import audit_report
 from ..models import NormalizedReport, AuditResult, Violation, ViolationType, Severity
 from ..auth import get_current_user
-from ..services.enforcement import ReinsertionDetector
+from ..services.enforcement import ReinsertionDetector, ExecutionOutcomeDetector
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +110,15 @@ class ReinsertionScanResult(BaseModel):
     watches_checked: int = 0
 
 
+class OutcomeDetectionResult(BaseModel):
+    """Result of execution outcome detection from new report."""
+    outcomes_detected: int = 0
+    deleted_count: int = 0
+    verified_count: int = 0
+    updated_count: int = 0
+    reinserted_count: int = 0
+
+
 class UploadResponse(BaseModel):
     report_id: str
     message: str
@@ -118,6 +127,7 @@ class UploadResponse(BaseModel):
     accounts: List[dict]
     credit_scores: Optional[CreditScoreResponse] = None
     reinsertion_scan: Optional[ReinsertionScanResult] = None  # System-detected reinsertions
+    outcome_detection: Optional[OutcomeDetectionResult] = None  # Execution ledger outcomes
 
 
 class ReportListItem(BaseModel):
@@ -360,6 +370,44 @@ async def upload_report(
                 watches_checked=reinsertion_result.get('watches_checked', 0),
             )
 
+        # =================================================================
+        # EXECUTION OUTCOME DETECTION (B7 - Execution Ledger)
+        # Compares new report against pending executions to detect outcomes.
+        # Uses snapshot hashing to prevent parser hallucinations.
+        # =================================================================
+        outcome_detection_response = None
+        try:
+            outcome_detector = ExecutionOutcomeDetector(db)
+            outcome_results = outcome_detector.detect_outcomes(
+                user_id=current_user.id,
+                new_report_id=report.report_id,
+                new_accounts=serialized_report.get('accounts', []),
+            )
+
+            if outcome_results:
+                from ..models.db_models import FinalOutcome
+                deleted_count = sum(1 for r in outcome_results if r.final_outcome == FinalOutcome.DELETED)
+                verified_count = sum(1 for r in outcome_results if r.final_outcome == FinalOutcome.VERIFIED)
+                updated_count = sum(1 for r in outcome_results if r.final_outcome == FinalOutcome.UPDATED)
+                reinserted_count = sum(1 for r in outcome_results if r.final_outcome == FinalOutcome.REINSERTED)
+
+                outcome_detection_response = OutcomeDetectionResult(
+                    outcomes_detected=len(outcome_results),
+                    deleted_count=deleted_count,
+                    verified_count=verified_count,
+                    updated_count=updated_count,
+                    reinserted_count=reinserted_count,
+                )
+
+                logger.info(
+                    f"Execution outcomes detected: {len(outcome_results)} total "
+                    f"(deleted={deleted_count}, verified={verified_count}, "
+                    f"updated={updated_count}, reinserted={reinserted_count})"
+                )
+        except Exception as e:
+            logger.error(f"Outcome detection failed: {e}")
+            # Don't fail the upload if outcome detection fails
+
         return UploadResponse(
             report_id=report.report_id,
             message="Report uploaded and processed successfully",
@@ -367,7 +415,8 @@ async def upload_report(
             total_violations=audit_result.total_violations_found,
             accounts=serialized_report.get('accounts', []),
             credit_scores=credit_scores_response,
-            reinsertion_scan=reinsertion_scan_response
+            reinsertion_scan=reinsertion_scan_response,
+            outcome_detection=outcome_detection_response
         )
 
     except Exception as e:

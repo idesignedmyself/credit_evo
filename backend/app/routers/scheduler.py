@@ -3,6 +3,9 @@ Scheduler API Routes
 
 Internal endpoints for system-automatic tasks.
 Deadline checks, reinsertion scans, stall detection.
+
+B7 Execution Ledger:
+- Signal aggregation endpoint for nightly job
 """
 from datetime import datetime
 from typing import Optional, List
@@ -14,6 +17,7 @@ from ..database import get_db
 from ..services.enforcement import (
     DisputeService,
     ReinsertionDetector,
+    LedgerSignalAggregator,
 )
 from ..services.enforcement.deadline_engine import DeadlineScheduler
 
@@ -150,6 +154,89 @@ async def get_active_reinsertion_watches(
 
 
 # =============================================================================
+# LEDGER SIGNAL AGGREGATION (B7)
+# =============================================================================
+
+@router.post("/aggregate-signals", response_model=dict)
+async def run_signal_aggregation(
+    window_days: int = 90,
+    db: Session = Depends(get_db),
+    _: bool = Depends(verify_internal_key),
+):
+    """
+    Run nightly signal aggregation for Copilot.
+
+    Computes aggregated signals from the execution ledger and stores
+    them in CopilotSignalCacheDB. Copilot reads only from this cache.
+
+    Signals computed:
+    - reinsertion_rate: % of deletions that saw reinsertion
+    - dofd_change_rate: % of responses where DOFD changed
+    - verification_spike_rate: % of VERIFIED vs DELETED responses
+    - deletion_durability: Average durability score
+
+    Note: Suppression frequency is NOT exposed to Copilot (admin-only).
+    """
+    aggregator = LedgerSignalAggregator(db)
+
+    summary = aggregator.run_aggregation(window_days=window_days)
+
+    db.commit()
+
+    return {
+        "task": "signal_aggregation",
+        "run_date": datetime.utcnow().isoformat(),
+        "window_days": window_days,
+        "signals_computed": summary,
+    }
+
+
+@router.post("/cleanup-expired-signals", response_model=dict)
+async def cleanup_expired_signals(
+    db: Session = Depends(get_db),
+    _: bool = Depends(verify_internal_key),
+):
+    """
+    Remove expired signals from the cache.
+
+    Run after signal aggregation to clean up stale entries.
+    """
+    aggregator = LedgerSignalAggregator(db)
+
+    deleted_count = aggregator.cleanup_expired_signals()
+
+    return {
+        "task": "cleanup_expired_signals",
+        "run_date": datetime.utcnow().isoformat(),
+        "deleted_count": deleted_count,
+    }
+
+
+@router.get("/signals", response_model=dict)
+async def get_current_signals(
+    scope_type: str = "GLOBAL",
+    scope_value: Optional[str] = None,
+    db: Session = Depends(get_db),
+    _: bool = Depends(verify_internal_key),
+):
+    """
+    Get current cached signals for a scope.
+
+    For monitoring and debugging signal aggregation.
+    """
+    from ..services.enforcement import ExecutionLedgerService
+
+    ledger = ExecutionLedgerService(db)
+    signals = ledger.get_all_copilot_signals(scope_type, scope_value)
+
+    return {
+        "scope_type": scope_type,
+        "scope_value": scope_value,
+        "signals": signals,
+    }
+
+
+# =============================================================================
 # MANUAL TRIGGER ENDPOINTS (FOR TESTING)
 # =============================================================================
 
@@ -165,11 +252,13 @@ async def trigger_all_tasks(
     """
     scheduler = DeadlineScheduler(db)
     detector = ReinsertionDetector(db)
+    aggregator = LedgerSignalAggregator(db)
 
     results = {
         "deadline_check": scheduler.run_daily_deadline_check(),
         "stall_detection": scheduler.run_stall_detection(),
         "reinsertion_expiration": detector.expire_old_watches(),
+        "signal_aggregation": aggregator.run_aggregation(),
     }
 
     db.commit()

@@ -422,3 +422,278 @@ class SchedulerTaskDB(Base):
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+# =============================================================================
+# EXECUTION LEDGER SYSTEM MODELS (B7)
+# =============================================================================
+# Append-only telemetry layer for capturing real-world enforcement outcomes.
+# Core principle: The Ledger records reality. It never decides. It never edits history.
+# Executions are born at send-time (confirm_mailing), not plan-time.
+# =============================================================================
+
+class SuppressionReason(str, Enum):
+    """Reasons for intentional non-action by the system."""
+    DUPLICATE_IN_FLIGHT = "DUPLICATE_IN_FLIGHT"
+    COOLDOWN_ACTIVE = "COOLDOWN_ACTIVE"
+    DOFD_GATE_BLOCK = "DOFD_GATE_BLOCK"
+    OWNERSHIP_GATE_BLOCK = "OWNERSHIP_GATE_BLOCK"
+    VERIFICATION_RISK_SPIKE = "VERIFICATION_RISK_SPIKE"
+    COMPLIANCE_HOLD = "COMPLIANCE_HOLD"
+
+
+class ExecutionStatus(str, Enum):
+    """Status of an execution event."""
+    PENDING = "PENDING"
+    RESPONDED = "RESPONDED"
+    ESCALATED = "ESCALATED"
+    CLOSED = "CLOSED"
+
+
+class FinalOutcome(str, Enum):
+    """Final outcome of an enforcement action."""
+    DELETED = "DELETED"
+    VERIFIED = "VERIFIED"
+    UPDATED = "UPDATED"
+    REINSERTED = "REINSERTED"
+    IGNORED = "IGNORED"
+
+
+class DownstreamEventType(str, Enum):
+    """Types of user-reported downstream outcomes."""
+    LOAN_APPROVED = "LOAN_APPROVED"
+    APARTMENT_APPROVED = "APARTMENT_APPROVED"
+    EMPLOYMENT_CLEARED = "EMPLOYMENT_CLEARED"
+
+
+class ExecutionSuppressionEventDB(Base):
+    """
+    SOURCE 0: Records intentional suppression of action by the system.
+    Not user hesitation. Not failure. Intentional restraint.
+
+    ❌ Does NOT feed Copilot
+    ❌ Does NOT affect scoring
+    ✅ Admin + audit only
+    ✅ Distinguishes restraint from failure
+
+    Append-only. Immutable after insert.
+    """
+    __tablename__ = "execution_suppression_events"
+
+    id = Column(String(36), primary_key=True)  # UUID
+
+    # Correlation - links entire enforcement lifecycle
+    dispute_session_id = Column(String(36), nullable=False, index=True)
+
+    # Context
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    report_id = Column(String(36), ForeignKey("reports.id"), nullable=True)
+    account_id = Column(String(64), nullable=True)
+    credit_goal = Column(String(50), nullable=False)
+    copilot_version = Column(String(20), nullable=True)
+
+    # Suppression details
+    suppression_reason = Column(SQLEnum(SuppressionReason), nullable=False)
+
+    # Timestamps
+    suppressed_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ExecutionEventDB(Base):
+    """
+    SOURCE 1: Born at confirm_mailing(). The AUTHORITY MOMENT.
+    Anything not sent does not exist to the Ledger.
+
+    🔒 Immutable after insert.
+    Append-only. Event-sourced.
+    """
+    __tablename__ = "execution_events"
+
+    id = Column(String(36), primary_key=True)  # UUID
+
+    # Correlation - links entire enforcement lifecycle
+    dispute_session_id = Column(String(36), nullable=False, index=True)
+
+    # Identity
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    report_id = Column(String(36), ForeignKey("reports.id"), nullable=True)
+    account_id = Column(String(64), nullable=True)
+    dispute_id = Column(String(36), ForeignKey("disputes.id"), nullable=True)
+    letter_id = Column(String(36), ForeignKey("letters.id"), nullable=True)
+
+    # Copilot snapshot (frozen at execution time)
+    credit_goal = Column(String(50), nullable=False)
+    target_state_hash = Column(String(64), nullable=True)  # SHA256 of target state
+    copilot_version = Column(String(20), nullable=True)
+
+    # Execution details
+    action_type = Column(String(50), nullable=False)  # DELETE_DEMAND, CORRECT_DEMAND, etc.
+    response_posture = Column(String(50), nullable=True)  # VERIFIED, NO_RESPONSE, etc.
+    violation_type = Column(String(100), nullable=True)
+    contradiction_rule = Column(String(20), nullable=True)  # T1, D1, M2, etc.
+
+    # Recipient
+    bureau = Column(String(50), nullable=True)
+    furnisher_type = Column(String(50), nullable=True)
+    creditor_name = Column(String(255), nullable=True)
+    account_fingerprint = Column(String(255), nullable=True, index=True)
+
+    # Gates applied at execution time
+    gate_applied = Column(JSON, nullable=True)  # {"dofd_gate": true, "ownership_gate": false}
+
+    # Risk flags at send-time
+    risk_flags = Column(JSON, nullable=True)  # ["TACTICAL_VERIFICATION_RISK", "REINSERTION_LIKELY"]
+
+    # Evidence anchor
+    document_hash = Column(String(64), nullable=True)  # SHA256
+    artifact_pointer = Column(String(500), nullable=True)  # s3://, gcs://, file path, etc.
+
+    # Timing
+    executed_at = Column(DateTime, nullable=False)  # AUTHORITY MOMENT - when letter was confirmed mailed
+    due_by = Column(DateTime, nullable=True)  # Response deadline
+
+    # Status
+    execution_status = Column(SQLEnum(ExecutionStatus), default=ExecutionStatus.PENDING)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    responses = relationship("ExecutionResponseDB", back_populates="execution")
+    outcomes = relationship("ExecutionOutcomeDB", back_populates="execution")
+
+
+class ExecutionResponseDB(Base):
+    """
+    SOURCE 2: Emitted when entity response is logged.
+    Tracks what the bureau/furnisher actually said.
+
+    Append-only. Immutable after insert.
+    """
+    __tablename__ = "execution_responses"
+
+    id = Column(String(36), primary_key=True)  # UUID
+    execution_id = Column(String(36), ForeignKey("execution_events.id"), nullable=False, index=True)
+    dispute_session_id = Column(String(36), nullable=False, index=True)
+
+    bureau = Column(String(50), nullable=True)
+
+    # Response classification
+    response_type = Column(String(50), nullable=False)  # DELETED, VERIFIED, UPDATED, PARTIAL, NO_RESPONSE
+    response_reason = Column(Text, nullable=True)  # Optional reason text from entity
+
+    # Evidence anchor
+    document_hash = Column(String(64), nullable=True)  # SHA256 of response document
+    artifact_pointer = Column(String(500), nullable=True)  # Path to evidence file
+
+    # Observed changes
+    balance_changed = Column(Boolean, default=False)
+    dofd_changed = Column(Boolean, default=False)
+    status_changed = Column(Boolean, default=False)
+    reinsertion_flag = Column(Boolean, default=False)
+
+    # Timestamps
+    response_received_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationship
+    execution = relationship("ExecutionEventDB", back_populates="responses")
+
+
+class ExecutionOutcomeDB(Base):
+    """
+    SOURCE 3: Emitted during report re-ingestion diff.
+    Detects actual changes on the credit report using snapshot verification.
+
+    Append-only. Immutable after insert.
+    Uses state hashes to prevent parser hallucinations.
+    """
+    __tablename__ = "execution_outcomes"
+
+    id = Column(String(36), primary_key=True)  # UUID
+    execution_id = Column(String(36), ForeignKey("execution_events.id"), nullable=False, index=True)
+    dispute_session_id = Column(String(36), nullable=False, index=True)
+    new_report_id = Column(String(36), ForeignKey("reports.id"), nullable=True)
+
+    # Outcome classification
+    final_outcome = Column(SQLEnum(FinalOutcome), nullable=False)
+
+    # Snapshot verification - prevents parser hallucinations
+    previous_state_hash = Column(String(64), nullable=True)  # SHA256 of account state before
+    current_state_hash = Column(String(64), nullable=True)   # SHA256 of account state after
+
+    # Durability tracking
+    days_until_reinsertion = Column(Integer, nullable=True)  # If reinserted, how many days until it came back
+    durability_score = Column(Integer, nullable=True)  # 0-100, higher = more durable deletion
+
+    # Credit state impact
+    account_removed = Column(Boolean, default=False)  # Was account removed entirely?
+    negative_status_removed = Column(Boolean, default=False)  # Was negative status cleared?
+    utilization_impact = Column(Float, nullable=True)  # Change in utilization ratio
+
+    # Timestamps
+    resolved_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationship
+    execution = relationship("ExecutionEventDB", back_populates="outcomes")
+
+
+class DownstreamOutcomeDB(Base):
+    """
+    SOURCE 4: User-reported downstream outcomes.
+    Records real-world results like loan approvals.
+
+    ⚠️ Never used directly for enforcement decisions.
+    ⚠️ Informational only - not fed to Copilot.
+
+    Append-only. Immutable after insert.
+    """
+    __tablename__ = "downstream_outcomes"
+
+    id = Column(String(36), primary_key=True)  # UUID
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    dispute_session_id = Column(String(36), nullable=True, index=True)
+    credit_goal = Column(String(50), nullable=False)
+
+    # Event details
+    event_type = Column(SQLEnum(DownstreamEventType), nullable=False)
+    notes = Column(Text, nullable=True)
+
+    # Timestamps
+    reported_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class CopilotSignalCacheDB(Base):
+    """
+    Materialized view of aggregated ledger signals.
+    Copilot reads ONLY from this table.
+
+    Computed nightly by LedgerSignalAggregator.
+    Signals include: reinsertion_rate, dofd_change_rate,
+    verification_spike_rate, deletion_durability.
+
+    ⚠️ Suppression frequency is NOT exposed here (admin-only).
+    """
+    __tablename__ = "copilot_signal_cache"
+
+    id = Column(String(36), primary_key=True)  # UUID
+
+    # Scope - determines granularity of signal
+    scope_type = Column(String(50), nullable=False)  # GLOBAL, BUREAU, FURNISHER_TYPE, CREDITOR
+    scope_value = Column(String(255), nullable=True)  # e.g., "EXPERIAN", "COLLECTION", "Capital One"
+
+    # Signal data
+    signal_type = Column(String(100), nullable=False)  # reinsertion_rate, dofd_change_rate, etc.
+    signal_value = Column(Float, nullable=False)  # The computed signal value
+    sample_count = Column(Integer, default=0)  # Number of data points used
+
+    # Time window for aggregation
+    window_start = Column(DateTime, nullable=False)
+    window_end = Column(DateTime, nullable=False)
+
+    # Timestamps
+    computed_at = Column(DateTime, default=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=True)  # When this cache entry becomes stale

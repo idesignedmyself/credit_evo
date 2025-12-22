@@ -5,6 +5,7 @@ from .auth import router as auth_router
 from .disputes import router as disputes_router
 from .scheduler import router as scheduler_router
 from .copilot import router as copilot_router
+from .outcomes import router as outcomes_router
 
 __all__ = [
     "reports_router",
@@ -13,4 +14,5 @@ __all__ = [
     "disputes_router",
     "scheduler_router",
     "copilot_router",
+    "outcomes_router",
 ]
