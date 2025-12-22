@@ -118,6 +118,13 @@ class UserDB(Base):
     # ==========================================================================
     profile_complete = Column(Integer, default=0)  # Percentage 0-100
 
+    # ==========================================================================
+    # CREDIT GOAL (for Copilot Engine)
+    # ==========================================================================
+    # User's financial goal - determines enforcement strategy prioritization
+    # Valid values: mortgage, auto_loan, prime_credit_card, apartment_rental, employment, credit_hygiene
+    credit_goal = Column(String(50), nullable=True, default="credit_hygiene")
+
     # Relationships
     reports = relationship("ReportDB", back_populates="user", cascade="all, delete-orphan")
 

@@ -758,6 +758,154 @@ NO_RESPONSE and REINSERTION letters remain unchanged (they have fixed statutory 
 
 ---
 
+## Copilot Engine (Dec 2025)
+
+### Purpose
+
+The Copilot Engine is a goal-oriented enforcement prioritization system that sits above the Audit Engine and Response Engine. It translates a user's financial goal (mortgage, auto loan, etc.) into a prioritized attack plan.
+
+**Key Principle:** Impact is **goal-relative**, not severity-relative. A $200 collection blocks a mortgage application more than a $20,000 chargeoff blocks an apartment rental.
+
+### Architecture
+
+```
+User selects goal → ProfilePage.jsx
+         ↓
+Goal stored → UserDB.credit_goal
+         ↓
+Report audited → AuditEngine + ContradictionEngine
+         ↓
+Copilot analyzes:
+   1. Apply DOFD stability gate (GATE A)
+   2. Apply Ownership gate (GATE B)
+   3. Classify blockers (goal-relative impact)
+   4. Generate attack plan (priority-ordered)
+   5. Generate skip list (FCRA-native reasons)
+         ↓
+Output → CopilotRecommendation
+```
+
+### Files
+
+| File | Purpose |
+|------|---------|
+| `app/models/copilot_models.py` | Dataclasses, enums, goal requirements |
+| `app/services/copilot/copilot_engine.py` | Main analysis engine |
+| `app/routers/copilot.py` | API endpoints |
+| `test_copilot_engine.py` | Unit tests (43 tests) |
+
+### Credit Goals
+
+| Goal | Key Requirements |
+|------|------------------|
+| `mortgage` | Zero collections/chargeoffs/lates, 4+ tradelines, 2+ revolving |
+| `auto_loan` | 1 collection allowed, focus on chargeoffs |
+| `prime_credit_card` | Utilization <10%, inquiry sensitive |
+| `apartment_rental` | Evictions/collections focus |
+| `employment` | **Zero public records required** (bankruptcies/judgments) |
+| `credit_hygiene` | Balanced approach to all negatives |
+
+### MANDATORY CONSTRAINTS
+
+1. **NO SOL LOGIC** - Zero statute-of-limitations reasoning. Copilot never reasons about SOL.
+2. **FCRA-native skip codes only** - See below
+3. **Impact = goal-relative** (not severity-relative)
+4. **Two dependency gates** applied BEFORE scoring
+5. **Employment = zero public records required**
+
+### Two Dependency Gates
+
+**GATE A: DOFD Stability** (`_apply_dofd_stability_gate`)
+
+If ANY blocker has:
+- `dofd_missing = True`
+- OR `rule_code in {"D1", "D2", "D3"}`
+
+THEN:
+- Force DOFD/aging actions to priority 1
+- Suppress balance/status deletions until DOFD resolved
+
+**GATE B: Ownership** (`_apply_ownership_gate`)
+
+If furnisher is:
+- Collection agency
+- Debt buyer
+- Unknown chain-of-title
+
+THEN:
+- Ownership/authority actions precede deletion posture
+- Must establish who owns debt before demanding deletion
+
+### Skip Codes (FCRA-Native Only)
+
+| Code | Rationale |
+|------|-----------|
+| `DOFD_UNSTABLE` | DOFD missing/unstable; attacking may refresh/re-age account |
+| `REINSERTION_LIKELY` | High probability item returns after deletion |
+| `POSITIVE_LINE_LOSS` | Attacking removes positive tradeline age/limit |
+| `UTILIZATION_SHOCK` | Deleting revolving line spikes overall utilization |
+| `TACTICAL_VERIFICATION_RISK` | May force "verified with updated fields" outcome |
+
+**CRITICAL:** NO SOL-based skip codes. Copilot does not reason about time-barred debt.
+
+### Priority Formula
+
+```
+priority = impact × deletability ÷ (1 + risk)
+```
+
+| Factor | Scale | Description |
+|--------|-------|-------------|
+| Impact | 1-10 | Goal-relative blocking severity |
+| Deletability | 0.2 / 0.6 / 1.0 | LOW / MEDIUM / HIGH |
+| Risk | 0-5 | Skip code risk factors |
+
+### Goal-Relative Impact Scoring
+
+```python
+def _calculate_goal_relative_impact(goal, target, category) -> int:
+    """
+    Impact = how much this item blocks the target credit state.
+    NOT severity-based.
+    """
+    if goal == CreditGoal.MORTGAGE:
+        if category == "collection": return 10  # Absolute blocker
+        if category == "chargeoff": return 10
+        if category == "late": return 8
+        if category == "inquiry": return 4
+
+    elif goal == CreditGoal.EMPLOYMENT:
+        if category == "public_record": return 10  # CRITICAL
+        if category == "collection": return 9
+        if category == "chargeoff": return 5  # Less critical
+
+    elif goal == CreditGoal.APARTMENT_RENTAL:
+        if category == "collection": return 6  # More tolerant
+        if category == "public_record": return 8
+```
+
+### API Endpoints
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/copilot/goals` | GET | List available goals with descriptions |
+| `/copilot/goals/{goal_code}/requirements` | GET | Get target state for a goal |
+| `/copilot/recommendation/{report_id}` | GET | Generate recommendation for report |
+| `/copilot/analyze` | POST | Run analysis with provided data |
+
+### Quick Reference - Copilot Engine
+
+| Task | File |
+|------|------|
+| Add new credit goal | `app/models/copilot_models.py` → `CreditGoal` enum + `GOAL_REQUIREMENTS` |
+| Modify impact scoring | `app/services/copilot/copilot_engine.py` → `_calculate_goal_relative_impact()` |
+| Add new skip code | `app/models/copilot_models.py` → `SkipCode` enum |
+| Modify dependency gates | `app/services/copilot/copilot_engine.py` → `_apply_dofd_stability_gate()` / `_apply_ownership_gate()` |
+| Modify priority formula | `app/services/copilot/copilot_engine.py` → `_generate_attack_plan()` |
+| Test Copilot logic | `test_copilot_engine.py` |
+
+---
+
 ## Frontend Dashboard (Dec 2025 Upgrade)
 
 ### Architecture Overview
@@ -1282,4 +1430,6 @@ Full-width navbar with edge-to-edge positioning:
 - `system_checklist.md` - Full violation coverage checklist
 - `docs/UNIFIED_RESPONSE_SYSTEM.md` - Complete response tracking and escalation framework
 - `docs/RESPONSE_SYSTEM_OVERVIEW.md` - High-level system explainer
+- `docs/CONTRADICTION_ENGINE.md` - Cross-bureau contradiction detection (Phase 1-3)
+- `docs/COPILOT_ENGINE.md` - Goal-oriented enforcement prioritization
 - `violation_comparison.xlsx` - Comparison with industry standards

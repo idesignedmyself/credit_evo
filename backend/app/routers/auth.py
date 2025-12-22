@@ -79,6 +79,19 @@ class ProfileUpdateRequest(BaseModel):
     # Previous Addresses
     previous_addresses: Optional[List[PreviousAddress]] = None
 
+    # Credit Goal (for Copilot Engine)
+    credit_goal: Optional[str] = None  # mortgage, auto_loan, prime_credit_card, apartment_rental, employment, credit_hygiene
+
+    @field_validator('credit_goal')
+    @classmethod
+    def validate_credit_goal(cls, v):
+        if v is not None:
+            valid_goals = ['mortgage', 'auto_loan', 'prime_credit_card', 'apartment_rental', 'employment', 'credit_hygiene']
+            if v.lower() not in valid_goals:
+                raise ValueError(f'Invalid credit goal. Must be one of: {", ".join(valid_goals)}')
+            return v.lower()
+        return v
+
     @field_validator('suffix')
     @classmethod
     def validate_suffix(cls, v):
@@ -172,6 +185,9 @@ class UserProfileResponse(BaseModel):
 
     # Profile completeness
     profile_complete: int = 0
+
+    # Credit Goal (for Copilot Engine)
+    credit_goal: Optional[str] = None
 
 
 class UserResponse(BaseModel):
@@ -317,7 +333,10 @@ async def get_profile(current_user: UserDB = Depends(get_current_user)):
         ],
 
         # Profile completeness
-        profile_complete=_calculate_profile_completeness(current_user)
+        profile_complete=_calculate_profile_completeness(current_user),
+
+        # Credit Goal
+        credit_goal=current_user.credit_goal or "credit_hygiene"
     )
 
 
@@ -381,6 +400,10 @@ async def update_profile(
     if request.previous_addresses is not None:
         current_user.previous_addresses = [addr.model_dump() for addr in request.previous_addresses]
 
+    # Update credit goal
+    if request.credit_goal is not None:
+        current_user.credit_goal = request.credit_goal
+
     # Update profile completeness
     current_user.profile_complete = _calculate_profile_completeness(current_user)
 
@@ -419,7 +442,10 @@ async def update_profile(
         ],
 
         # Profile completeness
-        profile_complete=current_user.profile_complete or 0
+        profile_complete=current_user.profile_complete or 0,
+
+        # Credit Goal
+        credit_goal=current_user.credit_goal or "credit_hygiene"
     )
 
 

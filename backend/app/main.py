@@ -13,7 +13,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .routers import reports_router, letters_router, auth_router, disputes_router, scheduler_router
+from .routers import reports_router, letters_router, auth_router, disputes_router, scheduler_router, copilot_router
 from .database import init_db
 
 
@@ -66,6 +66,7 @@ app.include_router(reports_router)
 app.include_router(letters_router)
 app.include_router(disputes_router)
 app.include_router(scheduler_router)
+app.include_router(copilot_router)
 
 
 @app.get("/")

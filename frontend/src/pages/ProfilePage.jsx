@@ -28,6 +28,7 @@ import {
   Person,
   Home,
   Lock,
+  Flag,
 } from '@mui/icons-material';
 import { getProfile, updateProfile, changePassword } from '../api/authApi';
 
@@ -62,6 +63,39 @@ const US_STATES = [
 
 const SUFFIXES = ['Jr', 'Sr', 'II', 'III', 'IV', 'V'];
 
+const CREDIT_GOALS = [
+  {
+    code: 'mortgage',
+    name: 'Mortgage Approval',
+    description: 'Strictest requirements: zero collections, chargeoffs, lates. 4+ tradelines, 2+ revolving.',
+  },
+  {
+    code: 'auto_loan',
+    name: 'Auto Loan',
+    description: 'Moderate tolerance: 1 collection allowed, focus on chargeoffs and recent payment history.',
+  },
+  {
+    code: 'prime_credit_card',
+    name: 'Prime Credit Card',
+    description: 'Focus on utilization (<10%), recent lates, and inquiry count.',
+  },
+  {
+    code: 'apartment_rental',
+    name: 'Apartment Rental',
+    description: 'Landlords focus on evictions, collections, and recent payment patterns.',
+  },
+  {
+    code: 'employment',
+    name: 'Employment Background Check',
+    description: 'Zero public records required. Employers focus on bankruptcies and judgments.',
+  },
+  {
+    code: 'credit_hygiene',
+    name: 'General Credit Hygiene',
+    description: 'Overall credit health improvement. Balanced approach to all negative items.',
+  },
+];
+
 function ProfilePage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -87,6 +121,7 @@ function ProfilePage() {
     zip_code: '',
     move_in_date: '',
     profile_complete: 0,
+    credit_goal: 'credit_hygiene',
   });
 
   // Password fields
@@ -129,6 +164,7 @@ function ProfilePage() {
         zip_code: data.zip_code || '',
         move_in_date: data.move_in_date || '',
         profile_complete: data.profile_complete || 0,
+        credit_goal: data.credit_goal || 'credit_hygiene',
       });
     } catch (err) {
       setError('Failed to load profile: ' + err.message);
@@ -162,6 +198,7 @@ function ProfilePage() {
         state: profile.state || null,
         zip_code: profile.zip_code || null,
         move_in_date: profile.move_in_date || null,
+        credit_goal: profile.credit_goal || 'credit_hygiene',
       };
 
       console.log('[ProfilePage] Saving profile with data:', updateData);
@@ -258,6 +295,51 @@ function ProfilePage() {
         <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
           Complete your profile to enable accurate Statute of Limitations calculations and Mixed File detection.
         </Typography>
+      </Paper>
+
+      {/* Credit Goal Section */}
+      <Paper sx={{ p: 3, mb: 3 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+          <Flag color="primary" />
+          <Typography variant="h6">Credit Goal</Typography>
+        </Box>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+          Select your financial goal. The Copilot Engine will prioritize violations that block this specific goal
+          and recommend the optimal enforcement strategy.
+        </Typography>
+
+        <TextField
+          select
+          label="Your Credit Goal"
+          fullWidth
+          value={profile.credit_goal}
+          onChange={handleProfileChange('credit_goal')}
+          sx={{ mb: 2 }}
+        >
+          {CREDIT_GOALS.map((goal) => (
+            <MenuItem key={goal.code} value={goal.code}>
+              <Box>
+                <Typography variant="body1" fontWeight="medium">
+                  {goal.name}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {goal.description}
+                </Typography>
+              </Box>
+            </MenuItem>
+          ))}
+        </TextField>
+
+        {profile.credit_goal && (
+          <Alert severity="info" sx={{ mt: 2 }}>
+            <Typography variant="body2">
+              <strong>Selected:</strong> {CREDIT_GOALS.find(g => g.code === profile.credit_goal)?.name || 'Unknown'}
+            </Typography>
+            <Typography variant="caption">
+              {CREDIT_GOALS.find(g => g.code === profile.credit_goal)?.description}
+            </Typography>
+          </Alert>
+        )}
       </Paper>
 
       <Snackbar
