@@ -17,6 +17,7 @@ import ScoreDashboard from '../components/ScoreDashboard';
 import AuditSkeleton from '../components/AuditSkeleton';
 import CompactFilterBar from '../components/CompactFilterBar';
 import { ViolationList } from '../components';
+import { CopilotStatusCard, FeatureGate } from '../components/copilot';
 import { useReportStore, useViolationStore } from '../state';
 import { useCreditFilter } from '../hooks/useCreditFilter';
 
@@ -132,6 +133,11 @@ const AuditPage = () => {
 
       {/* LEVEL 1: Score Dashboard */}
       <ScoreDashboard scores={scores} />
+
+      {/* LEVEL 1.5: Copilot Status Card */}
+      <FeatureGate feature="copilot">
+        <CopilotStatusCard reportId={reportId} />
+      </FeatureGate>
 
       {/* LEVEL 2: Compact Filter Bar with Stats */}
       {violations.length > 0 && (

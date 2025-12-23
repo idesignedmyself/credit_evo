@@ -1,6 +1,7 @@
 /**
  * Credit Engine 2.0 - Violation Toggle Component
  * Premium "Fintech" accordion-style violation card with technical details grid
+ * Integrated with Credit Copilot for recommendation badges
  */
 import React from 'react';
 import {
@@ -18,6 +19,7 @@ import {
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { formatViolation, getSeverityConfig, getViolationUI } from '../utils';
+import { CopilotBadge } from './copilot';
 
 const ViolationToggle = React.memo(({ violation, isSelected, onToggle }) => {
   // Guard against undefined/null violation
@@ -127,6 +129,8 @@ const ViolationToggle = React.memo(({ violation, isSelected, onToggle }) => {
                   />
                 );
               })()}
+              {/* Copilot Badge */}
+              <CopilotBadge violationId={violation.violation_id} />
             </Stack>
             <Typography variant="caption" color="text.secondary">
               {formatted.accountDisplay}

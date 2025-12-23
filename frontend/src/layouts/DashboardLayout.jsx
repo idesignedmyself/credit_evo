@@ -1,13 +1,14 @@
 /**
  * Credit Engine 2.0 - Dashboard Layout
  * Responsive sidebar layout with mobile hamburger menu
+ * Includes persistent Copilot drawer (right side)
  */
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import {
   AppBar, Box, CssBaseline, Drawer, IconButton, List, ListItem,
   ListItemButton, ListItemIcon, ListItemText, Toolbar, Typography,
-  Avatar, Divider, Button
+  Avatar, Divider, Button, Fab, Tooltip, useTheme, useMediaQuery
 } from '@mui/material';
 import MenuIcon from '@mui/icons-material/Menu';
 import DashboardIcon from '@mui/icons-material/Dashboard';
@@ -17,12 +18,16 @@ import DescriptionIcon from '@mui/icons-material/Description';
 import GavelIcon from '@mui/icons-material/Gavel';
 import PersonIcon from '@mui/icons-material/Person';
 import LogoutIcon from '@mui/icons-material/Logout';
+import SmartToyIcon from '@mui/icons-material/SmartToy';
 import useAuthStore from '../state/authStore';
 import useReportStore from '../state/reportStore';
 import useViolationStore from '../state/violationStore';
 import useUIStore from '../state/uiStore';
+import useCopilotStore from '../state/copilotStore';
+import { CopilotDrawer, FeatureGate } from '../components/copilot';
 
 const drawerWidth = 260;
+const copilotDrawerWidth = 380;
 
 const menuItems = [
   { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
@@ -36,10 +41,13 @@ export default function DashboardLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const { user, logout } = useAuthStore();
   const { latestReportId, fetchLatestReportId, resetState: resetReportState } = useReportStore();
   const { resetState: resetViolationState } = useViolationStore();
   const { resetState: resetUIState } = useUIStore();
+  const { drawerOpen: copilotDrawerOpen, toggleDrawer: toggleCopilotDrawer, resetState: resetCopilotState } = useCopilotStore();
 
   // Fetch latest report ID on mount (for Dashboard navigation)
   useEffect(() => {
@@ -65,6 +73,7 @@ export default function DashboardLayout() {
     resetViolationState();
     resetUIState();
     resetReportState();
+    resetCopilotState();
     logout();
     // Scroll to top before navigating so landing page shows from the top
     window.scrollTo(0, 0);
@@ -262,9 +271,14 @@ export default function DashboardLayout() {
         sx={{
           flexGrow: 1,
           p: 3,
-          width: { md: `calc(100% - ${drawerWidth}px)` },
           minHeight: '100vh',
           bgcolor: 'background.default',
+          // MUI Drawer uses position:fixed, so we need margin to push content
+          marginRight: copilotDrawerOpen && !isMobile ? `${copilotDrawerWidth}px` : 0,
+          transition: theme.transitions.create('margin-right', {
+            duration: theme.transitions.duration.enteringScreen,
+            easing: theme.transitions.easing.easeOut,
+          }),
         }}
       >
         {/* Spacer for mobile AppBar */}
@@ -273,6 +287,35 @@ export default function DashboardLayout() {
         {/* Page Content */}
         <Outlet />
       </Box>
+
+      {/* Copilot FAB - Toggle drawer */}
+      <FeatureGate feature="copilot">
+        <Tooltip title={copilotDrawerOpen ? 'Close Copilot' : 'Open Credit Copilot'}>
+          <Fab
+            color="primary"
+            size="medium"
+            onClick={toggleCopilotDrawer}
+            sx={{
+              position: 'fixed',
+              bottom: 24,
+              // Position FAB to the left of the drawer when open
+              right: copilotDrawerOpen && !isMobile ? copilotDrawerWidth + 24 : 24,
+              transition: theme.transitions.create('right', {
+                duration: theme.transitions.duration.enteringScreen,
+                easing: theme.transitions.easing.easeOut,
+              }),
+              zIndex: theme.zIndex.drawer + 1,
+            }}
+          >
+            <SmartToyIcon />
+          </Fab>
+        </Tooltip>
+      </FeatureGate>
+
+      {/* Copilot Drawer */}
+      <FeatureGate feature="copilot">
+        <CopilotDrawer />
+      </FeatureGate>
     </Box>
   );
 }

@@ -21,6 +21,7 @@ import HomeIcon from '@mui/icons-material/Home';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import SendIcon from '@mui/icons-material/Send';
 import { ToneSelector, LetterPreview } from '../components';
+import { LetterTrace } from '../components/copilot';
 import { useViolationStore, useUIStore } from '../state';
 import { getViolationLabel } from '../utils';
 import { createDisputeFromLetter } from '../api/disputeApi';
@@ -367,6 +368,11 @@ const LetterPage = () => {
         stats={stats}
         isResponseLetter={isResponseLetter}
       />
+
+      {/* Copilot Trace - "Why this letter?" */}
+      {currentLetter && !isResponseLetter && (
+        <LetterTrace includedViolationIds={selectedViolationIds} />
+      )}
 
       {currentLetter && (
         <>

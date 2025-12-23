@@ -195,6 +195,7 @@ class UserResponse(BaseModel):
     id: str
     email: str
     username: str
+    credit_goal: Optional[str] = None  # For Copilot integration
 
 
 # =============================================================================
@@ -267,7 +268,8 @@ async def get_me(current_user: UserDB = Depends(get_current_user)):
     return UserResponse(
         id=current_user.id,
         email=current_user.email,
-        username=current_user.username
+        username=current_user.username,
+        credit_goal=current_user.credit_goal or "credit_hygiene"
     )
 
 

@@ -34,6 +34,7 @@ import ViolationToggle from './ViolationToggle';
 import DiscrepancyToggle from './DiscrepancyToggle';
 import AccountAccordion from './AccountAccordion';
 import FilterToolbar from './FilterToolbar';
+import { OverrideController, useOverrideController } from './copilot';
 
 /**
  * Collapsible row for Cross-Bureau and Accounts tabs
@@ -89,6 +90,36 @@ const ViolationList = ({ hideFilters = false, hideHeader = false, activeTab, onT
     isLoading,
     error
   } = useViolationStore();
+
+  // Override flow controller for Copilot integration
+  const overrideController = useOverrideController();
+
+  /**
+   * Handle violation toggle with Copilot override check
+   * If Copilot advises against, shows dialog/toast before proceeding
+   */
+  const handleViolationToggle = (violationId) => {
+    const violation = violations.find(v => v.violation_id === violationId);
+    if (!violation) {
+      toggleViolation(violationId);
+      return;
+    }
+
+    // Check if this is selecting a violation that Copilot advises against
+    const isCurrentlySelected = selectedViolationIds.includes(violationId);
+
+    // Only check override when SELECTING (not deselecting)
+    if (!isCurrentlySelected) {
+      overrideController.checkOverride(
+        violationId,
+        violation,
+        () => toggleViolation(violationId)
+      );
+    } else {
+      // Deselecting - no override check needed
+      toggleViolation(violationId);
+    }
+  };
 
   const { currentReport } = useReportStore();
   const accounts = currentReport?.accounts || [];
@@ -402,7 +433,7 @@ const ViolationList = ({ hideFilters = false, hideHeader = false, activeTab, onT
                                       key={violation.violation_id}
                                       violation={violation}
                                       isSelected={selectedViolationIds.includes(violation.violation_id)}
-                                      onToggle={toggleViolation}
+                                      onToggle={handleViolationToggle}
                                     />
                                   ))
                                 )}
@@ -484,6 +515,9 @@ const ViolationList = ({ hideFilters = false, hideHeader = false, activeTab, onT
           </>
         )}
       </TableContainer>
+
+      {/* Override flow dialog and toast */}
+      <OverrideController controller={overrideController} />
     </Box>
   );
 };

@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
 from ..database import get_db
-from ..models.db_models import UserDB, ReportDB
+from ..models.db_models import UserDB, ReportDB, AuditResultDB
 from ..models.copilot_models import (
     CreditGoal,
     GOAL_DESCRIPTIONS,
@@ -217,30 +217,30 @@ async def get_recommendation(
             detail="Report not found or access denied"
         )
 
-    # Determine goal
+    # Determine goal - use query param, or user's saved goal, or default
     goal_str = goal or current_user.credit_goal or "credit_hygiene"
     try:
         credit_goal = CreditGoal(goal_str.lower())
     except ValueError:
         credit_goal = CreditGoal.CREDIT_HYGIENE
 
-    # Extract violations and contradictions from report data
-    # Note: This assumes report_data contains audit results
-    # The actual structure depends on how your audit results are stored
+    # Get violations from AuditResultDB (where they're actually stored)
+    audit_result = db.query(AuditResultDB).filter(
+        AuditResultDB.report_id == report_id
+    ).first()
+
     violations = []
     contradictions = []
 
-    report_data = report.report_data or {}
-    if isinstance(report_data, dict):
-        # Try to get violations from various possible locations
-        violations = report_data.get("violations", [])
-        if not violations:
-            violations = report_data.get("audit_result", {}).get("violations", [])
+    if audit_result:
+        # Violations are stored in violations_data JSON column
+        violations = audit_result.violations_data or []
+        # Discrepancies/contradictions stored in discrepancies_data
+        contradictions = audit_result.discrepancies_data or []
+    else:
+        logger.warning(f"No audit result found for report {report_id}")
 
-        # Try to get contradictions
-        contradictions = report_data.get("contradictions", [])
-        if not contradictions:
-            contradictions = report_data.get("audit_result", {}).get("contradictions", [])
+    logger.info(f"Copilot analyzing {len(violations)} violations, {len(contradictions)} contradictions for goal {credit_goal.value}")
 
     # Run copilot analysis
     engine = CopilotEngine()
@@ -286,6 +286,64 @@ async def analyze_with_data(
     )
 
     return _recommendation_to_response(recommendation)
+
+
+# =============================================================================
+# OVERRIDE LOGGING
+# =============================================================================
+
+class OverrideRequest(BaseModel):
+    """Request to log a user override of Copilot advice."""
+    dispute_session_id: str
+    copilot_version_id: str  # REQUIRED - version hash of the recommendation
+    report_id: str
+    violation_id: Optional[str] = None
+    copilot_advice: str  # 'skip' | 'defer' | 'advised_against'
+    user_action: str  # 'proceed' | 'include'
+
+
+@router.post("/override")
+async def log_copilot_override(
+    request: OverrideRequest,
+    current_user: UserDB = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Log when user proceeds against Copilot advice.
+
+    This creates a suppression event in the Execution Ledger with
+    reason USER_OVERRIDE. This allows tracking of user decisions
+    against Copilot recommendations for:
+    - Analytics and model improvement
+    - Audit trail for compliance
+    - User decision history
+
+    Note: This endpoint never blocks the user - it only logs.
+    """
+    from ..models.db_models import SuppressionReason
+    from ..services.enforcement import ExecutionLedgerService
+
+    ledger = ExecutionLedgerService(db)
+
+    # Log the override as a suppression event
+    # Note: Using suppression event since user is suppressing Copilot's advice
+    ledger.emit_suppression_event(
+        dispute_session_id=request.dispute_session_id,
+        user_id=current_user.id,
+        suppression_reason=SuppressionReason.USER_OVERRIDE,
+        credit_goal=current_user.credit_goal or "credit_hygiene",
+        report_id=request.report_id,
+        account_id=request.violation_id,  # Store violation_id in account_id field
+    )
+
+    db.commit()
+
+    logger.info(
+        f"User {current_user.id} overrode Copilot advice for "
+        f"violation {request.violation_id} (advice: {request.copilot_advice})"
+    )
+
+    return {"status": "logged", "override_id": request.dispute_session_id}
 
 
 # =============================================================================

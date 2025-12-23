@@ -299,11 +299,44 @@ const ViolationResponseRow = ({ violation, disputeId, entityName, onResponseLogg
         )}
       </Stack>
 
-      {/* Help text for resolution-only outcomes */}
+      {/* Strategic framing for response types */}
       {responseType === 'DELETED' && (
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>
-          ✓ Item deleted - no enforcement letter needed. A 90-day reinsertion watch will be created.
+          Item deleted - no enforcement letter needed. A 90-day reinsertion watch will be created.
         </Typography>
+      )}
+      {responseType === 'VERIFIED' && (
+        <Alert severity="info" sx={{ mt: 1.5, py: 0.5 }} icon={false}>
+          <Typography variant="caption">
+            <strong>Strategic note:</strong> "Verified" means the bureau claims the furnisher confirmed the data.
+            This does <strong>not</strong> mean the information is accurate. You may demand their Method of Verification
+            and challenge the substantive accuracy.
+          </Typography>
+        </Alert>
+      )}
+      {responseType === 'NO_RESPONSE' && (
+        <Alert severity="warning" sx={{ mt: 1.5, py: 0.5 }} icon={false}>
+          <Typography variant="caption">
+            <strong>Strategic note:</strong> No response within the statutory deadline is a procedural violation.
+            Generate an enforcement letter citing 15 U.S.C. §1681i(a)(1) failure to investigate.
+          </Typography>
+        </Alert>
+      )}
+      {responseType === 'REJECTED' && (
+        <Alert severity="error" sx={{ mt: 1.5, py: 0.5 }} icon={false}>
+          <Typography variant="caption">
+            <strong>Strategic note:</strong> "Frivolous/Rejected" disputes trigger specific FCRA rights.
+            The bureau must provide their reason in writing. Challenge their determination if unsupported.
+          </Typography>
+        </Alert>
+      )}
+      {responseType === 'REINSERTION' && (
+        <Alert severity="error" sx={{ mt: 1.5, py: 0.5 }} icon={false}>
+          <Typography variant="caption">
+            <strong>Strategic note:</strong> Reinsertion without proper notice is a separate FCRA violation.
+            Under §1681i(a)(5), they must certify accuracy and provide 5-day written notice.
+          </Typography>
+        </Alert>
       )}
     </Box>
   );

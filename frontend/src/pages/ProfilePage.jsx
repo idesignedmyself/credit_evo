@@ -31,6 +31,7 @@ import {
   Flag,
 } from '@mui/icons-material';
 import { getProfile, updateProfile, changePassword } from '../api/authApi';
+import { useAuthStore } from '../state';
 
 const US_STATES = [
   { code: 'AL', name: 'Alabama' }, { code: 'AK', name: 'Alaska' },
@@ -177,6 +178,9 @@ function ProfilePage() {
     setProfile({ ...profile, [field]: e.target.value });
   };
 
+  // Get setUser to update authStore when profile changes
+  const { user, setUser } = useAuthStore();
+
   const handleSaveProfile = async (e) => {
     e.preventDefault();
     setError('');
@@ -208,6 +212,15 @@ function ProfilePage() {
         ...profile,
         profile_complete: result.profile_complete,
       });
+
+      // Update authStore.user with new credit_goal so Copilot sees it
+      if (user) {
+        setUser({
+          ...user,
+          credit_goal: profile.credit_goal,
+        });
+      }
+
       setSuccess('Profile updated successfully!');
     } catch (err) {
       console.error('[ProfilePage] Profile save error:', err);

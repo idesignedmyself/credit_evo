@@ -440,6 +440,7 @@ class SuppressionReason(str, Enum):
     OWNERSHIP_GATE_BLOCK = "OWNERSHIP_GATE_BLOCK"
     VERIFICATION_RISK_SPIKE = "VERIFICATION_RISK_SPIKE"
     COMPLIANCE_HOLD = "COMPLIANCE_HOLD"
+    USER_OVERRIDE = "USER_OVERRIDE"  # User proceeded against Copilot advice
 
 
 class ExecutionStatus(str, Enum):

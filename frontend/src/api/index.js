@@ -8,3 +8,4 @@ export { default as auditApi } from './auditApi';
 export { default as letterApi } from './letterApi';
 export { default as authApi } from './authApi';
 export * as disputeApi from './disputeApi';
+export * as copilotApi from './copilotApi';
