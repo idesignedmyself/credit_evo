@@ -238,16 +238,14 @@ export default function BatchAccordion({
                     renderViolation(violation)
                   ) : (
                     <>
-                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <Typography variant="body2" fontWeight={600}>
-                          {violation.creditor_name || 'Unknown Account'}
+                      <Typography variant="body2" fontWeight={600}>
+                        {violation.creditor_name || 'Unknown Account'}
+                      </Typography>
+                      {(violation.account_number_masked || violation.account_id) && (
+                        <Typography variant="caption" color="text.secondary">
+                          Account#: {violation.account_number_masked || violation.account_id}
                         </Typography>
-                        {(violation.account_number_masked || violation.account_id) && (
-                          <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary' }}>
-                            {violation.account_number_masked || violation.account_id}
-                          </Typography>
-                        )}
-                      </Box>
+                      )}
                       <Typography variant="caption" color="text.secondary">
                         {violation.violation_type} • {violation.bureau}
                       </Typography>
