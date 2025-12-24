@@ -104,7 +104,7 @@ export default function BatchAccordion({
 
           <Box sx={{ flex: 1 }}>
             <Typography variant="body2" fontWeight={600}>
-              Wave {batch.batch_number}: {strategy.label}
+              Wave {batch.batch_number}: {batch.furnisher_name || 'Unknown'}
               {batch.is_single_item && (
                 <Typography component="span" variant="caption" sx={{ ml: 1, color: 'text.secondary', fontStyle: 'italic' }}>
                   (Isolated step)
@@ -112,7 +112,7 @@ export default function BatchAccordion({
               )}
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              {batch.violation_ids?.length || 0} violation{batch.violation_ids?.length !== 1 ? 's' : ''} • {batch.recommended_window}
+              {strategy.label} • {batch.violation_ids?.length || 0} violation{batch.violation_ids?.length !== 1 ? 's' : ''} • {batch.recommended_window}
             </Typography>
           </Box>
         </Box>

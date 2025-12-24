@@ -450,12 +450,16 @@ class CopilotRecommendation:
 @dataclass
 class DisputeBatch:
     """
-    A batch of violations to dispute together in a single wave.
+    A batch of violations to dispute together in a single letter.
 
-    Batches are organized by bureau and share:
-    - A common goal/strategy
-    - Similar risk profile
-    - Response window timing
+    CORE INVARIANT: One batch = one letter = one furnisher.
+
+    Batches are organized by: bureau → furnisher → enforcement theory
+
+    Each batch targets exactly ONE:
+    - Bureau (TransUnion, Experian, Equifax)
+    - Furnisher (creditor/collector name)
+    - Enforcement theory (action type)
 
     Size rules:
     - Max 4 violations per batch (hard limit)
@@ -467,7 +471,8 @@ class DisputeBatch:
     """
     batch_id: str = field(default_factory=lambda: str(uuid4()))
     bureau: str = ""  # TransUnion, Experian, Equifax
-    batch_number: int = 1  # Wave number for this bureau (1, 2, 3...)
+    furnisher_name: str = ""  # Single furnisher targeted by this letter (e.g., "JPMCB CARD")
+    batch_number: int = 1  # Wave number (timing only, not furnisher-encoded)
 
     # Strategy metadata
     goal_summary: str = ""  # "Wave 1: Delete Request for Mortgage"

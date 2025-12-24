@@ -4,14 +4,19 @@ Credit Engine 2.0 - Copilot Batch Engine
 Organizes enforcement actions into dispute batches (waves) per bureau.
 Takes CopilotRecommendation and groups actions into strategic waves.
 
+CORE INVARIANT: One batch = one letter = one furnisher.
+
 Batching Rules:
+- Group by: bureau → furnisher → enforcement theory (in that order!)
 - Max 4 violations per batch (hard limit, optimal for bureau processing)
-- Min 1 violation allowed (single-item batches are valid for escalations,
-  MOV follow-ups, procedural challenges, litigation-ready demands, etc.)
-- Preference: 2-4 violations per batch (heuristic, not enforced)
-- Group by bureau first, then by action_type for strategy coherence
-- Respect depends_on chains from Copilot engine
+- Min 1 violation allowed (single-item batches valid for escalations)
 - Lock subsequent waves until previous wave responds (per-bureau scoped)
+
+A valid batch satisfies ALL:
+1. One bureau
+2. One furnisher
+3. One enforcement theory (action type)
+4. 1-4 violations
 
 This is read-only with respect to disputes - it queries for lock detection
 but never modifies dispute state.
@@ -33,11 +38,16 @@ class BatchEngine:
     """
     Groups enforcement actions into dispute batches.
 
+    CRITICAL GROUPING ORDER: bureau → furnisher → enforcement theory
+    This order ensures one furnisher per letter. Never group by
+    enforcement theory before furnisher.
+
     Batching strategy:
     1. Group actions by target bureau
-    2. Within bureau, sort by sequence_order (from Copilot engine)
-    3. Create waves of max 4 violations each (single-item batches allowed)
-    4. Lock subsequent waves until previous wave completes (per-bureau)
+    2. Within bureau, group by furnisher (creditor_name)
+    3. Within furnisher, group by action_type (enforcement theory)
+    4. Create waves of max 4 violations each
+    5. Lock subsequent waves until previous wave completes (per-bureau)
 
     Single-item batches are valid for:
     - MOV follow-ups
@@ -64,13 +74,13 @@ class BatchEngine:
     }
 
     STRATEGY_LABELS = {
-        "DELETE_DEMAND": "Deletion Request",
-        "CORRECT_DEMAND": "Correction Request",
-        "MOV_DEMAND": "Method of Verification",
-        "OWNERSHIP_CHAIN_DEMAND": "Ownership Challenge",
-        "DOFD_DEMAND": "DOFD Resolution",
-        "PROCEDURAL_DEMAND": "Procedural Compliance",
-        "DEFER": "Defer Action",
+        "DELETE_DEMAND": "Deletion",
+        "CORRECT_DEMAND": "Correction",
+        "MOV_DEMAND": "Verification",
+        "OWNERSHIP_CHAIN_DEMAND": "Ownership",
+        "DOFD_DEMAND": "DOFD",
+        "PROCEDURAL_DEMAND": "Procedural",
+        "DEFER": "Defer",
     }
 
     def create_batched_recommendation(
@@ -80,6 +90,9 @@ class BatchEngine:
     ) -> BatchedRecommendation:
         """
         Convert a CopilotRecommendation into batches organized by bureau.
+
+        Grouping order: bureau → furnisher → enforcement theory
+        Each leaf in this hierarchy produces separate batches (letters).
 
         Args:
             recommendation: The base copilot recommendation with prioritized actions
@@ -95,17 +108,32 @@ class BatchEngine:
             skipped_violation_ids=[s.source_id for s in recommendation.skips],
         )
 
-        # Group actions by bureau
-        actions_by_bureau = self._group_actions_by_bureau(recommendation.actions)
+        # Group actions by bureau → furnisher
+        actions_by_bureau_furnisher = self._group_actions_by_bureau_and_furnisher(
+            recommendation.actions
+        )
 
         # Create batches for each bureau
-        for bureau, actions in actions_by_bureau.items():
-            bureau_batches = self._create_bureau_batches(
-                bureau=bureau,
-                actions=actions,
-                goal=recommendation.goal,
-                existing_disputes=existing_pending_disputes,
-            )
+        for bureau, furnisher_groups in actions_by_bureau_furnisher.items():
+            bureau_batches = []
+            wave_number = 1
+
+            # Process each furnisher separately (CRITICAL: one furnisher per letter)
+            for furnisher, actions in furnisher_groups.items():
+                furnisher_batches = self._create_furnisher_batches(
+                    bureau=bureau,
+                    furnisher=furnisher,
+                    actions=actions,
+                    goal=recommendation.goal,
+                    existing_disputes=existing_pending_disputes,
+                    start_wave_number=wave_number,
+                    previous_bureau_batches=bureau_batches,
+                )
+                bureau_batches.extend(furnisher_batches)
+                # Wave numbers continue sequentially across furnishers
+                if furnisher_batches:
+                    wave_number = furnisher_batches[-1].batch_number + 1
+
             batched.batches_by_bureau[bureau] = bureau_batches
             batched.total_batches += len(bureau_batches)
             batched.total_violations_in_batches += sum(
@@ -122,23 +150,53 @@ class BatchEngine:
 
         return batched
 
-    def _group_actions_by_bureau(
+    def _get_furnisher_key(self, action: EnforcementAction) -> str:
+        """
+        Normalize furnisher name for grouping.
+
+        Uses creditor_name from the action, defaulting to "Unknown" if not set.
+        Normalizes to uppercase for consistent grouping.
+        """
+        furnisher = getattr(action, "creditor_name", None) or "Unknown"
+        return furnisher.strip().upper() if furnisher else "Unknown"
+
+    def _group_actions_by_bureau_and_furnisher(
         self,
         actions: List[EnforcementAction],
-    ) -> Dict[str, List[EnforcementAction]]:
-        """Group actions by their target bureau."""
-        by_bureau: Dict[str, List[EnforcementAction]] = {}
+    ) -> Dict[str, Dict[str, List[EnforcementAction]]]:
+        """
+        Group actions by bureau, then by furnisher within each bureau.
+
+        CRITICAL: This establishes the grouping hierarchy that ensures
+        one furnisher per letter. Never flatten this structure.
+
+        Returns:
+            {
+                "Equifax": {
+                    "JPMCB CARD": [action1, action2],
+                    "NAVY FCU": [action3]
+                },
+                "TransUnion": { ... }
+            }
+        """
+        by_bureau_furnisher: Dict[str, Dict[str, List[EnforcementAction]]] = {}
 
         for action in actions:
-            # Get bureau from action (may be on the action or need to be extracted)
+            # Level 1: Bureau
             bureau_raw = getattr(action, "bureau", None) or "Unknown"
             bureau = self._normalize_bureau(bureau_raw)
 
-            if bureau not in by_bureau:
-                by_bureau[bureau] = []
-            by_bureau[bureau].append(action)
+            # Level 2: Furnisher
+            furnisher = self._get_furnisher_key(action)
 
-        return by_bureau
+            if bureau not in by_bureau_furnisher:
+                by_bureau_furnisher[bureau] = {}
+            if furnisher not in by_bureau_furnisher[bureau]:
+                by_bureau_furnisher[bureau][furnisher] = []
+
+            by_bureau_furnisher[bureau][furnisher].append(action)
+
+        return by_bureau_furnisher
 
     def _normalize_bureau(self, bureau: str) -> str:
         """Normalize bureau name to standard format."""
@@ -147,26 +205,34 @@ class BatchEngine:
         key = bureau.lower().strip()
         return self.BUREAU_NAMES.get(key, bureau.title())
 
-    def _create_bureau_batches(
+    def _create_furnisher_batches(
         self,
         bureau: str,
+        furnisher: str,
         actions: List[EnforcementAction],
         goal,
         existing_disputes: Optional[List[dict]],
+        start_wave_number: int,
+        previous_bureau_batches: List[DisputeBatch],
     ) -> List[DisputeBatch]:
-        """Create batches for a single bureau's actions."""
+        """
+        Create batches for a single furnisher's actions within a bureau.
+
+        Groups by action_type (enforcement theory) to maintain strategy coherence.
+        Each resulting batch = one letter = one furnisher.
+        """
         batches = []
 
         # Sort actions by sequence_order (already set by copilot engine)
         sorted_actions = sorted(actions, key=lambda a: a.sequence_order)
 
-        # Group into waves based on dependencies and batch size
-        current_wave = 1
+        # Group into waves based on dependencies, action type, and batch size
+        current_wave = start_wave_number
         current_batch_actions = []
         processed_action_ids = set()
 
         for action in sorted_actions:
-            # Check if this action has unmet dependencies in the current batch
+            # Check if this action has unmet dependencies
             current_ids = {a.action_id for a in current_batch_actions}
             has_unmet_deps = any(
                 dep not in processed_action_ids and dep not in current_ids
@@ -176,7 +242,7 @@ class BatchEngine:
             # Start new batch if:
             # 1. Current batch is full (hard max of 4)
             # 2. Action has unmet dependencies from earlier batches
-            # 3. Different action type for strategy coherence (no min check - single-item batches allowed)
+            # 3. Different action type (enforcement theory coherence)
             should_start_new = (
                 len(current_batch_actions) >= self.MAX_VIOLATIONS_PER_BATCH
                 or has_unmet_deps
@@ -190,11 +256,12 @@ class BatchEngine:
                 # Finalize current batch
                 batch = self._create_batch(
                     bureau=bureau,
+                    furnisher=furnisher,
                     batch_number=current_wave,
                     actions=current_batch_actions,
                     goal=goal,
                     existing_disputes=existing_disputes,
-                    previous_batches=batches,
+                    previous_batches=previous_bureau_batches + batches,
                 )
                 batches.append(batch)
                 processed_action_ids.update(a.action_id for a in current_batch_actions)
@@ -207,11 +274,12 @@ class BatchEngine:
         if current_batch_actions:
             batch = self._create_batch(
                 bureau=bureau,
+                furnisher=furnisher,
                 batch_number=current_wave,
                 actions=current_batch_actions,
                 goal=goal,
                 existing_disputes=existing_disputes,
-                previous_batches=batches,
+                previous_batches=previous_bureau_batches + batches,
             )
             batches.append(batch)
 
@@ -220,13 +288,29 @@ class BatchEngine:
     def _create_batch(
         self,
         bureau: str,
+        furnisher: str,
         batch_number: int,
         actions: List[EnforcementAction],
         goal,
         existing_disputes: Optional[List[dict]],
         previous_batches: List[DisputeBatch],
     ) -> DisputeBatch:
-        """Create a single batch from a list of actions."""
+        """
+        Create a single batch from a list of actions.
+
+        INVARIANT: All actions must be for the same furnisher.
+        This is enforced by assertion to prevent silent regressions.
+        """
+        # SAFETY ASSERTION: Enforce one furnisher per batch
+        furnisher_names = {
+            (getattr(a, "creditor_name", None) or "Unknown").strip().upper()
+            for a in actions
+        }
+        assert len(furnisher_names) == 1, (
+            f"Batch contains multiple furnishers: {furnisher_names}. "
+            "This violates the one-furnisher-per-letter invariant."
+        )
+
         # Determine primary strategy from actions
         action_types = [a.action_type.value for a in actions]
         primary_strategy = max(set(action_types), key=action_types.count)
@@ -236,9 +320,11 @@ class BatchEngine:
         avg_risk = sum(a.risk_score for a in actions) / len(actions) if actions else 0
         risk_level = "LOW" if avg_risk < 2 else "MEDIUM" if avg_risk < 4 else "HIGH"
 
-        # Build goal summary
+        # Build goal summary with furnisher name
         goal_name = goal.value.replace("_", " ").title() if hasattr(goal, "value") else str(goal)
-        goal_summary = f"Wave {batch_number}: {strategy_label} for {goal_name}"
+        # Format furnisher for display (title case)
+        display_furnisher = furnisher.title() if furnisher != "Unknown" else "Unknown Furnisher"
+        goal_summary = f"Wave {batch_number}: {display_furnisher} — {strategy_label} for {goal_name}"
 
         # Determine recommended window
         recommended_window = f"{self.DEFAULT_WINDOW_DAYS}-{self.EXTENDED_WINDOW_DAYS} days"
@@ -256,7 +342,7 @@ class BatchEngine:
             pending_for_batch = [
                 d for d in existing_disputes
                 if d.get("violation_id") in violation_ids
-                and d.get("status") in ("OPEN", "DISPUTED", "PENDING")
+                and d.get("status") in ("OPEN",)  # Only OPEN is pending
             ]
             if pending_for_batch:
                 is_locked = True
@@ -267,7 +353,7 @@ class BatchEngine:
                     "User override",
                 ]
 
-        # Lock subsequent batches until previous wave completes
+        # Lock subsequent batches until previous wave completes (per-bureau)
         depends_on_batch_ids = []
         if previous_batches:
             previous_batch = previous_batches[-1]
@@ -289,6 +375,7 @@ class BatchEngine:
         return DisputeBatch(
             batch_id=str(uuid4()),
             bureau=bureau,
+            furnisher_name=furnisher,  # Track furnisher explicitly
             batch_number=batch_number,
             goal_summary=goal_summary,
             strategy=primary_strategy,

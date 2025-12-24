@@ -151,9 +151,14 @@ class BatchActionResponse(BaseModel):
 
 
 class DisputeBatchResponse(BaseModel):
-    """Batch of violations for dispute."""
+    """
+    Batch of violations for dispute.
+
+    INVARIANT: One batch = one letter = one furnisher.
+    """
     batch_id: str
     bureau: str
+    furnisher_name: str = ""  # Single furnisher targeted by this letter
     batch_number: int
     goal_summary: str
     strategy: str
@@ -655,6 +660,7 @@ def _batched_to_response(
             DisputeBatchResponse(
                 batch_id=batch.batch_id,
                 bureau=batch.bureau,
+                furnisher_name=batch.furnisher_name,
                 batch_number=batch.batch_number,
                 goal_summary=batch.goal_summary,
                 strategy=batch.strategy,
