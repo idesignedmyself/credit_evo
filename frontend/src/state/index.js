@@ -8,3 +8,4 @@ export { default as useUIStore } from './uiStore';
 export { default as useAuthStore } from './authStore';
 export { useFilterStore } from './filterStore';
 export { default as useCopilotStore } from './copilotStore';
+export { default as useAdminStore } from './adminStore';

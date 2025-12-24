@@ -125,6 +125,12 @@ class UserDB(Base):
     # Valid values: mortgage, auto_loan, prime_credit_card, apartment_rental, employment, credit_hygiene
     credit_goal = Column(String(50), nullable=True, default="credit_hygiene")
 
+    # ==========================================================================
+    # ROLE (for Admin System)
+    # ==========================================================================
+    # User role - "user" for standard users, "admin" for admin access
+    role = Column(String(20), default="user", nullable=False)
+
     # Relationships
     reports = relationship("ReportDB", back_populates="user", cascade="all, delete-orphan")
 

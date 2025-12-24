@@ -6,7 +6,9 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ThemeProvider, CssBaseline } from '@mui/material';
 import { DashboardPage, UploadPage, AuditPage, LetterPage, LettersPage, ReportHistoryPage, RegisterPage, ProfilePage, LandingPage, DisputesPage } from './pages';
+import { AdminDashboard, AdminUsers, AdminUserDetail, DisputeIntel, CopilotPerf } from './pages/admin';
 import DashboardLayout from './layouts/DashboardLayout';
+import AdminLayout from './layouts/AdminLayout';
 import theme from './theme';
 import useAuthStore from './state/authStore';
 
@@ -17,6 +19,22 @@ const ProtectedRoute = ({ children }) => {
 
   if (!isAuthenticated) {
     return <Navigate to="/" state={{ from: location }} replace />;
+  }
+
+  return children;
+};
+
+// Admin Route Component - requires admin role
+const AdminRoute = ({ children }) => {
+  const { isAuthenticated, user } = useAuthStore();
+  const location = useLocation();
+
+  if (!isAuthenticated) {
+    return <Navigate to="/" state={{ from: location }} replace />;
+  }
+
+  if (user?.role !== 'admin') {
+    return <Navigate to="/dashboard" replace />;
   }
 
   return children;
@@ -48,6 +66,21 @@ const AppLayout = () => {
         <Route path="/letter/:reportId" element={<LetterPage />} />
         <Route path="/disputes" element={<DisputesPage />} />
         <Route path="/profile" element={<ProfilePage />} />
+      </Route>
+
+      {/* Admin routes with AdminLayout */}
+      <Route
+        element={
+          <AdminRoute>
+            <AdminLayout />
+          </AdminRoute>
+        }
+      >
+        <Route path="/admin" element={<AdminDashboard />} />
+        <Route path="/admin/users" element={<AdminUsers />} />
+        <Route path="/admin/users/:userId" element={<AdminUserDetail />} />
+        <Route path="/admin/disputes" element={<DisputeIntel />} />
+        <Route path="/admin/copilot" element={<CopilotPerf />} />
       </Route>
 
       {/* Default routes - show LandingPage for non-auth, redirect to dashboard for auth */}

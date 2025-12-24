@@ -55,6 +55,7 @@
 | Parser (IdentityIQ) | ✅ Ready | - |
 | Auditor | ✅ Ready | - |
 | Letter Generator | ✅ Ready | - |
+| Admin System | ✅ Ready | Phase 1 MVP |
 
 ---
 
@@ -98,6 +99,67 @@ npm start
 3. **Recommended Infrastructure**
    - Backend: Docker container or managed Python hosting
    - Frontend: Static hosting (Vercel, Netlify, S3+CloudFront)
+
+---
+
+## Admin System MVP (Phase 1)
+
+The Admin System provides read-only operational visibility into the Credit Engine, sourcing all data from the Execution Ledger (single source of truth).
+
+### Backend Components
+
+| Component | Location | Purpose |
+|-----------|----------|---------|
+| UserDB role field | `backend/app/models/db_models.py` | User role storage (user/admin) |
+| JWT role claim | `backend/app/auth.py` | Role included in access tokens |
+| require_admin() | `backend/app/auth.py` | Admin route protection |
+| Admin router | `backend/app/routers/admin.py` | 5 read-only admin endpoints |
+| Seed script | `backend/scripts/seed_admin.py` | Create admin users |
+
+### Admin API Endpoints
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/admin/dashboard` | GET | Key platform metrics |
+| `/admin/users` | GET | Paginated user list with search |
+| `/admin/users/{user_id}` | GET | User drilldown with timeline |
+| `/admin/intelligence/disputes` | GET | Bureau/furnisher outcome analytics |
+| `/admin/copilot/performance` | GET | Follow/override rates, goal performance |
+
+### Frontend Components
+
+| Component | Location | Purpose |
+|-----------|----------|---------|
+| AdminLayout | `frontend/src/layouts/AdminLayout.jsx` | Dark-themed admin sidebar |
+| AdminRoute | `frontend/src/App.jsx` | Route guard for /admin/* |
+| Admin pages | `frontend/src/pages/admin/` | Dashboard, Users, UserDetail, DisputeIntel, CopilotPerf |
+| Admin components | `frontend/src/components/admin/` | StatCard, UserTable, TimelineEvent |
+| Admin API | `frontend/src/api/adminApi.js` | Admin API client functions |
+| Admin store | `frontend/src/state/adminStore.js` | Zustand store for admin state |
+
+### Admin Routes
+
+| Route | Purpose |
+|-------|---------|
+| `/admin` | Dashboard with key metrics |
+| `/admin/users` | Paginated user list with search |
+| `/admin/users/:userId` | User drilldown with timeline |
+| `/admin/disputes` | Bureau/furnisher outcome analytics |
+| `/admin/copilot` | Follow/override rates, goal performance |
+
+### Database Migration
+
+Add the role column to existing users:
+```sql
+ALTER TABLE users ADD COLUMN role VARCHAR(20) NOT NULL DEFAULT 'user';
+```
+
+### Create Admin User
+
+```bash
+cd backend
+python -m scripts.seed_admin admin@example.com admin yourpassword123
+```
 
 ---
 

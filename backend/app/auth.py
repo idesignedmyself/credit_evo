@@ -38,12 +38,13 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return bcrypt.checkpw(password_bytes, hashed_bytes)
 
 
-def create_access_token(user_id: str, email: str) -> str:
-    """Create a JWT access token."""
+def create_access_token(user_id: str, email: str, role: str = "user") -> str:
+    """Create a JWT access token with role claim."""
     expire = datetime.utcnow() + timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
     to_encode = {
         "sub": user_id,
         "email": email,
+        "role": role,
         "exp": expire
     }
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
@@ -97,3 +98,16 @@ async def get_current_user(
         raise credentials_exception
 
     return user
+
+
+async def require_admin(current_user: UserDB = Depends(get_current_user)) -> UserDB:
+    """
+    Dependency to require admin role.
+    Use this on admin-only routes.
+    """
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+    return current_user

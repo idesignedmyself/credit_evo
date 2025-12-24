@@ -196,6 +196,7 @@ class UserResponse(BaseModel):
     email: str
     username: str
     credit_goal: Optional[str] = None  # For Copilot integration
+    role: str = "user"  # For Admin System
 
 
 # =============================================================================
@@ -253,8 +254,8 @@ async def login(request: LoginRequest, db: Session = Depends(get_db)):
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Create access token
-    access_token = create_access_token(user.id, user.email)
+    # Create access token with role
+    access_token = create_access_token(user.id, user.email, user.role or "user")
 
     logger.info(f"User logged in: {request.email}")
     return TokenResponse(access_token=access_token)
@@ -269,7 +270,8 @@ async def get_me(current_user: UserDB = Depends(get_current_user)):
         id=current_user.id,
         email=current_user.email,
         username=current_user.username,
-        credit_goal=current_user.credit_goal or "credit_hygiene"
+        credit_goal=current_user.credit_goal or "credit_hygiene",
+        role=current_user.role or "user"
     )
 
 
