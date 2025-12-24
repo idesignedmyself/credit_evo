@@ -50,9 +50,16 @@ apiClient.interceptors.response.use(
       localStorage.removeItem(TOKEN_KEY);
       localStorage.removeItem('credit_engine_user');
 
-      // Redirect to login if not already there
-      if (window.location.pathname !== '/login' && window.location.pathname !== '/register') {
-        window.location.href = '/login';
+      // Redirect to login if not already on a login/register page
+      const path = window.location.pathname;
+      const isAuthPage = path === '/login' || path === '/register' || path === '/admin/login';
+      if (!isAuthPage) {
+        // Redirect admin routes to admin login, others to main login
+        if (path.startsWith('/admin')) {
+          window.location.href = '/admin/login';
+        } else {
+          window.location.href = '/login';
+        }
       }
     }
 

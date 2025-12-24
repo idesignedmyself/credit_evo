@@ -17,19 +17,24 @@ import { login, getMe } from '../../api/authApi';
 
 export default function AdminLogin() {
   const navigate = useNavigate();
-  const { login: storeLogin, isAuthenticated, user } = useAuthStore();
+  const { login: storeLogin, logout, isAuthenticated, user } = useAuthStore();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // If already authenticated as admin, redirect to admin dashboard
+  // On mount: if authenticated as admin, redirect; otherwise clear stale non-admin session
   React.useEffect(() => {
-    if (isAuthenticated && user?.role === 'admin') {
-      navigate('/admin');
+    if (isAuthenticated) {
+      if (user?.role === 'admin') {
+        navigate('/admin');
+      } else {
+        // Clear non-admin session to prevent interference
+        logout();
+      }
     }
-  }, [isAuthenticated, user, navigate]);
+  }, [isAuthenticated, user, navigate, logout]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
