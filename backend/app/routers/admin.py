@@ -169,7 +169,7 @@ async def get_dashboard_stats(
         func.count(ExecutionOutcomeDB.id)
     ).group_by(ExecutionOutcomeDB.final_outcome).all()
 
-    outcome_counts = {str(o.final_outcome.value): c for o, c in outcomes}
+    outcome_counts = {str(o.value) if o else "UNKNOWN": c for o, c in outcomes}
     total_outcomes = sum(outcome_counts.values()) or 1
 
     deletion_rate = (outcome_counts.get("DELETED", 0) / total_outcomes) * 100
