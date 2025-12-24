@@ -6,7 +6,7 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ThemeProvider, CssBaseline } from '@mui/material';
 import { DashboardPage, UploadPage, AuditPage, LetterPage, LettersPage, ReportHistoryPage, RegisterPage, ProfilePage, LandingPage, DisputesPage } from './pages';
-import { AdminDashboard, AdminUsers, AdminUserDetail, DisputeIntel, CopilotPerf } from './pages/admin';
+import { AdminLogin, AdminDashboard, AdminUsers, AdminUserDetail, DisputeIntel, CopilotPerf } from './pages/admin';
 import DashboardLayout from './layouts/DashboardLayout';
 import AdminLayout from './layouts/AdminLayout';
 import theme from './theme';
@@ -30,11 +30,11 @@ const AdminRoute = ({ children }) => {
   const location = useLocation();
 
   if (!isAuthenticated) {
-    return <Navigate to="/" state={{ from: location }} replace />;
+    return <Navigate to="/admin/login" state={{ from: location }} replace />;
   }
 
   if (user?.role !== 'admin') {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to="/admin/login" replace />;
   }
 
   return children;
@@ -67,6 +67,9 @@ const AppLayout = () => {
         <Route path="/disputes" element={<DisputesPage />} />
         <Route path="/profile" element={<ProfilePage />} />
       </Route>
+
+      {/* Admin login - separate from protected admin routes */}
+      <Route path="/admin/login" element={<AdminLogin />} />
 
       {/* Admin routes with AdminLayout */}
       <Route
