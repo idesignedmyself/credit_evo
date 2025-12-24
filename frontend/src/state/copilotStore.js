@@ -19,6 +19,7 @@ const useCopilotStore = create((set, get) => ({
 
   // Core data (not persisted across sessions)
   recommendation: null,           // CopilotRecommendation with full data
+  batchedRecommendation: null,    // BatchedRecommendation with bureau waves
   goals: [],                      // Available credit goals
   selectedGoal: 'credit_hygiene', // Current selected goal
 
@@ -30,13 +31,16 @@ const useCopilotStore = create((set, get) => ({
   drawerOpen: false,
   activeSection: 'overview',      // 'blockers' | 'actions' | 'skips'
   isPassiveMode: false,           // Ghost state when no blockers
+  selectedBatchId: null,          // Currently selected batch for dispute
 
   // Override tracking (batch logic)
   sessionOverrideCount: 0,        // Reset on goal change
+  batchOverrideCount: 0,          // Batch-level overrides
 
   // Loading
   currentReportId: null,
   isLoadingRecommendation: false,
+  isLoadingBatched: false,
   isLoadingGoals: false,
   error: null,
 
@@ -156,12 +160,165 @@ const useCopilotStore = create((set, get) => ({
   clearRecommendation: () => {
     set({
       recommendation: null,
+      batchedRecommendation: null,
       correlationId: null,
       versionHash: null,
       currentReportId: null,
       isPassiveMode: false,
       sessionOverrideCount: 0,
+      batchOverrideCount: 0,
+      selectedBatchId: null,
     });
+  },
+
+  // ==========================================================================
+  // ACTIONS - BATCHED RECOMMENDATIONS
+  // ==========================================================================
+
+  /**
+   * Fetch batched recommendation for a report (organized by bureau/wave)
+   * @param {string} reportId - Report to analyze
+   * @param {string} [goalOverride] - Optional goal override
+   */
+  fetchBatchedRecommendation: async (reportId, goalOverride = null) => {
+    if (!goalOverride) {
+      get().syncGoalFromProfile();
+    }
+    const state = get();
+    const goal = goalOverride || state.selectedGoal;
+
+    // Skip if already loaded for this report+goal combo
+    if (
+      state.currentReportId === reportId &&
+      state.batchedRecommendation?.goal === goal &&
+      state.batchedRecommendation
+    ) {
+      return state.batchedRecommendation;
+    }
+
+    set({
+      isLoadingBatched: true,
+      error: null,
+      currentReportId: reportId,
+    });
+
+    try {
+      const batched = await copilotApi.getBatchedRecommendation(reportId, goal);
+
+      set({
+        batchedRecommendation: batched,
+        correlationId: batched.recommendation_id,
+        versionHash: batched.recommendation_id,
+        isLoadingBatched: false,
+        selectedBatchId: null, // Reset selection
+        batchOverrideCount: 0, // Reset on new recommendation
+      });
+
+      return batched;
+    } catch (error) {
+      set({
+        error: error.message,
+        isLoadingBatched: false,
+      });
+      throw error;
+    }
+  },
+
+  /**
+   * Clear batched recommendation only
+   */
+  clearBatchedRecommendation: () => {
+    set({
+      batchedRecommendation: null,
+      selectedBatchId: null,
+      batchOverrideCount: 0,
+    });
+  },
+
+  /**
+   * Set the selected batch for dispute
+   * @param {string|null} batchId - Batch ID to select, or null to deselect
+   */
+  setSelectedBatch: (batchId) => {
+    set({ selectedBatchId: batchId });
+  },
+
+  /**
+   * Get batch by ID
+   * @param {string} batchId - Batch ID
+   * @returns {Object|null}
+   */
+  getBatch: (batchId) => {
+    const state = get();
+    if (!state.batchedRecommendation) return null;
+
+    for (const batches of Object.values(state.batchedRecommendation.batches_by_bureau || {})) {
+      const found = batches.find(b => b.batch_id === batchId);
+      if (found) return found;
+    }
+    return null;
+  },
+
+  /**
+   * Get all batches as flat array
+   * @returns {Array}
+   */
+  getAllBatches: () => {
+    const state = get();
+    if (!state.batchedRecommendation) return [];
+
+    const all = [];
+    for (const batches of Object.values(state.batchedRecommendation.batches_by_bureau || {})) {
+      all.push(...batches);
+    }
+    return all;
+  },
+
+  /**
+   * Get violation IDs for a batch
+   * @param {string} batchId - Batch ID
+   * @returns {Array<string>}
+   */
+  getBatchViolationIds: (batchId) => {
+    const batch = get().getBatch(batchId);
+    return batch?.violation_ids || [];
+  },
+
+  // ==========================================================================
+  // ACTIONS - BATCH OVERRIDE LOGGING
+  // ==========================================================================
+
+  /**
+   * Log a batch-level override (e.g., proceeding with locked batch)
+   * @param {string} batchId - Batch being overridden
+   * @param {string} overrideType - 'proceed_locked' | 'skip_recommended' | 'reorder'
+   * @param {string} copilotAdvice - What copilot recommended
+   * @param {string} userAction - What user chose
+   */
+  logBatchOverride: async (batchId, overrideType, copilotAdvice, userAction) => {
+    const state = get();
+
+    if (!state.batchedRecommendation) {
+      console.warn('Cannot log batch override: no active batched recommendation');
+      return;
+    }
+
+    try {
+      await copilotApi.logBatchOverride({
+        batch_id: batchId,
+        report_id: state.currentReportId,
+        override_type: overrideType,
+        copilot_advice: copilotAdvice,
+        user_action: userAction,
+      });
+
+      set((state) => ({
+        batchOverrideCount: state.batchOverrideCount + 1,
+      }));
+    } catch (error) {
+      console.error('Failed to log batch override:', error);
+      // Don't throw - logging failure shouldn't block user
+    }
   },
 
   // ==========================================================================
@@ -417,6 +574,7 @@ const useCopilotStore = create((set, get) => ({
   resetState: () => {
     set({
       recommendation: null,
+      batchedRecommendation: null,
       goals: [],
       selectedGoal: 'credit_hygiene',
       correlationId: null,
@@ -424,9 +582,12 @@ const useCopilotStore = create((set, get) => ({
       drawerOpen: false,
       activeSection: 'overview',
       isPassiveMode: false,
+      selectedBatchId: null,
       sessionOverrideCount: 0,
+      batchOverrideCount: 0,
       currentReportId: null,
       isLoadingRecommendation: false,
+      isLoadingBatched: false,
       isLoadingGoals: false,
       error: null,
     });

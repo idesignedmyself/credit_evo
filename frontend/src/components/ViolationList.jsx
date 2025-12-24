@@ -22,6 +22,7 @@ import {
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import Chip from '@mui/material/Chip';
 
 import {
@@ -34,7 +35,7 @@ import ViolationToggle from './ViolationToggle';
 import DiscrepancyToggle from './DiscrepancyToggle';
 import AccountAccordion from './AccountAccordion';
 import FilterToolbar from './FilterToolbar';
-import { OverrideController, useOverrideController } from './copilot';
+import { OverrideController, useOverrideController, RecommendedPlanTab } from './copilot';
 
 /**
  * Collapsible row for Cross-Bureau and Accounts tabs
@@ -361,6 +362,13 @@ const ViolationList = ({ hideFilters = false, hideHeader = false, activeTab, onT
               },
             }}
           >
+            <Tab
+              value="recommended"
+              label="Recommended Plan"
+              icon={<AutoAwesomeIcon sx={{ fontSize: 18 }} />}
+              iconPosition="start"
+              sx={{ gap: 0.5 }}
+            />
             <Tab value="all" label={`All Accounts (${Object.keys(allAccountsGrouped).length})`} />
             <Tab value="crossbureau" label={`Cross-Bureau (${Object.keys(groupedDiscrepancies).length})`} />
             <Tab value="trimerge" label={`Tri-Merge Accounts (${filteredAccounts.length})`} />
@@ -371,6 +379,17 @@ const ViolationList = ({ hideFilters = false, hideHeader = false, activeTab, onT
         </Box>
 
         {/* TAB CONTENT */}
+        {/* RECOMMENDED PLAN TAB - Batched copilot recommendations */}
+        {groupBy === "recommended" && (
+          <RecommendedPlanTab
+            reportId={currentReport?.report_id}
+            onGenerateLetter={(violationIds) => {
+              // Set violations and potentially navigate to letter generation
+              console.log('Generate letter for violations:', violationIds);
+            }}
+          />
+        )}
+
         {/* ALL ACCOUNTS TAB - Shows all accounts with their violations */}
         {groupBy === "all" && (
           <>

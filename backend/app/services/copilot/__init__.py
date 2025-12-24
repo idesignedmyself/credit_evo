@@ -6,5 +6,6 @@ Read-only with respect to credit data. Deterministic. No ML.
 """
 
 from .copilot_engine import CopilotEngine
+from .batch_engine import BatchEngine
 
-__all__ = ["CopilotEngine"]
+__all__ = ["CopilotEngine", "BatchEngine"]

@@ -25,3 +25,8 @@ export { default as OverrideToast } from './OverrideToast';
 // Letter integration
 export { default as LetterTrace } from './LetterTrace';
 export { default as RationaleCard } from './RationaleCard';
+
+// Batch components
+export { default as RecommendedPlanTab } from './RecommendedPlanTab';
+export { default as BatchAccordion } from './BatchAccordion';
+export { default as BatchOverrideModal } from './BatchOverrideModal';

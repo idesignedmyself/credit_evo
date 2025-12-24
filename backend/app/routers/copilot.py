@@ -21,8 +21,10 @@ from ..models.copilot_models import (
     Blocker,
     EnforcementAction,
     SkipRationale,
+    DisputeBatch,
+    BatchedRecommendation,
 )
-from ..services.copilot.copilot_engine import CopilotEngine
+from ..services.copilot import CopilotEngine, BatchEngine
 from .auth import get_current_user
 
 import logging
@@ -95,6 +97,7 @@ class ActionResponse(BaseModel):
     blocker_source_id: str
     account_id: Optional[str] = None
     creditor_name: Optional[str] = None
+    bureau: Optional[str] = None
     action_type: str
     response_posture: Optional[str] = None
     priority_score: float
@@ -128,6 +131,59 @@ class RecommendationResponse(BaseModel):
     sequencing_rationale: str
     dofd_gate_active: bool
     ownership_gate_active: bool
+    notes: List[str]
+
+
+class BatchActionResponse(BaseModel):
+    """Action within a batch."""
+    action_id: str
+    blocker_source_id: str
+    account_id: Optional[str] = None
+    creditor_name: Optional[str] = None
+    bureau: Optional[str] = None
+    action_type: str
+    response_posture: Optional[str] = None
+    priority_score: float
+    sequence_order: int
+    rationale: str
+    risk_score: int
+    depends_on: List[str]
+
+
+class DisputeBatchResponse(BaseModel):
+    """Batch of violations for dispute."""
+    batch_id: str
+    bureau: str
+    batch_number: int
+    goal_summary: str
+    strategy: str
+    risk_level: str
+    recommended_window: str
+    estimated_duration_days: int
+    violation_ids: List[str]
+    actions: List[BatchActionResponse]
+    is_single_item: bool = False  # True if isolated escalation step
+    is_locked: bool
+    lock_reason: Optional[str] = None
+    unlock_conditions: List[str]
+    depends_on_batch_ids: List[str]
+
+
+class BatchedRecommendationResponse(BaseModel):
+    """Batched copilot recommendation organized by bureau."""
+    recommendation_id: str
+    user_id: Optional[str] = None
+    report_id: Optional[str] = None
+    goal: str
+    goal_achievability: str
+    current_gap_summary: str
+    batches_by_bureau: dict  # {bureau: [DisputeBatchResponse]}
+    total_batches: int
+    total_violations_in_batches: int
+    active_batches: int
+    locked_batches: int
+    skipped_violation_ids: List[str]
+    sequencing_rationale: str
     notes: List[str]
 
 
@@ -288,6 +344,93 @@ async def analyze_with_data(
     return _recommendation_to_response(recommendation)
 
 
+@router.get("/recommendation/{report_id}/batched", response_model=BatchedRecommendationResponse)
+async def get_batched_recommendation(
+    report_id: str,
+    goal: Optional[str] = None,
+    current_user: UserDB = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Generate batched copilot recommendation organized by bureau and wave.
+
+    Returns enforcement actions grouped into strategic dispute waves per bureau.
+    Each batch respects:
+    - Max 4 violations per batch (optimal bureau processing)
+    - Dependency chains from Copilot engine
+    - Smart locking based on pending disputes
+    """
+    # Verify report belongs to user
+    report = db.query(ReportDB).filter(
+        ReportDB.id == report_id,
+        ReportDB.user_id == current_user.id
+    ).first()
+
+    if not report:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Report not found or access denied"
+        )
+
+    # Determine goal
+    goal_str = goal or current_user.credit_goal or "credit_hygiene"
+    try:
+        credit_goal = CreditGoal(goal_str.lower())
+    except ValueError:
+        credit_goal = CreditGoal.CREDIT_HYGIENE
+
+    # Get violations from AuditResultDB
+    audit_result = db.query(AuditResultDB).filter(
+        AuditResultDB.report_id == report_id
+    ).first()
+
+    violations = []
+    contradictions = []
+
+    if audit_result:
+        violations = audit_result.violations_data or []
+        contradictions = audit_result.discrepancies_data or []
+
+    logger.info(f"Batched Copilot analyzing {len(violations)} violations for goal {credit_goal.value}")
+
+    # Run copilot analysis first
+    copilot = CopilotEngine()
+    recommendation = copilot.analyze(
+        goal=credit_goal,
+        violations=violations,
+        contradictions=contradictions,
+        user_id=current_user.id,
+        report_id=report_id,
+    )
+
+    # Get any existing pending disputes for lock detection
+    # Only OPEN disputes are "pending" - RESPONDED/BREACHED/CLOSED are resolved
+    from ..models.db_models import DisputeDB, DisputeStatus
+    pending_disputes = db.query(DisputeDB).filter(
+        DisputeDB.user_id == current_user.id,
+        DisputeDB.status == DisputeStatus.OPEN
+    ).all()
+
+    existing_disputes = [
+        {
+            "violation_id": d.violation_id,
+            "status": d.status,
+            "dispute_date": d.created_at,
+        }
+        for d in pending_disputes
+    ]
+
+    # Batch the recommendation
+    batch_engine = BatchEngine()
+    batched = batch_engine.create_batched_recommendation(
+        recommendation=recommendation,
+        existing_pending_disputes=existing_disputes,
+    )
+
+    # Convert to response format
+    return _batched_to_response(batched, recommendation)
+
+
 # =============================================================================
 # OVERRIDE LOGGING
 # =============================================================================
@@ -344,6 +487,60 @@ async def log_copilot_override(
     )
 
     return {"status": "logged", "override_id": request.dispute_session_id}
+
+
+class BatchOverrideRequest(BaseModel):
+    """Request to log a batch-level override."""
+    batch_id: str
+    report_id: str
+    override_type: str  # 'proceed_locked' | 'skip_recommended' | 'reorder'
+    copilot_advice: str  # What copilot recommended
+    user_action: str  # What user decided to do
+
+
+@router.post("/override/batch")
+async def log_batch_override(
+    request: BatchOverrideRequest,
+    current_user: UserDB = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Log batch-level override when user proceeds against batch locking/sequencing.
+
+    Override types:
+    - proceed_locked: User proceeds with locked batch before previous wave completes
+    - skip_recommended: User skips a recommended batch entirely
+    - reorder: User changes the recommended batch ordering
+
+    Feeds into Admin → Copilot Performance dashboard.
+    """
+    from ..models.db_models import SuppressionReason
+    from ..services.enforcement import ExecutionLedgerService
+
+    ledger = ExecutionLedgerService(db)
+
+    # Log batch override as suppression event
+    ledger.emit_suppression_event(
+        dispute_session_id=request.batch_id,  # Use batch_id as session identifier
+        user_id=current_user.id,
+        suppression_reason=SuppressionReason.USER_OVERRIDE,
+        credit_goal=current_user.credit_goal or "credit_hygiene",
+        report_id=request.report_id,
+        account_id=f"batch:{request.override_type}",  # Encode override type
+    )
+
+    db.commit()
+
+    logger.info(
+        f"User {current_user.id} batch override: {request.override_type} "
+        f"for batch {request.batch_id} (copilot: {request.copilot_advice}, user: {request.user_action})"
+    )
+
+    return {
+        "status": "logged",
+        "batch_id": request.batch_id,
+        "override_type": request.override_type,
+    }
 
 
 # =============================================================================
@@ -404,6 +601,7 @@ def _recommendation_to_response(rec: CopilotRecommendation) -> RecommendationRes
             blocker_source_id=a.blocker_source_id,
             account_id=a.account_id,
             creditor_name=a.creditor_name,
+            bureau=a.bureau,
             action_type=a.action_type.value,
             response_posture=a.response_posture,
             priority_score=a.priority_score,
@@ -442,4 +640,67 @@ def _recommendation_to_response(rec: CopilotRecommendation) -> RecommendationRes
         dofd_gate_active=rec.dofd_gate_active,
         ownership_gate_active=rec.ownership_gate_active,
         notes=rec.notes,
+    )
+
+
+def _batched_to_response(
+    batched: BatchedRecommendation,
+    base_rec: CopilotRecommendation
+) -> BatchedRecommendationResponse:
+    """Convert BatchedRecommendation to API response format."""
+    # Convert batches by bureau
+    batches_by_bureau = {}
+    for bureau, batches in batched.batches_by_bureau.items():
+        batches_by_bureau[bureau] = [
+            DisputeBatchResponse(
+                batch_id=batch.batch_id,
+                bureau=batch.bureau,
+                batch_number=batch.batch_number,
+                goal_summary=batch.goal_summary,
+                strategy=batch.strategy,
+                risk_level=batch.risk_level,
+                recommended_window=batch.recommended_window,
+                estimated_duration_days=batch.estimated_duration_days,
+                violation_ids=batch.violation_ids,
+                actions=[
+                    BatchActionResponse(
+                        action_id=a.action_id,
+                        blocker_source_id=a.blocker_source_id,
+                        account_id=a.account_id,
+                        creditor_name=a.creditor_name,
+                        bureau=a.bureau,
+                        action_type=a.action_type.value,
+                        response_posture=a.response_posture,
+                        priority_score=a.priority_score,
+                        sequence_order=a.sequence_order,
+                        rationale=a.rationale,
+                        risk_score=a.risk_score,
+                        depends_on=a.depends_on or [],
+                    )
+                    for a in batch.actions
+                ],
+                is_single_item=batch.is_single_item,
+                is_locked=batch.is_locked,
+                lock_reason=batch.lock_reason,
+                unlock_conditions=batch.unlock_conditions,
+                depends_on_batch_ids=batch.depends_on_batch_ids,
+            )
+            for batch in batches
+        ]
+
+    return BatchedRecommendationResponse(
+        recommendation_id=batched.recommendation_id,
+        user_id=base_rec.user_id,
+        report_id=base_rec.report_id,
+        goal=base_rec.goal.value,
+        goal_achievability=base_rec.goal_achievability,
+        current_gap_summary=base_rec.current_gap_summary,
+        batches_by_bureau=batches_by_bureau,
+        total_batches=batched.total_batches,
+        total_violations_in_batches=batched.total_violations_in_batches,
+        active_batches=batched.active_batches,
+        locked_batches=batched.locked_batches,
+        skipped_violation_ids=batched.skipped_violation_ids,
+        sequencing_rationale=base_rec.sequencing_rationale,
+        notes=base_rec.notes,
     )

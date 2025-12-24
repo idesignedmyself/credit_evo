@@ -831,6 +831,7 @@ class CopilotEngine:
                 blocker_source_id=b.source_id,
                 account_id=b.account_id,
                 creditor_name=b.creditor_name,
+                bureau=b.bureau,  # Pass bureau for BatchEngine grouping
                 action_type=action_type,
                 response_posture=posture,
                 priority_score=round(priority, 4),

@@ -43,6 +43,18 @@ export const getRecommendation = async (reportId, goal = null) => {
   return response.data;
 };
 
+/**
+ * Get batched copilot recommendation organized by bureau and wave
+ * @param {string} reportId - Report ID
+ * @param {string} [goal] - Optional goal override
+ * @returns {Promise<Object>} Batched recommendation with waves per bureau
+ */
+export const getBatchedRecommendation = async (reportId, goal = null) => {
+  const params = goal ? `?goal=${encodeURIComponent(goal)}` : '';
+  const response = await apiClient.get(`/copilot/recommendation/${reportId}/batched${params}`);
+  return response.data;
+};
+
 // =============================================================================
 // OVERRIDE LOGGING
 // =============================================================================
@@ -60,6 +72,21 @@ export const getRecommendation = async (reportId, goal = null) => {
  */
 export const logOverride = async (overrideData) => {
   const response = await apiClient.post('/copilot/override', overrideData);
+  return response.data;
+};
+
+/**
+ * Log batch-level override (e.g., proceeding with locked batch)
+ * @param {Object} overrideData - Batch override details
+ * @param {string} overrideData.batch_id - Batch ID being overridden
+ * @param {string} overrideData.report_id - Report being analyzed
+ * @param {string} overrideData.override_type - 'proceed_locked' | 'skip_recommended' | 'reorder'
+ * @param {string} overrideData.copilot_advice - What Copilot recommended
+ * @param {string} overrideData.user_action - What user chose to do
+ * @returns {Promise<{status: string, batch_id: string, override_type: string}>}
+ */
+export const logBatchOverride = async (overrideData) => {
+  const response = await apiClient.post('/copilot/override/batch', overrideData);
   return response.data;
 };
 
@@ -125,7 +152,9 @@ export default {
   getGoals,
   getGoalRequirements,
   getRecommendation,
+  getBatchedRecommendation,
   logOverride,
+  logBatchOverride,
   ACHIEVABILITY_LEVELS,
   VIOLATION_STATUS,
 };

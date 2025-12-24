@@ -345,6 +345,7 @@ class EnforcementAction:
     blocker_source_id: str = ""
     account_id: Optional[str] = None
     creditor_name: Optional[str] = None
+    bureau: Optional[str] = None  # TransUnion, Experian, Equifax
 
     # Action specification
     action_type: ActionType = ActionType.DEFER
@@ -440,3 +441,83 @@ class CopilotRecommendation:
 
     # Notes/warnings
     notes: List[str] = field(default_factory=list)
+
+
+# =============================================================================
+# DISPUTE BATCHING (Wave-based sequencing)
+# =============================================================================
+
+@dataclass
+class DisputeBatch:
+    """
+    A batch of violations to dispute together in a single wave.
+
+    Batches are organized by bureau and share:
+    - A common goal/strategy
+    - Similar risk profile
+    - Response window timing
+
+    Size rules:
+    - Max 4 violations per batch (hard limit)
+    - Min 1 violation allowed (single-item batches valid for isolated escalations)
+    - Preference: 2-4 violations (heuristic, not enforced)
+
+    Single-item batches are valid for: MOV follow-ups, procedural challenges,
+    re-aging clarification, furnisher escalations, CFPB/AG-prep, litigation-ready demands.
+    """
+    batch_id: str = field(default_factory=lambda: str(uuid4()))
+    bureau: str = ""  # TransUnion, Experian, Equifax
+    batch_number: int = 1  # Wave number for this bureau (1, 2, 3...)
+
+    # Strategy metadata
+    goal_summary: str = ""  # "Wave 1: Delete Request for Mortgage"
+    strategy: str = ""  # DELETE_DEMAND, CORRECT_DEMAND, MOV_DEMAND, etc.
+    risk_level: str = "LOW"  # LOW, MEDIUM, HIGH
+
+    # Timing
+    recommended_window: str = ""  # "30-45 days"
+    estimated_duration_days: int = 30
+
+    # Violations in this batch (1-4, single-item allowed)
+    violation_ids: List[str] = field(default_factory=list)
+    actions: List[EnforcementAction] = field(default_factory=list)
+    is_single_item: bool = False  # True if isolated escalation step
+
+    # Lock status
+    is_locked: bool = False
+    lock_reason: Optional[str] = None  # "pending_response", "cooldown_active", "pending_previous_wave"
+    unlock_conditions: List[str] = field(default_factory=list)  # ["bureau_response", "time_window_expired", "user_override"]
+
+    # Dependents (batch IDs that must complete first)
+    depends_on_batch_ids: List[str] = field(default_factory=list)
+
+    # Execution tracking
+    executed_at: Optional[datetime] = None
+    response_received_at: Optional[datetime] = None
+
+
+@dataclass
+class BatchedRecommendation:
+    """
+    Copilot recommendation organized into waves per bureau.
+
+    Extends CopilotRecommendation with batch organization for
+    the "Recommended Plan" tab UI.
+    """
+    recommendation_id: str = field(default_factory=lambda: str(uuid4()))
+    base_recommendation: Optional[CopilotRecommendation] = None
+
+    # Batches organized by bureau name
+    batches_by_bureau: Dict[str, List[DisputeBatch]] = field(default_factory=dict)
+
+    # Total statistics
+    total_batches: int = 0
+    total_violations_in_batches: int = 0
+    skipped_violation_ids: List[str] = field(default_factory=list)
+
+    # Lock status summary
+    active_batches: int = 0  # Unlocked and ready to dispute
+    locked_batches: int = 0  # Waiting for previous wave or response
+
+    # Generated timestamp
+    generated_at: datetime = field(default_factory=datetime.utcnow)

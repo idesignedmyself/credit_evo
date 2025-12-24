@@ -64,6 +64,11 @@ const useViolationStore = create((set, get) => ({
     set({ selectedViolationIds: [] });
   },
 
+  // Set specific violations as selected (replaces current selection)
+  setSelectedViolations: (violationIds) => {
+    set({ selectedViolationIds: violationIds || [] });
+  },
+
   selectByBureau: (bureau) => {
     set((state) => {
       const bureauViolationIds = state.violations
