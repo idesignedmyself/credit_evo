@@ -258,6 +258,15 @@ class CopilotEngine:
         furnisher_type = str(c.get("furnisher_type", "")).upper()
         has_oc = bool(c.get("original_creditor") or c.get("has_original_creditor", True))
 
+        # For cross-bureau discrepancies, extract list of bureaus involved
+        bureaus = []
+        if c.get("values_by_bureau"):
+            # CrossBureauDiscrepancy format: values_by_bureau is a dict with bureau keys
+            bureaus = list(c.get("values_by_bureau", {}).keys())
+        elif c.get("bureaus"):
+            # Direct bureaus list
+            bureaus = list(c.get("bureaus", []))
+
         return Blocker(
             source_type="CONTRADICTION",
             source_id=str(c.get("id") or c.get("rule_code") or str(uuid4())),
@@ -265,6 +274,7 @@ class CopilotEngine:
             creditor_name=c.get("creditor_name"),
             account_number_masked=c.get("account_number_masked"),
             bureau=c.get("bureau"),
+            bureaus=bureaus,  # All bureaus for cross-bureau items
             title=c.get("description", "")[:100] or f"Contradiction {rule_code}",
             description=c.get("description") or c.get("impact") or "",
             category=category,
@@ -831,7 +841,15 @@ class CopilotEngine:
                 blocker_source_id=b.source_id,
                 account_id=b.account_id,
                 creditor_name=b.creditor_name,
+                account_number_masked=b.account_number_masked,
                 bureau=b.bureau,  # Pass bureau for BatchEngine grouping
+                bureaus=b.bureaus,  # For cross-bureau: all involved bureaus
+                # Blocker context for rich display
+                blocker_title=b.title,
+                blocker_description=b.description,
+                source_type=b.source_type,
+                category=b.category,
+                # Action specification
                 action_type=action_type,
                 response_posture=posture,
                 priority_score=round(priority, 4),

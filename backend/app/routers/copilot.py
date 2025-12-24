@@ -140,10 +140,19 @@ class BatchActionResponse(BaseModel):
     blocker_source_id: str
     account_id: Optional[str] = None
     creditor_name: Optional[str] = None
+    account_number_masked: Optional[str] = None
     bureau: Optional[str] = None
+    # Blocker context for rich display
+    blocker_title: str = ""
+    blocker_description: str = ""
+    source_type: str = ""  # VIOLATION or CONTRADICTION
+    category: str = ""  # collection, chargeoff, late, etc.
+    # Action details
     action_type: str
     response_posture: Optional[str] = None
     priority_score: float
+    impact_score: int = 5
+    deletability: str = "MEDIUM"
     sequence_order: int
     rationale: str
     risk_score: int
@@ -674,10 +683,19 @@ def _batched_to_response(
                         blocker_source_id=a.blocker_source_id,
                         account_id=a.account_id,
                         creditor_name=a.creditor_name,
+                        account_number_masked=a.account_number_masked,
                         bureau=a.bureau,
+                        # Blocker context for rich display
+                        blocker_title=a.blocker_title,
+                        blocker_description=a.blocker_description,
+                        source_type=a.source_type,
+                        category=a.category,
+                        # Action details
                         action_type=a.action_type.value,
                         response_posture=a.response_posture,
                         priority_score=a.priority_score,
+                        impact_score=a.impact_score,
+                        deletability=a.deletability,
                         sequence_order=a.sequence_order,
                         rationale=a.rationale,
                         risk_score=a.risk_score,

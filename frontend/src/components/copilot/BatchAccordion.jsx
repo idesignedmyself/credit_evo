@@ -26,6 +26,13 @@ const RISK_COLORS = {
   HIGH: { bg: '#ffebee', color: '#c62828', label: 'High Risk' },
 };
 
+// Severity colors for deletability badges
+const SEVERITY_COLORS = {
+  LOW: { bg: '#e3f2fd', color: '#1976d2', label: 'low' },
+  MEDIUM: { bg: '#fff3e0', color: '#ef6c00', label: 'medium' },
+  HIGH: { bg: '#ffebee', color: '#c62828', label: 'high' },
+};
+
 const STRATEGY_ICONS = {
   DELETE_DEMAND: { emoji: '', label: 'Deletion' },
   CORRECT_DEMAND: { emoji: '', label: 'Correction' },
@@ -217,12 +224,13 @@ export default function BatchAccordion({
             </Box>
           )}
 
-          {/* Violations in this batch */}
+          {/* Items in this batch (violations or contradiction-based actions) */}
           <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ mb: 1, display: 'block' }}>
-            VIOLATIONS IN THIS BATCH
+            ITEMS IN THIS BATCH
           </Typography>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
             {batchViolations.length > 0 ? (
+              // Display matched violations
               batchViolations.map((violation) => (
                 <Box
                   key={violation.violation_id}
@@ -253,9 +261,89 @@ export default function BatchAccordion({
                   )}
                 </Box>
               ))
+            ) : batch.actions?.length > 0 ? (
+              // Rich display for actions (violations or contradictions)
+              batch.actions.map((action, idx) => {
+                const severity = SEVERITY_COLORS[action.deletability?.toUpperCase()] || SEVERITY_COLORS.MEDIUM;
+                const isContradiction = action.source_type === 'CONTRADICTION';
+                const displayTitle = action.blocker_title || action.action_type?.replace(/_/g, ' ');
+                const displayCategory = action.category || 'other';
+
+                return (
+                  <Box
+                    key={action.action_id || idx}
+                    sx={{
+                      p: 1.5,
+                      bgcolor: 'white',
+                      borderRadius: 1,
+                      border: '1px solid',
+                      borderColor: 'divider',
+                    }}
+                  >
+                    {/* Header row: Title + Severity badge */}
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                      <Typography variant="body2" fontWeight={600} sx={{ flex: 1 }}>
+                        {displayTitle}
+                      </Typography>
+                      <Chip
+                        label={severity.label}
+                        size="small"
+                        sx={{
+                          bgcolor: severity.bg,
+                          color: severity.color,
+                          fontWeight: 500,
+                          fontSize: '0.65rem',
+                          height: 20,
+                        }}
+                      />
+                    </Box>
+
+                    {/* Account info */}
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                      {action.creditor_name || 'Unknown Account'}
+                      {(action.account_number_masked || action.account_id) && (
+                        <> ({action.account_number_masked || action.account_id})</>
+                      )}
+                    </Typography>
+
+                    {/* Description (if available) */}
+                    {action.blocker_description && (
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{
+                          display: 'block',
+                          mt: 1,
+                          pl: 1,
+                          borderLeft: '2px solid',
+                          borderColor: 'divider',
+                          lineHeight: 1.4,
+                        }}
+                      >
+                        {action.blocker_description}
+                      </Typography>
+                    )}
+
+                    {/* Type chip */}
+                    <Box sx={{ mt: 1 }}>
+                      <Chip
+                        label={isContradiction ? `Cross-Bureau • ${displayCategory}` : `Violation • ${displayCategory}`}
+                        size="small"
+                        variant="outlined"
+                        sx={{
+                          fontSize: '0.65rem',
+                          height: 20,
+                          borderColor: 'divider',
+                          color: 'text.secondary',
+                        }}
+                      />
+                    </Box>
+                  </Box>
+                );
+              })
             ) : (
               <Typography variant="caption" color="text.secondary">
-                No violations loaded for this batch
+                No items in this batch
               </Typography>
             )}
           </Box>

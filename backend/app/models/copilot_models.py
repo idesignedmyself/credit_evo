@@ -288,7 +288,8 @@ class Blocker:
     account_id: Optional[str] = None
     creditor_name: Optional[str] = None
     account_number_masked: Optional[str] = None
-    bureau: Optional[str] = None  # EXP/EQ/TU
+    bureau: Optional[str] = None  # EXP/EQ/TU (single bureau)
+    bureaus: List[str] = field(default_factory=list)  # For cross-bureau: all involved bureaus
 
     # Classification
     title: str = ""
@@ -345,7 +346,15 @@ class EnforcementAction:
     blocker_source_id: str = ""
     account_id: Optional[str] = None
     creditor_name: Optional[str] = None
-    bureau: Optional[str] = None  # TransUnion, Experian, Equifax
+    account_number_masked: Optional[str] = None  # For display
+    bureau: Optional[str] = None  # TransUnion, Experian, Equifax (single bureau)
+    bureaus: List[str] = field(default_factory=list)  # For cross-bureau: all involved bureaus
+
+    # Blocker context (for rich display)
+    blocker_title: str = ""  # e.g., "Date Opened Mismatch"
+    blocker_description: str = ""  # Full explanation of the issue
+    source_type: str = ""  # "VIOLATION" or "CONTRADICTION"
+    category: str = ""  # collection, chargeoff, late, inquiry, etc.
 
     # Action specification
     action_type: ActionType = ActionType.DEFER

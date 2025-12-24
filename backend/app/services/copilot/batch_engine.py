@@ -170,6 +170,13 @@ class BatchEngine:
         CRITICAL: This establishes the grouping hierarchy that ensures
         one furnisher per letter. Never flatten this structure.
 
+        CROSS-BUREAU HANDLING:
+        For cross-bureau discrepancies (actions with `bureaus` list populated),
+        "explode" the action to ALL reporting bureaus. This ensures:
+        - Each bureau gets a letter citing the cross-bureau inconsistency
+        - Leverage from cross-bureau data is maximized
+        - No discrepancy falls into an "Unknown" bucket
+
         Returns:
             {
                 "Equifax": {
@@ -182,19 +189,40 @@ class BatchEngine:
         by_bureau_furnisher: Dict[str, Dict[str, List[EnforcementAction]]] = {}
 
         for action in actions:
-            # Level 1: Bureau
-            bureau_raw = getattr(action, "bureau", None) or "Unknown"
-            bureau = self._normalize_bureau(bureau_raw)
+            # Determine target bureaus for this action
+            target_bureaus = []
 
-            # Level 2: Furnisher
+            # Check for cross-bureau action (multiple bureaus)
+            bureaus_list = getattr(action, "bureaus", None) or []
+            if bureaus_list and len(bureaus_list) > 0:
+                # CROSS-BUREAU: Explode to all reporting bureaus
+                for bureau_raw in bureaus_list:
+                    bureau = self._normalize_bureau(bureau_raw)
+                    if bureau != "Unknown":
+                        target_bureaus.append(bureau)
+            else:
+                # Single bureau action (or no bureaus list)
+                bureau_raw = getattr(action, "bureau", None)
+                if bureau_raw:
+                    bureau = self._normalize_bureau(bureau_raw)
+                    if bureau != "Unknown":
+                        target_bureaus.append(bureau)
+
+            # Skip if no valid bureaus found
+            if not target_bureaus:
+                continue
+
+            # Level 2: Furnisher (same for all bureau copies)
             furnisher = self._get_furnisher_key(action)
 
-            if bureau not in by_bureau_furnisher:
-                by_bureau_furnisher[bureau] = {}
-            if furnisher not in by_bureau_furnisher[bureau]:
-                by_bureau_furnisher[bureau][furnisher] = []
+            # Add action to each target bureau
+            for bureau in target_bureaus:
+                if bureau not in by_bureau_furnisher:
+                    by_bureau_furnisher[bureau] = {}
+                if furnisher not in by_bureau_furnisher[bureau]:
+                    by_bureau_furnisher[bureau][furnisher] = []
 
-            by_bureau_furnisher[bureau][furnisher].append(action)
+                by_bureau_furnisher[bureau][furnisher].append(action)
 
         return by_bureau_furnisher
 
