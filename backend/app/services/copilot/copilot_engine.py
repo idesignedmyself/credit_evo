@@ -258,11 +258,15 @@ class CopilotEngine:
         furnisher_type = str(c.get("furnisher_type", "")).upper()
         has_oc = bool(c.get("original_creditor") or c.get("has_original_creditor", True))
 
-        # For cross-bureau discrepancies, extract list of bureaus involved
+        # For cross-bureau discrepancies, extract list of bureaus and their values
         bureaus = []
+        values_by_bureau = {}
         if c.get("values_by_bureau"):
             # CrossBureauDiscrepancy format: values_by_bureau is a dict with bureau keys
-            bureaus = list(c.get("values_by_bureau", {}).keys())
+            raw_values = c.get("values_by_bureau", {})
+            bureaus = list(raw_values.keys())
+            # Convert values to strings for display
+            values_by_bureau = {k: str(v) if v is not None else "Not Reported" for k, v in raw_values.items()}
         elif c.get("bureaus"):
             # Direct bureaus list
             bureaus = list(c.get("bureaus", []))
@@ -275,6 +279,7 @@ class CopilotEngine:
             account_number_masked=c.get("account_number_masked"),
             bureau=c.get("bureau"),
             bureaus=bureaus,  # All bureaus for cross-bureau items
+            values_by_bureau=values_by_bureau,  # Cross-bureau values for display
             title=c.get("description", "")[:100] or f"Contradiction {rule_code}",
             description=c.get("description") or c.get("impact") or "",
             category=category,
@@ -849,6 +854,7 @@ class CopilotEngine:
                 blocker_description=b.description,
                 source_type=b.source_type,
                 category=b.category,
+                values_by_bureau=b.values_by_bureau,  # Cross-bureau values for display
                 # Action specification
                 action_type=action_type,
                 response_posture=posture,

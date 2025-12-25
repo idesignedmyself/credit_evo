@@ -290,6 +290,7 @@ class Blocker:
     account_number_masked: Optional[str] = None
     bureau: Optional[str] = None  # EXP/EQ/TU (single bureau)
     bureaus: List[str] = field(default_factory=list)  # For cross-bureau: all involved bureaus
+    values_by_bureau: Dict[str, str] = field(default_factory=dict)  # Cross-bureau: {bureau: value}
 
     # Classification
     title: str = ""
@@ -355,6 +356,7 @@ class EnforcementAction:
     blocker_description: str = ""  # Full explanation of the issue
     source_type: str = ""  # "VIOLATION" or "CONTRADICTION"
     category: str = ""  # collection, chargeoff, late, inquiry, etc.
+    values_by_bureau: Dict[str, str] = field(default_factory=dict)  # Cross-bureau: {bureau: value}
 
     # Action specification
     action_type: ActionType = ActionType.DEFER

@@ -192,7 +192,7 @@ export default function BatchAccordion({
       </Box>
 
       {/* Expanded content */}
-      <Collapse in={expanded}>
+      <Collapse in={expanded} timeout={150} unmountOnExit>
         <Divider />
         <Box sx={{ p: 2, bgcolor: '#fafafa' }}>
           {/* Strategy info */}
@@ -268,6 +268,7 @@ export default function BatchAccordion({
                 const isContradiction = action.source_type === 'CONTRADICTION';
                 const displayTitle = action.blocker_title || action.action_type?.replace(/_/g, ' ');
                 const displayCategory = action.category || 'other';
+                const hasValuesByBureau = action.values_by_bureau && Object.keys(action.values_by_bureau).length > 0;
 
                 return (
                   <Box
@@ -322,6 +323,36 @@ export default function BatchAccordion({
                       >
                         {action.blocker_description}
                       </Typography>
+                    )}
+
+                    {/* Values by Bureau section (for cross-bureau discrepancies) */}
+                    {hasValuesByBureau && (
+                      <Box sx={{ mt: 1.5 }}>
+                        <Typography
+                          variant="caption"
+                          color="primary.main"
+                          fontWeight={600}
+                          sx={{ display: 'block', mb: 0.5 }}
+                        >
+                          Values by Bureau:
+                        </Typography>
+                        <Box sx={{ pl: 1 }}>
+                          {Object.entries(action.values_by_bureau).map(([bureau, value]) => (
+                            <Box key={bureau} sx={{ display: 'flex', gap: 1, mb: 0.25 }}>
+                              <Typography
+                                variant="caption"
+                                fontWeight={600}
+                                sx={{ minWidth: 90, textTransform: 'uppercase' }}
+                              >
+                                {bureau}:
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                {value || 'Not Reported'}
+                              </Typography>
+                            </Box>
+                          ))}
+                        </Box>
+                      </Box>
                     )}
 
                     {/* Type chip */}

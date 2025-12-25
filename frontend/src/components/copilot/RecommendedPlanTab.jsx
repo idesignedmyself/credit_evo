@@ -13,12 +13,9 @@ import {
   AccordionDetails,
   Chip,
   Button,
-  Divider,
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
-import LockIcon from '@mui/icons-material/Lock';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 
 import useCopilotStore from '../../state/copilotStore';
 import { useViolationStore } from '../../state';
@@ -142,51 +139,10 @@ export default function RecommendedPlanTab({ reportId, onGenerateLetter }) {
     );
   }
 
-  const { batches_by_bureau, total_batches, active_batches, locked_batches, goal, goal_achievability } = batchedRecommendation;
+  const { batches_by_bureau } = batchedRecommendation;
 
   return (
     <Box>
-      {/* Summary Header */}
-      <Box sx={{ p: 2, bgcolor: '#f8fafc', borderBottom: '1px solid', borderColor: 'divider' }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-          <AutoAwesomeIcon color="primary" />
-          <Typography variant="subtitle1" fontWeight={600}>
-            Recommended Dispute Plan
-          </Typography>
-        </Box>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Goal: <strong>{goal?.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</strong> •
-          Achievability: <Chip
-            label={goal_achievability}
-            size="small"
-            color={goal_achievability === 'ACHIEVABLE' ? 'success' : goal_achievability === 'CHALLENGING' ? 'warning' : 'error'}
-            sx={{ ml: 1, fontWeight: 600, fontSize: '0.7rem' }}
-          />
-        </Typography>
-
-        {/* Stats */}
-        <Box sx={{ display: 'flex', gap: 3 }}>
-          <Box>
-            <Typography variant="h5" fontWeight={700} color="primary.main">
-              {total_batches}
-            </Typography>
-            <Typography variant="caption" color="text.secondary">Total Waves</Typography>
-          </Box>
-          <Box>
-            <Typography variant="h5" fontWeight={700} color="success.main">
-              {active_batches}
-            </Typography>
-            <Typography variant="caption" color="text.secondary">Ready</Typography>
-          </Box>
-          <Box>
-            <Typography variant="h5" fontWeight={700} color="warning.main">
-              {locked_batches}
-            </Typography>
-            <Typography variant="caption" color="text.secondary">Locked</Typography>
-          </Box>
-        </Box>
-      </Box>
-
       {/* Bureau Accordions - Clean flat style matching All Accounts tab */}
       <Box>
         {Object.entries(batches_by_bureau || {}).map(([bureau, batches]) => {
@@ -200,6 +156,7 @@ export default function RecommendedPlanTab({ reportId, onGenerateLetter }) {
               expanded={isExpanded}
               onChange={() => toggleBureau(bureau)}
               disableGutters
+              TransitionProps={{ unmountOnExit: true, timeout: 150 }}
               sx={{
                 boxShadow: 'none',
                 borderBottom: '1px solid',

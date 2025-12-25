@@ -147,6 +147,7 @@ class BatchActionResponse(BaseModel):
     blocker_description: str = ""
     source_type: str = ""  # VIOLATION or CONTRADICTION
     category: str = ""  # collection, chargeoff, late, etc.
+    values_by_bureau: dict = {}  # Cross-bureau: {bureau: value} for display
     # Action details
     action_type: str
     response_posture: Optional[str] = None
@@ -690,6 +691,7 @@ def _batched_to_response(
                         blocker_description=a.blocker_description,
                         source_type=a.source_type,
                         category=a.category,
+                        values_by_bureau=a.values_by_bureau or {},
                         # Action details
                         action_type=a.action_type.value,
                         response_posture=a.response_posture,
