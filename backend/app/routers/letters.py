@@ -237,6 +237,7 @@ def reconstruct_discrepancies(discrepancies_data: list) -> list:
                 "discrepancy_id": d.get("discrepancy_id", ""),
                 "violation_type": d.get("violation_type", ""),
                 "creditor_name": d.get("creditor_name", ""),
+                "account_number_masked": d.get("account_number_masked", ""),  # For letter output
                 "account_fingerprint": d.get("account_fingerprint", ""),
                 "field_name": d.get("field_name", ""),
                 "values_by_bureau": d.get("values_by_bureau", {}),
