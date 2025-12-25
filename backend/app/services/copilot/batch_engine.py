@@ -362,8 +362,17 @@ class BatchEngine:
         lock_reason = None
         unlock_conditions = []
 
-        # Get UNIQUE violation IDs for this batch (dedupe cross-bureau explosions)
-        violation_ids = list(set(a.blocker_source_id for a in actions))
+        # Get UNIQUE violation IDs for this batch (only actual violations, not contradictions)
+        violation_ids = list(set(
+            a.blocker_source_id for a in actions
+            if a.source_type == "VIOLATION"
+        ))
+
+        # Get UNIQUE contradiction IDs (cross-bureau discrepancies)
+        contradiction_ids = list(set(
+            a.blocker_source_id for a in actions
+            if a.source_type == "CONTRADICTION"
+        ))
 
         if existing_disputes:
             # Check if any violation in this batch has pending dispute
@@ -411,6 +420,7 @@ class BatchEngine:
             recommended_window=recommended_window,
             estimated_duration_days=self.DEFAULT_WINDOW_DAYS,
             violation_ids=violation_ids,
+            contradiction_ids=contradiction_ids,
             actions=actions,
             is_single_item=is_single_item,
             is_locked=is_locked,

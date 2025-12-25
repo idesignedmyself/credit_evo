@@ -73,6 +73,8 @@ class ViolationCategory(str, Enum):
     UNAUTHORIZED_INQUIRY = "unauthorized_inquiry"  # Fishing expedition / no permissible purpose
     DUPLICATE_INQUIRY = "duplicate_inquiry"  # Same creditor multiple pulls
     INQUIRY_MISCLASSIFICATION = "inquiry_misclassification"  # Soft pull coded as hard
+    # Cross-bureau discrepancies
+    CROSS_BUREAU_CONTRADICTION = "cross_bureau_contradiction"  # Same account reports differently across bureaus
     OTHER = "other"
 
 
@@ -425,6 +427,26 @@ CATEGORY_CONFIGS: Dict[ViolationCategory, CategoryConfig] = {
             "authorization and should not appear as hard pulls on my credit report."
         ),
         fcra_section="604(a)(3)"
+    ),
+    ViolationCategory.CROSS_BUREAU_CONTRADICTION: CategoryConfig(
+        title="Cross-Bureau Reporting Contradictions",
+        metro2_fields="Various Metro 2 Fields",
+        explanation=(
+            "When the same account is reported with contradictory information across different "
+            "credit bureaus, at least one bureau is necessarily receiving inaccurate data. Under "
+            "FCRA §623(a)(1)(A), furnishers have a duty to report accurate information to ALL "
+            "consumer reporting agencies. The following accounts show material contradictions "
+            "that violate this duty:"
+        ),
+        resolution=(
+            "For each contradiction identified:\n"
+            "1. Verify the correct value from original account documentation\n"
+            "2. Update ALL three bureaus with identical, verified information\n"
+            "3. If the correct value cannot be determined, delete the tradeline\n\n"
+            "Continuing to report contradictory information to different bureaus constitutes "
+            "willful noncompliance under FCRA §1681n."
+        ),
+        fcra_section="623(a)(1)(A), 611(a)(1), 607(b)"
     ),
     ViolationCategory.OTHER: CategoryConfig(
         title="Additional Accounts Requiring Investigation",
@@ -837,6 +859,22 @@ def _classify_violation(violation: Dict[str, Any]) -> ViolationCategory:
         return ViolationCategory.INQUIRY_MISCLASSIFICATION
     if "insurance" in evidence or "soft pull" in evidence:
         return ViolationCategory.INQUIRY_MISCLASSIFICATION
+
+    # Check for cross-bureau contradictions (discrepancies across bureaus)
+    cross_bureau_types = [
+        "dofd_mismatch", "balance_mismatch", "status_mismatch", "date_opened_mismatch",
+        "high_credit_mismatch", "credit_limit_mismatch", "payment_status_mismatch",
+        "account_type_mismatch", "date_closed_mismatch", "dispute_flag_mismatch",
+        "ecoa_code_mismatch", "authorized_user_derogatory", "cross_bureau_discrepancy"
+    ]
+    if v_type in cross_bureau_types:
+        return ViolationCategory.CROSS_BUREAU_CONTRADICTION
+    # Check if source_type indicates contradiction
+    source_type = violation.get("source_type", "")
+    if source_type == "CONTRADICTION":
+        return ViolationCategory.CROSS_BUREAU_CONTRADICTION
+    if "mismatch" in v_type or "inconsistent" in v_type:
+        return ViolationCategory.CROSS_BUREAU_CONTRADICTION
 
     return ViolationCategory.OTHER
 
@@ -1624,6 +1662,8 @@ class PDFFormatAssembler:
             ViolationCategory.INQUIRY_MISCLASSIFICATION,  # Soft pull coded as hard
             # Identity / Mixed file
             ViolationCategory.IDENTITY_ERROR,
+            # Cross-bureau issues
+            ViolationCategory.CROSS_BUREAU_CONTRADICTION,  # Same account reports differently across bureaus
             ViolationCategory.MISSING_TRADELINE_INFO,  # Cross-bureau gaps (informational)
             # Fallback - MUST be last
             ViolationCategory.OTHER,

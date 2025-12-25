@@ -18,6 +18,7 @@ This document tracks bugs, issues, and obstacles encountered during development 
 10. [B7: VERIFIED Letter Production Hardening](#b7-verified-letter-production-hardening)
 11. [B7: REJECTED/FRIVOLOUS Letter Production Hardening](#b7-rejectedfrivolous-letter-production-hardening)
 12. [B7: REINSERTION Letter Production Hardening](#b7-reinsertion-letter-production-hardening)
+13. [B14: Cross-Bureau Contradictions Not Included in Letters](#b14-cross-bureau-contradictions-not-included-in-letters)
 
 ---
 
@@ -380,6 +381,86 @@ Created new `generate_reinsertion_response_letter()` function for production:
 **Files Modified:**
 - `backend/app/services/enforcement/response_letter_generator.py`
 - `backend/app/routers/disputes.py`
+
+---
+
+## B14: Cross-Bureau Contradictions Not Included in Letters
+
+**Date:** December 2024
+
+**Symptom:**
+When a Copilot batch contained both violations AND cross-bureau contradictions:
+- Violations (e.g., `missing_dofd`) appeared in generated letters
+- Cross-bureau contradictions (e.g., `date_opened_mismatch`) were NOT included in letters
+
+User expected ALL items in a selected batch to appear in the generated letter with appropriate legal citations.
+
+**Root Cause:**
+Multiple issues in the data flow:
+1. **ID Mismatch:** Copilot engine used `c.get("id")` to create blocker source IDs, but stored discrepancies have `discrepancy_id` field
+2. **Missing separation:** Batch engine only tracked `violation_ids`, not `contradiction_ids` separately
+3. **No category:** PDF Format Assembler lacked a `CROSS_BUREAU_CONTRADICTION` category for grouping these items
+4. **Frontend gap:** UI didn't pass contradiction IDs to letter generation API
+
+**Solution:**
+
+1. **Fixed ID mapping** in `copilot_engine.py`:
+   ```python
+   source_id=str(c.get("discrepancy_id") or c.get("id") or c.get("rule_code") or str(uuid4()))
+   ```
+
+2. **Added `contradiction_ids` field** to `DisputeBatch` model and `batch_engine.py`:
+   ```python
+   contradiction_ids = list(set(
+       a.blocker_source_id for a in actions
+       if a.source_type == "CONTRADICTION"
+   ))
+   ```
+
+3. **Added `ViolationCategory.CROSS_BUREAU_CONTRADICTION`** to PDF Format Assembler with:
+   - CategoryConfig citing FCRA §623(a)(1)(A), §611(a)(1), §607(b)
+   - Classification logic for cross-bureau violation types
+   - Proper ordering in letter sections
+
+4. **Updated case law mapping** to link cross-bureau types to `CaseLawCategory.ACCURACY`:
+   - `dofd_mismatch`, `balance_mismatch`, `status_mismatch`, `date_opened_mismatch`, etc.
+
+5. **Frontend updates:**
+   - Added `getBatchContradictionIds()` to copilotStore
+   - Added `setSelectedDiscrepancies()` to violationStore
+   - **Critical Fix:** Updated `handleSelectBatch` in RecommendedPlanTab to set BOTH `selectedViolationIds` AND `selectedDiscrepancyIds` when a batch is selected. Previously, only violations were set, so if user navigated to LetterPage without clicking "Generate Dispute Letter" button, discrepancies were empty.
+   - Updated `handleGenerateLetter` to pass both violation and contradiction IDs to callback
+   - Updated `handleOverrideConfirm` to also set discrepancies when overriding a locked batch
+   - Updated `ViolationList` callback to set both selections and navigate to letter page
+
+**Expected Letter Output:**
+```
+III. Cross-Bureau Reporting Contradictions
+
+When the same account is reported with contradictory information across
+credit bureaus, at least one bureau is necessarily receiving inaccurate data.
+Under FCRA §623(a)(1)(A), furnishers have a duty to report accurate information
+to ALL consumer reporting agencies.
+
+• BK OF AMER (Account #440066301380****):
+  Field: Date Opened
+    TRANSUNION: 2018-03-15
+    EXPERIAN: 2018-06-22
+    EQUIFAX: 2018-03-15
+```
+
+**Files Modified:**
+- `backend/app/models/copilot_models.py` - Added `contradiction_ids` field
+- `backend/app/services/copilot/batch_engine.py` - Extract and pass contradiction IDs
+- `backend/app/services/copilot/copilot_engine.py` - Fixed ID mapping for discrepancies
+- `backend/app/routers/copilot.py` - Added `contradiction_ids` to API response
+- `backend/app/services/legal_letter_generator/pdf_format_assembler.py` - Added cross-bureau category
+- `backend/app/services/legal_letter_generator/case_law.py` - Mapped cross-bureau to case law
+- `frontend/src/components/copilot/BatchAccordion.jsx` - Fixed broken JSX
+- `frontend/src/state/copilotStore.js` - Added `getBatchContradictionIds()`
+- `frontend/src/state/violationStore.js` - Added `setSelectedDiscrepancies()`
+- `frontend/src/components/copilot/RecommendedPlanTab.jsx` - Pass both ID types
+- `frontend/src/components/ViolationList.jsx` - Set selections and navigate
 
 ---
 

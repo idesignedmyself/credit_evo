@@ -497,7 +497,8 @@ class DisputeBatch:
     estimated_duration_days: int = 30
 
     # Violations in this batch (1-4, single-item allowed)
-    violation_ids: List[str] = field(default_factory=list)
+    violation_ids: List[str] = field(default_factory=list)  # source_type="VIOLATION" only
+    contradiction_ids: List[str] = field(default_factory=list)  # source_type="CONTRADICTION" only
     actions: List[EnforcementAction] = field(default_factory=list)
     is_single_item: bool = False  # True if isolated escalation step
 

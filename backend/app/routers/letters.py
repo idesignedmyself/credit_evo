@@ -308,14 +308,22 @@ async def generate_letter(
     # Reconstruct discrepancies from stored JSON
     all_discrepancies = reconstruct_discrepancies(audit_db.discrepancies_data or [])
 
+    # DEBUG: Log available discrepancy IDs
+    stored_ids = [d.get("discrepancy_id") for d in all_discrepancies]
+    logger.info(f"[CROSS-BUREAU DEBUG] Total discrepancies in DB: {len(all_discrepancies)}")
+    logger.info(f"[CROSS-BUREAU DEBUG] Stored discrepancy IDs: {stored_ids}")
+    logger.info(f"[CROSS-BUREAU DEBUG] Requested discrepancy IDs: {request.selected_discrepancies}")
+
     # Filter discrepancies if specific ones are selected
     if request.selected_discrepancies:
         filtered_discrepancies = [
             d for d in all_discrepancies
             if d.get("discrepancy_id") in request.selected_discrepancies
         ]
+        logger.info(f"[CROSS-BUREAU DEBUG] Filtered discrepancies count: {len(filtered_discrepancies)}")
     else:
         filtered_discrepancies = []  # Don't include discrepancies by default
+        logger.info(f"[CROSS-BUREAU DEBUG] No discrepancies requested, filtered count: 0")
 
     # Reconstruct consumer - prefer user profile data over parsed report data
     consumer = reconstruct_consumer(report, current_user)

@@ -175,7 +175,8 @@ class DisputeBatchResponse(BaseModel):
     risk_level: str
     recommended_window: str
     estimated_duration_days: int
-    violation_ids: List[str]
+    violation_ids: List[str]  # source_type="VIOLATION" only
+    contradiction_ids: List[str] = []  # source_type="CONTRADICTION" only (cross-bureau)
     actions: List[BatchActionResponse]
     is_single_item: bool = False  # True if isolated escalation step
     is_locked: bool
@@ -678,6 +679,7 @@ def _batched_to_response(
                 recommended_window=batch.recommended_window,
                 estimated_duration_days=batch.estimated_duration_days,
                 violation_ids=batch.violation_ids,
+                contradiction_ids=batch.contradiction_ids,
                 actions=[
                     BatchActionResponse(
                         action_id=a.action_id,

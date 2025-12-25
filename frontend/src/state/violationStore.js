@@ -69,6 +69,11 @@ const useViolationStore = create((set, get) => ({
     set({ selectedViolationIds: violationIds || [] });
   },
 
+  // Set specific discrepancies as selected (replaces current selection)
+  setSelectedDiscrepancies: (discrepancyIds) => {
+    set({ selectedDiscrepancyIds: discrepancyIds || [] });
+  },
+
   selectByBureau: (bureau) => {
     set((state) => {
       const bureauViolationIds = state.violations

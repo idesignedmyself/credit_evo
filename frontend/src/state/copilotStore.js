@@ -284,6 +284,16 @@ const useCopilotStore = create((set, get) => ({
     return batch?.violation_ids || [];
   },
 
+  /**
+   * Get contradiction IDs for a batch (cross-bureau discrepancies)
+   * @param {string} batchId - Batch ID
+   * @returns {Array<string>}
+   */
+  getBatchContradictionIds: (batchId) => {
+    const batch = get().getBatch(batchId);
+    return batch?.contradiction_ids || [];
+  },
+
   // ==========================================================================
   // ACTIONS - BATCH OVERRIDE LOGGING
   // ==========================================================================

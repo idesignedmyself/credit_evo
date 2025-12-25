@@ -281,7 +281,7 @@ class CopilotEngine:
 
         return Blocker(
             source_type="CONTRADICTION",
-            source_id=str(c.get("id") or c.get("rule_code") or str(uuid4())),
+            source_id=str(c.get("discrepancy_id") or c.get("id") or c.get("rule_code") or str(uuid4())),
             account_id=c.get("account_id"),
             creditor_name=c.get("creditor_name"),
             account_number_masked=c.get("account_number_masked"),

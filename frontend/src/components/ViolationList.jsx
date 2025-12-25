@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Box,
   Typography,
@@ -80,6 +81,7 @@ const ViolationList = ({ hideFilters = false, hideHeader = false, activeTab, onT
   const groupBy = activeTab !== undefined ? activeTab : localGroupBy;
   const setGroupBy = onTabChange || setLocalGroupBy;
   const [expandedItems, setExpandedItems] = useState({});
+  const navigate = useNavigate();
 
   const {
     violations,
@@ -383,9 +385,15 @@ const ViolationList = ({ hideFilters = false, hideHeader = false, activeTab, onT
         {groupBy === "recommended" && (
           <RecommendedPlanTab
             reportId={currentReport?.report_id}
-            onGenerateLetter={(violationIds) => {
-              // Set violations and potentially navigate to letter generation
-              console.log('Generate letter for violations:', violationIds);
+            onGenerateLetter={(violationIds, contradictionIds) => {
+              // Set violations/discrepancies and navigate to letter page
+              console.log('Generate letter for violations:', violationIds, 'contradictions:', contradictionIds);
+              // Update violation store with selected items
+              const violationStore = useViolationStore.getState();
+              violationStore.setSelectedViolations(violationIds || []);
+              violationStore.setSelectedDiscrepancies(contradictionIds || []);
+              // Navigate to letter page
+              navigate(`/letter/${currentReport?.report_id}`);
             }}
           />
         )}

@@ -36,13 +36,12 @@ export default function RecommendedPlanTab({ reportId, onGenerateLetter }) {
     logBatchOverride,
     getBatch,
     getBatchViolationIds,
+    getBatchContradictionIds,
   } = useCopilotStore();
 
   const {
-    violations,
-    selectedViolationIds,
     setSelectedViolations,
-    toggleViolation,
+    setSelectedDiscrepancies,
   } = useViolationStore();
 
   // Fetch batched recommendation on mount/reportId change
@@ -66,10 +65,12 @@ export default function RecommendedPlanTab({ reportId, onGenerateLetter }) {
       // Deselect
       setSelectedBatch(null);
       setSelectedViolations([]);
+      setSelectedDiscrepancies([]);
     } else {
-      // Select batch and auto-select its violations
+      // Select batch and auto-select its violations AND cross-bureau contradictions
       setSelectedBatch(batch.batch_id);
       setSelectedViolations(batch.violation_ids || []);
+      setSelectedDiscrepancies(batch.contradiction_ids || []);
     }
   };
 
@@ -91,9 +92,10 @@ export default function RecommendedPlanTab({ reportId, onGenerateLetter }) {
       'proceed_anyway'
     );
 
-    // Select the batch
+    // Select the batch (including cross-bureau contradictions)
     setSelectedBatch(batch.batch_id);
     setSelectedViolations(batch.violation_ids || []);
+    setSelectedDiscrepancies(batch.contradiction_ids || []);
 
     setOverrideModal({ open: false, batch: null, type: null });
   };
@@ -102,7 +104,9 @@ export default function RecommendedPlanTab({ reportId, onGenerateLetter }) {
   const handleGenerateLetter = () => {
     if (selectedBatchId && onGenerateLetter) {
       const violationIds = getBatchViolationIds(selectedBatchId);
-      onGenerateLetter(violationIds);
+      const contradictionIds = getBatchContradictionIds(selectedBatchId);
+      // Pass both violation IDs and contradiction IDs to letter generator
+      onGenerateLetter(violationIds, contradictionIds);
     }
   };
 
@@ -218,7 +222,6 @@ export default function RecommendedPlanTab({ reportId, onGenerateLetter }) {
                     isDimmed={selectedBatchId && selectedBatchId !== batch.batch_id}
                     onSelect={handleSelectBatch}
                     onOverride={handleOverrideRequest}
-                    violations={violations}
                   />
                 ))}
               </AccordionDetails>

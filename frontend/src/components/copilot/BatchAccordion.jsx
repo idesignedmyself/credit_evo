@@ -17,7 +17,6 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import LockIcon from '@mui/icons-material/Lock';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import ScheduleIcon from '@mui/icons-material/Schedule';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 
 const RISK_COLORS = {
@@ -49,8 +48,6 @@ export default function BatchAccordion({
   isDimmed,
   onSelect,
   onOverride,
-  violations = [],
-  renderViolation,
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -70,11 +67,6 @@ export default function BatchAccordion({
       onSelect?.(batch);
     }
   };
-
-  // Get matching violations for this batch
-  const batchViolations = violations.filter(v =>
-    batch.violation_ids?.includes(v.violation_id)
-  );
 
   return (
     <Box
@@ -119,7 +111,7 @@ export default function BatchAccordion({
               )}
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              {strategy.label} • {batch.violation_ids?.length || 0} violation{batch.violation_ids?.length !== 1 ? 's' : ''} • {batch.recommended_window}
+              {strategy.label} • {batch.actions?.length || 0} item{batch.actions?.length !== 1 ? 's' : ''} • {batch.recommended_window}
             </Typography>
           </Box>
         </Box>
@@ -224,177 +216,194 @@ export default function BatchAccordion({
             </Box>
           )}
 
-          {/* Items in this batch (violations or contradiction-based actions) */}
-          <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ mb: 1, display: 'block' }}>
-            ITEMS IN THIS BATCH
-          </Typography>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-            {batchViolations.length > 0 ? (
-              // Display matched violations
-              batchViolations.map((violation) => (
-                <Box
-                  key={violation.violation_id}
-                  sx={{
-                    p: 1.5,
-                    bgcolor: 'white',
-                    borderRadius: 1,
-                    border: '1px solid',
-                    borderColor: 'divider',
-                  }}
-                >
-                  {renderViolation ? (
-                    renderViolation(violation)
-                  ) : (
-                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
-                      <Typography variant="body2" fontWeight={600}>
-                        {violation.creditor_name || 'Unknown Account'}
-                      </Typography>
-                      {(violation.account_number_masked || violation.account_id) && (
-                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                          Account#: {violation.account_number_masked || violation.account_id}
-                        </Typography>
-                      )}
-                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                        {violation.violation_type} • {violation.bureau}
-                      </Typography>
-                    </Box>
-                  )}
-                </Box>
-              ))
-            ) : batch.actions?.length > 0 ? (
-              // Rich display for actions (violations or contradictions)
-              batch.actions.map((action, idx) => {
-                const severity = SEVERITY_COLORS[action.deletability?.toUpperCase()] || SEVERITY_COLORS.MEDIUM;
-                const isContradiction = action.source_type === 'CONTRADICTION';
-                const displayTitle = action.blocker_title || action.action_type?.replace(/_/g, ' ');
-                const displayCategory = action.category || 'other';
-                const hasValuesByBureau = action.values_by_bureau && Object.keys(action.values_by_bureau).length > 0;
+          {/* Items in this batch - separated by type */}
+          {(() => {
+            const violations = (batch.actions || []).filter(a => a.source_type !== 'CONTRADICTION');
+            const contradictions = (batch.actions || []).filter(a => a.source_type === 'CONTRADICTION');
 
-                return (
-                  <Box
-                    key={action.action_id || idx}
-                    sx={{
-                      p: 1.5,
-                      bgcolor: 'white',
-                      borderRadius: 1,
-                      border: '1px solid',
-                      borderColor: 'divider',
-                    }}
-                  >
-                    {/* Header row: Title + Severity badge */}
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-                      <Typography variant="body2" fontWeight={600} sx={{ flex: 1 }}>
-                        {displayTitle}
-                      </Typography>
-                      <Chip
-                        label={severity.label}
-                        size="small"
-                        sx={{
-                          bgcolor: severity.bg,
-                          color: severity.color,
-                          fontWeight: 500,
-                          fontSize: '0.65rem',
-                          height: 20,
-                        }}
-                      />
-                    </Box>
-
-                    {/* Account info */}
-                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                      {action.creditor_name || 'Unknown Account'}
-                      {(action.account_number_masked || action.account_id) && (
-                        <> ({action.account_number_masked || action.account_id})</>
-                      )}
+            return (
+              <>
+                {/* Violations - will be in letter */}
+                {violations.length > 0 && (
+                  <>
+                    <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+                      VIOLATIONS IN LETTER ({violations.length})
                     </Typography>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mb: contradictions.length > 0 ? 2 : 0 }}>
+                      {violations.map((action, idx) => {
+                        const severity = SEVERITY_COLORS[action.deletability?.toUpperCase()] || SEVERITY_COLORS.MEDIUM;
+                        const displayTitle = action.blocker_title || action.action_type?.replace(/_/g, ' ');
 
-                    {/* Description (if available) */}
-                    {action.blocker_description && (
-                      <Typography
-                        variant="caption"
-                        color="text.secondary"
-                        sx={{
-                          display: 'block',
-                          mt: 1,
-                          pl: 1,
-                          borderLeft: '2px solid',
-                          borderColor: 'divider',
-                          lineHeight: 1.4,
-                        }}
-                      >
-                        {action.blocker_description}
+                        return (
+                          <Box
+                            key={action.action_id || idx}
+                            sx={{
+                              p: 1.5,
+                              bgcolor: 'white',
+                              borderRadius: 1,
+                              border: '1px solid',
+                              borderColor: 'success.light',
+                            }}
+                          >
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                              <Typography variant="body2" fontWeight={600} sx={{ flex: 1 }}>
+                                {displayTitle}
+                              </Typography>
+                              <Chip
+                                label={severity.label}
+                                size="small"
+                                sx={{
+                                  bgcolor: severity.bg,
+                                  color: severity.color,
+                                  fontWeight: 500,
+                                  fontSize: '0.65rem',
+                                  height: 20,
+                                }}
+                              />
+                            </Box>
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                              {action.creditor_name || 'Unknown Account'}
+                              {(action.account_number_masked || action.account_id) && (
+                                <> ({action.account_number_masked || action.account_id})</>
+                              )}
+                            </Typography>
+                          </Box>
+                        );
+                      })}
+                    </Box>
+                  </>
+                )}
+
+                {/* Cross-Bureau Contradictions - will be included in letter */}
+                {contradictions.length > 0 && (
+                  <>
+                    <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+                      CROSS-BUREAU DISCREPANCIES ({contradictions.length})
+                      <Typography component="span" variant="caption" color="success.main" sx={{ ml: 1 }}>
+                        (included in letter)
                       </Typography>
-                    )}
+                    </Typography>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                      {contradictions.map((action, idx) => {
+                        const severity = SEVERITY_COLORS[action.deletability?.toUpperCase()] || SEVERITY_COLORS.MEDIUM;
+                        const displayTitle = action.blocker_title || action.action_type?.replace(/_/g, ' ');
+                        const hasValuesByBureau = action.values_by_bureau && Object.keys(action.values_by_bureau).length > 0;
 
-                    {/* Values by Bureau section (for cross-bureau discrepancies) */}
-                    {hasValuesByBureau && (
-                      <Box sx={{ mt: 1.5 }}>
-                        <Typography
-                          variant="caption"
-                          color="primary.main"
-                          fontWeight={600}
-                          sx={{ display: 'block', mb: 0.5 }}
-                        >
-                          Values by Bureau:
-                        </Typography>
-                        <Box sx={{ pl: 1 }}>
-                          {Object.entries(action.values_by_bureau).map(([bureau, value]) => (
-                            <Box key={bureau} sx={{ display: 'flex', gap: 1, mb: 0.25 }}>
+                        return (
+                          <Box
+                            key={action.action_id || idx}
+                            sx={{
+                              p: 1.5,
+                              bgcolor: '#fff8e1',
+                              borderRadius: 1,
+                              border: '1px solid',
+                              borderColor: 'warning.light',
+                            }}
+                          >
+                            {/* Header row: Title + Severity badge */}
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                              <Typography variant="body2" fontWeight={600} sx={{ flex: 1 }}>
+                                {displayTitle}
+                              </Typography>
+                              <Chip
+                                label={severity.label}
+                                size="small"
+                                sx={{
+                                  bgcolor: severity.bg,
+                                  color: severity.color,
+                                  fontWeight: 500,
+                                  fontSize: '0.65rem',
+                                  height: 20,
+                                }}
+                              />
+                            </Box>
+
+                            {/* Account info */}
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                              {action.creditor_name || 'Unknown Account'}
+                              {(action.account_number_masked || action.account_id) && (
+                                <> ({action.account_number_masked || action.account_id})</>
+                              )}
+                            </Typography>
+
+                            {/* Description (if available) */}
+                            {action.blocker_description && (
                               <Typography
                                 variant="caption"
-                                fontWeight={600}
-                                sx={{ minWidth: 90, textTransform: 'uppercase' }}
+                                color="text.secondary"
+                                sx={{
+                                  display: 'block',
+                                  mt: 1,
+                                  pl: 1,
+                                  borderLeft: '2px solid',
+                                  borderColor: 'divider',
+                                  lineHeight: 1.4,
+                                }}
                               >
-                                {bureau}:
+                                {action.blocker_description}
                               </Typography>
-                              <Typography variant="caption" color="text.secondary">
-                                {value || 'Not Reported'}
-                              </Typography>
+                            )}
+
+                            {/* Values by Bureau section (for cross-bureau discrepancies) */}
+                            {hasValuesByBureau && (
+                              <Box sx={{ mt: 1.5 }}>
+                                <Typography
+                                  variant="caption"
+                                  color="primary.main"
+                                  fontWeight={600}
+                                  sx={{ display: 'block', mb: 0.5 }}
+                                >
+                                  Values by Bureau:
+                                </Typography>
+                                <Box sx={{ pl: 1 }}>
+                                  {Object.entries(action.values_by_bureau).map(([bureau, value]) => (
+                                    <Box key={bureau} sx={{ display: 'flex', gap: 1, mb: 0.25 }}>
+                                      <Typography
+                                        variant="caption"
+                                        fontWeight={600}
+                                        sx={{ minWidth: 90, textTransform: 'uppercase' }}
+                                      >
+                                        {bureau}:
+                                      </Typography>
+                                      <Typography variant="caption" color="text.secondary">
+                                        {value || 'Not Reported'}
+                                      </Typography>
+                                    </Box>
+                                  ))}
+                                </Box>
+                              </Box>
+                            )}
+
+                            {/* Type chip */}
+                            <Box sx={{ mt: 1 }}>
+                              <Chip
+                                label="Cross-Bureau Discrepancy"
+                                size="small"
+                                variant="outlined"
+                                sx={{
+                                  fontSize: '0.65rem',
+                                  height: 20,
+                                  borderColor: 'warning.main',
+                                  color: 'warning.dark',
+                                }}
+                              />
                             </Box>
-                          ))}
-                        </Box>
-                      </Box>
-                    )}
-
-                    {/* Type chip */}
-                    <Box sx={{ mt: 1 }}>
-                      <Chip
-                        label={isContradiction ? `Cross-Bureau • ${displayCategory}` : `Violation • ${displayCategory}`}
-                        size="small"
-                        variant="outlined"
-                        sx={{
-                          fontSize: '0.65rem',
-                          height: 20,
-                          borderColor: 'divider',
-                          color: 'text.secondary',
-                        }}
-                      />
+                          </Box>
+                        );
+                      })}
                     </Box>
-                  </Box>
-                );
-              })
-            ) : (
-              <Typography variant="caption" color="text.secondary">
-                No items in this batch
-              </Typography>
-            )}
-          </Box>
+                  </>
+                )}
 
-          {/* Actions preview */}
-          {batch.actions?.length > 0 && (
-            <Box sx={{ mt: 2 }}>
-              <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ mb: 1, display: 'block' }}>
-                PLANNED ACTIONS
-              </Typography>
-              {batch.actions.map((action, idx) => (
-                <Box key={action.action_id || idx} sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-                  <ScheduleIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
-                  <Typography variant="caption">
-                    {action.action_type}: {action.rationale}
+                {/* No items fallback */}
+                {violations.length === 0 && contradictions.length === 0 && (
+                  <Typography variant="caption" color="text.secondary">
+                    No items in this batch
                   </Typography>
-                </Box>
-              ))}
-            </Box>
-          )}
+                )}
+              </>
+            );
+          })()}
         </Box>
       </Collapse>
     </Box>
