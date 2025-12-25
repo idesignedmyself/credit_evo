@@ -76,6 +76,14 @@ class CopilotEngine:
     PUBLIC_RECORD_CATEGORIES = {"public_record", "judgment", "lien", "bankruptcy", "tax_lien"}
     INQUIRY_CATEGORIES = {"inquiry", "hard_inquiry", "hard_pull"}
 
+    # Informational violation types that are NOT FCRA-disputable
+    # These are LOW severity observations, not actionable disputes
+    # See backend/EXCLUSION_RULES.md for full documentation
+    INFORMATIONAL_VIOLATION_TYPES = {
+        "student_loan_capitalized_interest",  # Interest/fees are expected on student loans
+        "mortgage_balance_review",             # Informational balance observation only
+    }
+
     # ==========================================================================
     # PUBLIC API
     # ==========================================================================
@@ -305,6 +313,12 @@ class CopilotEngine:
         """Convert a violation dict to a Blocker."""
         severity = str(v.get("severity", "")).upper()
         violation_type = str(v.get("violation_type", "")).lower()
+
+        # Skip informational-only violations (NOT FCRA-disputable)
+        # These are LOW severity observations that don't warrant dispute action
+        if violation_type in self.INFORMATIONAL_VIOLATION_TYPES:
+            return None
+
         category = self._infer_category(v)
 
         # Deletability based on violation characteristics

@@ -362,8 +362,8 @@ class BatchEngine:
         lock_reason = None
         unlock_conditions = []
 
-        # Get violation IDs for this batch
-        violation_ids = [a.blocker_source_id for a in actions]
+        # Get UNIQUE violation IDs for this batch (dedupe cross-bureau explosions)
+        violation_ids = list(set(a.blocker_source_id for a in actions))
 
         if existing_disputes:
             # Check if any violation in this batch has pending dispute

@@ -44,6 +44,7 @@ class SkipCode(str, Enum):
     POSITIVE_LINE_LOSS = "POSITIVE_LINE_LOSS"
     UTILIZATION_SHOCK = "UTILIZATION_SHOCK"
     TACTICAL_VERIFICATION_RISK = "TACTICAL_VERIFICATION_RISK"
+    INFORMATIONAL_ONLY = "INFORMATIONAL_ONLY"  # LOW severity, not FCRA-disputable (e.g., student loan interest)
 
 
 class ActionType(str, Enum):
@@ -401,6 +402,7 @@ SKIP_CODE_DESCRIPTIONS: Dict[SkipCode, str] = {
     SkipCode.POSITIVE_LINE_LOSS: "Attacking removes positive tradeline age/limit; utilization impact",
     SkipCode.UTILIZATION_SHOCK: "Deleting this revolving line spikes overall utilization",
     SkipCode.TACTICAL_VERIFICATION_RISK: "May force 'verified with updated fields' outcome; wait for stronger posture",
+    SkipCode.INFORMATIONAL_ONLY: "Informational observation only; not disputable under FCRA (e.g., student loan interest/fees)",
 }
 
 
