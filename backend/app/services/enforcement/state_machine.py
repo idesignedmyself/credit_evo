@@ -391,3 +391,61 @@ class AutomaticTransitionTriggers:
             actor=ActorType.SYSTEM,
             statutes_activated=statutes,
         )
+
+    @staticmethod
+    def examiner_failure_escalation(
+        state_machine: EscalationStateMachine,
+        dispute: DisputeDB,
+        examiner_result: str,
+        response_layer_violation: Dict[str, Any],
+    ) -> Tuple[bool, str]:
+        """
+        Triggered when Tier 2 examiner check fails.
+        System-automatic based on examiner standard evaluation.
+
+        TIER 2: Supervisory Enforcement
+
+        Maps examiner failure types to escalation targets:
+        - FAIL_SYSTEMIC → SUBSTANTIVE_ENFORCEMENT (systemic accuracy failure)
+        - FAIL_MISLEADING → SUBSTANTIVE_ENFORCEMENT (misleading verification)
+        - FAIL_PERFUNCTORY → NON_COMPLIANT (perfunctory investigation)
+        - FAIL_NO_RESULTS → NON_COMPLIANT (no results within deadline)
+
+        Args:
+            state_machine: The escalation state machine
+            dispute: The dispute record
+            examiner_result: The examiner standard result (FAIL_PERFUNCTORY, etc.)
+            response_layer_violation: The Tier 2 violation that was created
+
+        Returns:
+            Tuple of (success, message)
+        """
+        # Map failure type to target state
+        if examiner_result in ["FAIL_SYSTEMIC", "FAIL_MISLEADING"]:
+            target_state = EscalationState.SUBSTANTIVE_ENFORCEMENT
+        else:
+            # FAIL_PERFUNCTORY, FAIL_NO_RESULTS
+            # Check current state to determine appropriate escalation
+            if dispute.current_state in [
+                EscalationState.NON_COMPLIANT,
+                EscalationState.PROCEDURAL_ENFORCEMENT
+            ]:
+                target_state = EscalationState.SUBSTANTIVE_ENFORCEMENT
+            else:
+                target_state = EscalationState.NON_COMPLIANT
+
+        # Get statute from violation
+        statutes = []
+        if response_layer_violation:
+            statute = response_layer_violation.get("statute")
+            if statute:
+                statutes.append(statute)
+
+        return state_machine.transition(
+            dispute=dispute,
+            to_state=target_state,
+            trigger=f"examiner_failure_{examiner_result}",
+            actor=ActorType.SYSTEM,
+            statutes_activated=statutes,
+            violations_created=[response_layer_violation.get("id")] if response_layer_violation else [],
+        )

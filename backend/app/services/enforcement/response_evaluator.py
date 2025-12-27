@@ -15,6 +15,7 @@ from ...models.db_models import (
     EscalationState, ResponseType, EntityType, ActorType,
     ReinsertionWatchStatus
 )
+from .examiner_check import ExaminerCheckService, ExaminerStandardResult
 
 
 # =============================================================================
@@ -372,9 +373,19 @@ class ResponseEvaluator:
         self,
         dispute: DisputeDB,
         response: DisputeResponseDB,
+        original_contradictions: Optional[List[Dict[str, Any]]] = None,
+        cross_bureau_contradictions: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         """
         Evaluate a response and determine legal consequences.
+
+        Now includes Tier 2 Examiner Standard Check.
+
+        Args:
+            dispute: The dispute record
+            response: The entity response
+            original_contradictions: Contradictions from the original dispute
+            cross_bureau_contradictions: Same tradeline contradictions across bureaus
 
         Returns evaluation result with violations and next actions.
         """
@@ -410,6 +421,44 @@ class ResponseEvaluator:
 
         elif response.response_type == ResponseType.REJECTED:
             result = self._handle_rejected_response(dispute, response, result)
+
+        # =====================================================================
+        # TIER 2: EXAMINER STANDARD CHECK
+        # =====================================================================
+        # Run examiner check after standard response evaluation
+        # This creates response-layer violations when entities fail standards
+        examiner_service = ExaminerCheckService(self.db)
+        examiner_result = examiner_service.check_response(
+            dispute=dispute,
+            response=response,
+            original_contradictions=original_contradictions,
+            cross_bureau_contradictions=cross_bureau_contradictions,
+        )
+
+        # Add examiner result to evaluation
+        result["examiner_check"] = {
+            "passed": examiner_result.passed,
+            "standard_result": examiner_result.standard_result.value,
+            "failure_reason": examiner_result.failure_reason,
+        }
+
+        # If examiner check failed, add response-layer violation
+        if not examiner_result.passed and examiner_result.response_layer_violation:
+            result["violations_created"].append(examiner_result.response_layer_violation)
+            result["escalation_queued"] = True
+            result["examiner_failure"] = True
+
+            # Track violation ID for ledger
+            result["response_layer_violation_id"] = examiner_result.response_layer_violation.get("id")
+
+            # Apply severity promotion if warranted
+            if examiner_result.severity_promotion:
+                result["severity_promotion"] = examiner_result.severity_promotion.value
+
+            # Set escalation basis
+            result["escalation_basis"] = f"examiner_failure_{examiner_result.standard_result.value}"
+        else:
+            result["examiner_failure"] = False
 
         # Update response with violations
         response.new_violations = result["violations_created"]

@@ -1,5 +1,41 @@
 # Credit Engine System Checklist
 
+## System Tiers
+
+### Tier 1 — Contradiction Detection (Data Layer)
+**Status:** SHIPPED
+Detects Metro 2 data contradictions and generates violations.
+
+### Tier 2 — Supervisory Enforcement (Response Layer)
+**Status:** SHIPPED
+**Tests:** 21/21 passing
+**Scope:** Locked
+
+Tier 2 adds examiner-standard enforcement to the system.
+
+**Capabilities Delivered:**
+- Response-layer violations created for VERIFIED / NO RESPONSE failures
+- Deterministic examiner checks (no NLP, no heuristics)
+- Severity promotion based on examiner failure
+- Examiner-driven escalation (replacing attempt-count logic)
+- Automatic letter posture upgrade
+- Immutable ledger capture of examiner failures
+
+**Examiner Triggers Implemented:**
+- PERFUNCTORY_INVESTIGATION
+- NOTICE_OF_RESULTS_FAILURE
+- SYSTEMIC_ACCURACY_FAILURE (same tradeline, same cycle)
+- UDAAP_MISLEADING_VERIFICATION (CRITICAL impossibility only)
+
+Tier 1 behavior unchanged.
+Tier 3+ explicitly deferred.
+
+*This tier is sufficient for monetization.*
+
+See: [docs/TIER2_SUPERVISORY_ENFORCEMENT.md](docs/TIER2_SUPERVISORY_ENFORCEMENT.md)
+
+---
+
 ## Current Status Overview
 - **Full Coverage:** 30 violation types
 - **Partial Coverage:** 11 violation types

@@ -284,9 +284,13 @@ class PrimaryRemedy:
     STANDARD_PROCEDURAL = "STANDARD_PROCEDURAL"
 
 
-def determine_primary_remedy(contradictions: Optional[List[Any]]) -> str:
+def determine_primary_remedy(
+    contradictions: Optional[List[Any]],
+    examiner_failure: bool = False,
+    examiner_result: Optional[str] = None,
+) -> str:
     """
-    Determine primary remedy based on contradiction severity.
+    Determine primary remedy based on contradiction severity and examiner result.
 
     Rules (deterministic):
     1. If any contradiction has severity = CRITICAL → IMMEDIATE DELETION
@@ -294,11 +298,44 @@ def determine_primary_remedy(contradictions: Optional[List[Any]]) -> str:
     3. Else if 1 HIGH or any MEDIUM contradictions exist → CORRECTION WITH DOCUMENTATION
     4. Else → Fall back to standard procedural/statutory demands
 
+    TIER 2 Enhancement:
+    - Examiner FAIL always promotes to at least CORRECTION_WITH_DOCUMENTATION
+    - FAIL_SYSTEMIC or FAIL_MISLEADING → IMMEDIATE_DELETION
+
     Args:
         contradictions: List of Contradiction objects or dicts
+        examiner_failure: Whether Tier 2 examiner check failed
+        examiner_result: The examiner result (FAIL_PERFUNCTORY, etc.)
 
     Returns:
         PrimaryRemedy constant string
+    """
+    # =========================================================================
+    # TIER 2: Examiner failure upgrades remedy
+    # =========================================================================
+    if examiner_failure:
+        if examiner_result in ["FAIL_SYSTEMIC", "FAIL_MISLEADING"]:
+            # Systemic or misleading verification → immediate deletion
+            return PrimaryRemedy.IMMEDIATE_DELETION
+        else:
+            # FAIL_PERFUNCTORY, FAIL_NO_RESULTS → at minimum correction
+            # But check if contradictions would already push to deletion
+            base_remedy = _calculate_base_remedy(contradictions)
+            if base_remedy == PrimaryRemedy.IMMEDIATE_DELETION:
+                return PrimaryRemedy.IMMEDIATE_DELETION
+            return PrimaryRemedy.CORRECTION_WITH_DOCUMENTATION
+
+    # =========================================================================
+    # Tier 1: Original contradiction-based logic
+    # =========================================================================
+    return _calculate_base_remedy(contradictions)
+
+
+def _calculate_base_remedy(contradictions: Optional[List[Any]]) -> str:
+    """
+    Calculate base remedy from contradictions only (Tier 1 logic).
+
+    Internal helper function - preserves original logic.
     """
     if not contradictions:
         return PrimaryRemedy.STANDARD_PROCEDURAL

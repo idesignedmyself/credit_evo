@@ -217,6 +217,11 @@ class ExecutionLedgerService:
         dofd_changed: bool = False,
         status_changed: bool = False,
         reinsertion_flag: bool = False,
+        # TIER 2: Examiner Standard Fields
+        examiner_standard_result: Optional[str] = None,
+        examiner_failure_reason: Optional[str] = None,
+        response_layer_violation_id: Optional[str] = None,
+        escalation_basis: Optional[str] = None,
     ) -> ExecutionResponseDB:
         """
         Emit an execution response (SOURCE 2).
@@ -237,6 +242,10 @@ class ExecutionLedgerService:
             dofd_changed: Did DOFD change?
             status_changed: Did status change?
             reinsertion_flag: Was reinsertion detected?
+            examiner_standard_result: PASS, FAIL_PERFUNCTORY, etc. (Tier 2)
+            examiner_failure_reason: Human-readable failure reason (Tier 2)
+            response_layer_violation_id: UUID of Tier 2 violation created
+            escalation_basis: What triggered escalation eligibility (Tier 2)
 
         Returns:
             The created response record
@@ -255,6 +264,11 @@ class ExecutionLedgerService:
             status_changed=status_changed,
             reinsertion_flag=reinsertion_flag,
             response_received_at=response_received_at,
+            # Tier 2 Examiner fields
+            examiner_standard_result=examiner_standard_result,
+            examiner_failure_reason=examiner_failure_reason,
+            response_layer_violation_id=response_layer_violation_id,
+            escalation_basis=escalation_basis,
         )
         self.db.add(response)
         self.db.flush()

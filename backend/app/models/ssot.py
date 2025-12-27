@@ -164,6 +164,16 @@ class ViolationType(str, Enum):
     # Missing Scheduled Payment Contradiction (MEDIUM) - P-series
     MISSING_SCHEDULED_PAYMENT_CONTRADICTION = "missing_scheduled_payment_contradiction"  # P1: Scheduled payment exists but no history
 
+    # ==========================================================================
+    # TIER 2: RESPONSE-LAYER VIOLATIONS
+    # Created when entity responses fail examiner standards
+    # These violations exist because of the response, not the underlying data
+    # ==========================================================================
+    PERFUNCTORY_INVESTIGATION = "perfunctory_investigation"  # VERIFIED despite provable contradiction + evidence sent
+    NOTICE_OF_RESULTS_FAILURE = "notice_of_results_failure"  # NO_RESPONSE after statutory deadline
+    SYSTEMIC_ACCURACY_FAILURE = "systemic_accuracy_failure"  # Same contradiction across ≥2 bureaus in same dispute cycle
+    UDAAP_MISLEADING_VERIFICATION = "udaap_misleading_verification"  # VERIFIED on CRITICAL logical impossibility
+
 
 class Severity(str, Enum):
     CRITICAL = "critical"  # Highest severity - potential legal violations

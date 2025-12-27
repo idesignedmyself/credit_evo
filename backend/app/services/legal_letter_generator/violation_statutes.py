@@ -659,6 +659,94 @@ VIOLATION_STATUTE_MAP: Dict[str, ViolationStatutes] = {
             ),
         ],
     ),
+
+    # =========================================================================
+    # TIER 2: RESPONSE-LAYER VIOLATIONS
+    # Created when entity responses fail examiner standards
+    # =========================================================================
+    "perfunctory_investigation": ViolationStatutes(
+        primary=StatuteCitation(
+            statute_type=StatuteType.FCRA,
+            section="611(a)(1)(A)",
+            usc="15 U.S.C. § 1681i(a)(1)(A)",
+            applies_to=["bureau", "furnisher"],
+            title="Failure to conduct reasonable investigation",
+            description="Entity verified disputed information despite provable factual impossibilities",
+        ),
+        secondary=[
+            StatuteCitation(
+                statute_type=StatuteType.FCRA,
+                section="616",
+                usc="15 U.S.C. § 1681n",
+                applies_to=["bureau", "furnisher"],
+                title="Willful noncompliance",
+                description="Willful failure to conduct reasonable reinvestigation",
+            ),
+        ],
+    ),
+
+    "notice_of_results_failure": ViolationStatutes(
+        primary=StatuteCitation(
+            statute_type=StatuteType.FCRA,
+            section="611(a)(6)(A)",
+            usc="15 U.S.C. § 1681i(a)(6)(A)",
+            applies_to=["bureau"],
+            title="Failure to provide notice of results",
+            description="Entity failed to provide investigation results within statutory deadline",
+        ),
+        secondary=[
+            StatuteCitation(
+                statute_type=StatuteType.FCRA,
+                section="623(b)(1)",
+                usc="15 U.S.C. § 1681s-2(b)(1)",
+                applies_to=["furnisher"],
+                title="Duties upon notice of dispute",
+                description="Furnisher failed to investigate within 30 days of notice",
+            ),
+        ],
+    ),
+
+    "systemic_accuracy_failure": ViolationStatutes(
+        primary=StatuteCitation(
+            statute_type=StatuteType.FCRA,
+            section="607(b)",
+            usc="15 U.S.C. § 1681e(b)",
+            applies_to=["bureau"],
+            title="Maximum possible accuracy",
+            description="Same contradiction verified across multiple bureaus in single dispute cycle",
+        ),
+        secondary=[
+            StatuteCitation(
+                statute_type=StatuteType.FCRA,
+                section="623(a)(1)",
+                usc="15 U.S.C. § 1681s-2(a)(1)",
+                applies_to=["furnisher"],
+                title="Prohibition on reporting inaccurate information",
+            ),
+        ],
+    ),
+
+    "udaap_misleading_verification": ViolationStatutes(
+        primary=StatuteCitation(
+            statute_type=StatuteType.FCRA,
+            section="611(a)(1)(A)",
+            usc="15 U.S.C. § 1681i(a)(1)(A)",
+            applies_to=["bureau", "furnisher"],
+            title="Misleading verification response",
+            description="Verification of CRITICAL logical impossibilities creates misleading impression",
+        ),
+        flag_only=[
+            StatuteCitation(
+                statute_type=StatuteType.STATE,
+                section="UDAAP",
+                usc="12 U.S.C. § 5536",
+                applies_to=["bureau", "furnisher"],
+                title="Unfair, Deceptive, or Abusive Acts or Practices",
+                description="Verification may constitute deceptive practice under CFPB authority",
+                consumer_facing=False,
+            ),
+        ],
+    ),
 }
 
 

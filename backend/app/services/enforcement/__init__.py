@@ -21,6 +21,7 @@ from .execution_ledger import ExecutionLedgerService
 from .dispute_session import DisputeSessionService
 from .execution_outcome_detector import ExecutionOutcomeDetector
 from .ledger_signal_aggregator import LedgerSignalAggregator
+from .examiner_check import ExaminerCheckService, ExaminerStandardResult, ExaminerCheckResult
 
 __all__ = [
     'EscalationStateMachine',
@@ -34,4 +35,8 @@ __all__ = [
     'DisputeSessionService',
     'ExecutionOutcomeDetector',
     'LedgerSignalAggregator',
+    # Tier 2 Examiner
+    'ExaminerCheckService',
+    'ExaminerStandardResult',
+    'ExaminerCheckResult',
 ]

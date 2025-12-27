@@ -600,6 +600,12 @@ class ExecutionResponseDB(Base):
     status_changed = Column(Boolean, default=False)
     reinsertion_flag = Column(Boolean, default=False)
 
+    # TIER 2: Examiner Standard Fields
+    examiner_standard_result = Column(String(50), nullable=True)  # PASS, FAIL_PERFUNCTORY, etc.
+    examiner_failure_reason = Column(Text, nullable=True)  # Human-readable failure reason
+    response_layer_violation_id = Column(String(36), nullable=True)  # UUID of Tier 2 violation created
+    escalation_basis = Column(String(100), nullable=True)  # What triggered escalation eligibility
+
     # Timestamps
     response_received_at = Column(DateTime, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)

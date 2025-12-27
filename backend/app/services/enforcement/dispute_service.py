@@ -249,8 +249,25 @@ class DisputeService:
         # Update dispute status
         dispute.status = DisputeStatus.RESPONDED
 
-        # Evaluate response (system action)
-        evaluation = self.response_evaluator.evaluate_response(dispute, response)
+        # =====================================================================
+        # TIER 2: Extract contradictions for examiner check
+        # =====================================================================
+        original_contradictions = []
+        cross_bureau_contradictions = []
+
+        if dispute.original_violation_data:
+            # Extract Tier 1 contradictions that were detected during audit
+            original_contradictions = dispute.original_violation_data.get("contradictions", [])
+            # Extract cross-bureau contradictions (same tradeline across bureaus)
+            cross_bureau_contradictions = dispute.original_violation_data.get("cross_bureau_contradictions", [])
+
+        # Evaluate response (system action) - now with Tier 2 examiner check
+        evaluation = self.response_evaluator.evaluate_response(
+            dispute=dispute,
+            response=response,
+            original_contradictions=original_contradictions,
+            cross_bureau_contradictions=cross_bureau_contradictions,
+        )
 
         # =================================================================
         # EXECUTION LEDGER: Emit response event
@@ -267,6 +284,9 @@ class DisputeService:
             # Use the execution's session ID if not provided
             session_id = dispute_session_id or execution.dispute_session_id
 
+            # Extract Tier 2 examiner results from evaluation
+            examiner_check = evaluation.get("examiner_check", {})
+
             self.ledger.emit_execution_response(
                 execution_id=execution.id,
                 dispute_session_id=session_id,
@@ -280,6 +300,11 @@ class DisputeService:
                 dofd_changed=dofd_changed,
                 status_changed=status_changed,
                 reinsertion_flag=response_type == ResponseType.REINSERTION,
+                # Tier 2: Examiner Standard fields
+                examiner_standard_result=examiner_check.get("standard_result"),
+                examiner_failure_reason=examiner_check.get("failure_reason"),
+                response_layer_violation_id=evaluation.get("response_layer_violation_id"),
+                escalation_basis=evaluation.get("escalation_basis"),
             )
 
         # Transition state based on evaluation
