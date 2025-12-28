@@ -1034,58 +1034,191 @@ def generate_no_response_letter(
     test_context: bool = False,
 ) -> str:
     """
-    Generate enforcement letter for NO_RESPONSE scenario.
+    Generate Tier-2 Canonical enforcement letter for NO_RESPONSE scenario.
 
-    This is a convenience function for the most common enforcement scenario.
+    TIER-2 CANONICAL STRUCTURE:
+    - Fact-first, not statute-first
+    - No hardcoded deadline math or "days past deadline"
+    - No specific deadline date assertions (safe for test mode)
+    - Proves failure to respond is a COMPLETED procedural failure
+    - Frames as examiner failure, not consumer disagreement
+    - Single statutory theory: Failure to Provide Results (§1681i(a)(1)(A), §1681i(a)(6)(A))
+
+    Key sections:
+    1. Header
+    2. Subject: "STATUTORY NON-COMPLIANCE" with "Failure to Provide Results of Reinvestigation"
+    3. Opening: Fact-focused (dispute submitted, no results provided)
+    4. ESTABLISHED FACTS: Bullet points without specific dates
+    5. BASIS FOR NON-COMPLIANCE: WHY failure to respond is non-compliant
+    6. STATUTORY FRAMEWORK: Clean statement of law
+    7. STATUTORY NON-COMPLIANCE: Summary with statute citations
+    8. DEMANDED ACTIONS: Simplified, no redundant timeframes
+    9. RIGHTS PRESERVATION
+    10. RESPONSE REQUIRED + signature
 
     Args:
-        test_context: If True, appends test footer and bypasses deadline validation.
+        test_context: If True, appends test footer.
     """
-    generator = ResponseLetterGenerator(test_context=test_context)
+    # Canonicalize entity name
+    canonical_entity = canonicalize_entity_name(entity_name)
+    consumer_name = consumer.get('name', '[CONSUMER NAME]')
+    consumer_address = consumer.get('address', '[CONSUMER ADDRESS]')
+    today = datetime.now().strftime("%B %d, %Y")
 
-    # Build violation based on entity type
-    response_violation = RESPONSE_VIOLATION_MAP.get("NO_RESPONSE", {}).get(entity_type, {})
+    # Build the letter
+    letter_parts = []
 
-    violations = [{
-        "type": response_violation.get("violation", "failure_to_respond"),
-        "statute": response_violation.get("statute", ""),
-        "facts": [
-            f"Written dispute submitted on {dispute_date.strftime('%B %d, %Y')}",
-            f"Statutory deadline was {deadline_date.strftime('%B %d, %Y')}",
-            "No response received as of the date of this letter",
-            response_violation.get("description", "Failed to respond within statutory period")
-        ]
-    }]
+    # =========================================================================
+    # HEADER
+    # =========================================================================
+    header = f"""{consumer_name}
+{consumer_address}
 
-    # Add original violations as context
-    for v in original_violations:
-        violations.append({
-            "type": v.get("violation_type", v.get("type", "UNKNOWN")),
-            "statute": v.get("primary_statute", v.get("statute", "")),
-            "facts": [v.get("description", "Original disputed violation")],
-            "account": {
-                "creditor": v.get("creditor_name", ""),
-                "account_mask": v.get("account_number_masked", "")
-            }
-        })
+{today}
 
-    demanded_actions = [
-        "Immediate deletion of all disputed tradeline(s) from consumer's credit file",
-        "Written confirmation of deletion sent to consumer within five (5) business days",
-        "Notification to all parties who received consumer reports containing the disputed information within the preceding six (6) months"
-    ]
+{canonical_entity}
+Consumer Dispute Department
+[ADDRESS ON FILE]
 
-    return generator.generate_enforcement_letter(
-        consumer=consumer,
-        entity_type=entity_type,
-        entity_name=entity_name,
-        violations=violations,
-        demanded_actions=demanded_actions,
-        dispute_date=dispute_date,
-        deadline_date=deadline_date,
-        response_type="NO_RESPONSE",
-        include_willful_notice=True
-    )
+Via Certified Mail, Return Receipt Requested"""
+    letter_parts.append(header)
+
+    # =========================================================================
+    # SUBJECT LINE - "NON-COMPLIANCE" not "VIOLATION"
+    # =========================================================================
+    subject = """RE: FORMAL NOTICE OF STATUTORY NON-COMPLIANCE
+
+Failure to Provide Results of Reinvestigation"""
+    letter_parts.append(subject)
+
+    # =========================================================================
+    # OPENING PARAGRAPH - Fact-focused, no specific deadline dates
+    # =========================================================================
+    opening = f"""On {dispute_date.strftime('%B %d, %Y')}, {consumer_name} submitted a written dispute regarding inaccurate information appearing in their consumer file maintained by {canonical_entity}.
+
+Pursuant to the Fair Credit Reporting Act, {canonical_entity} was required to conduct a reinvestigation and provide written notice of the results within the statutory timeframe.
+
+As of the date of this correspondence, no results of reinvestigation have been provided.
+
+This correspondence serves as formal notice that {canonical_entity} has failed to comply with mandatory procedural requirements governing dispute handling."""
+    letter_parts.append(opening)
+
+    # =========================================================================
+    # ESTABLISHED FACTS - No specific dates, safe for test mode
+    # =========================================================================
+    established_facts = f"""ESTABLISHED FACTS
+{'=' * 50}
+
+• Written dispute submitted
+• Statutory reinvestigation period elapsed
+• No results of reinvestigation provided
+• No notice of completion, extension, or findings issued"""
+    letter_parts.append(established_facts)
+
+    # =========================================================================
+    # BASIS FOR NON-COMPLIANCE - The key Tier-2 addition
+    # Proves failure to respond is a completed procedural failure
+    # =========================================================================
+    basis_section = f"""BASIS FOR NON-COMPLIANCE
+{'=' * 50}
+
+Under 15 U.S.C. § 1681i(a)(1)(A) and § 1681i(a)(6)(A), a consumer reporting agency must:
+
+• Conduct a reasonable reinvestigation
+• Provide written notice of the results within the statutory period
+
+Where the statutory period expires without results, compliance becomes procedurally impossible.
+
+Failure to provide results within the required timeframe constitutes a completed procedural failure rather than a curable delay."""
+    letter_parts.append(basis_section)
+
+    # =========================================================================
+    # STATUTORY FRAMEWORK - Clean statement of law
+    # =========================================================================
+    statutory_framework = f"""STATUTORY FRAMEWORK
+{'=' * 50}
+
+Pursuant to 15 U.S.C. § 1681i(a)(1)(A) and § 1681i(a)(6)(A), consumer reporting agencies are required to complete reinvestigations and provide written notice of results within the statutory timeframe.
+
+Failure to do so constitutes non-compliance."""
+    letter_parts.append(statutory_framework)
+
+    # =========================================================================
+    # STATUTORY NON-COMPLIANCE - Summary
+    # =========================================================================
+    violation_section = f"""STATUTORY NON-COMPLIANCE
+{'=' * 50}
+
+Non-Compliance: Failure to Provide Results of Reinvestigation
+Statutes: 15 U.S.C. § 1681i(a)(1)(A); § 1681i(a)(6)(A)
+
+By failing to provide results of reinvestigation, {canonical_entity} did not comply with mandatory procedural requirements."""
+    letter_parts.append(violation_section)
+
+    # =========================================================================
+    # DEMANDED ACTIONS - Simplified, no redundant timeframes
+    # =========================================================================
+    demands = f"""DEMANDED ACTIONS
+{'=' * 50}
+
+The following actions are required:
+
+1. Immediate completion of the reinvestigation
+
+2. Written results of reinvestigation
+
+3. Correction or deletion of any information that cannot be verified
+
+Failure to cure this non-compliance will be recorded as continued non-compliance and escalated accordingly."""
+    letter_parts.append(demands)
+
+    # =========================================================================
+    # RIGHTS PRESERVATION
+    # =========================================================================
+    rights = f"""RIGHTS PRESERVATION
+{'=' * 50}
+
+Nothing in this correspondence shall be construed as a waiver of any rights or remedies available under 15 U.S.C. §§ 1681n or 1681o."""
+    letter_parts.append(rights)
+
+    # =========================================================================
+    # RESPONSE REQUIRED + CLOSING
+    # =========================================================================
+    closing = f"""RESPONSE REQUIRED
+{'=' * 50}
+
+A written response addressing each demanded action is required.
+
+All future correspondence regarding this matter should be directed to the address listed above.
+
+
+
+Respectfully submitted,
+
+
+
+____________________________________
+{consumer_name}
+
+Enclosures:
+- Copy of original dispute
+- Proof of mailing
+- Supporting documentation"""
+    letter_parts.append(closing)
+
+    # =========================================================================
+    # TEST MODE FOOTER (if applicable)
+    # =========================================================================
+    if test_context:
+        test_footer = f"""{'═' * 80}
+                         TEST DOCUMENT – NOT MAILED
+{'═' * 80}
+This document was generated in test mode for preview and validation purposes.
+Do not mail, save to production records, or use for escalation.
+{'═' * 80}"""
+        letter_parts.append(test_footer)
+
+    return "\n\n".join(letter_parts)
 
 
 def generate_verified_response_letter(
