@@ -1303,56 +1303,46 @@ def generate_rejected_response_letter(
     contradictions: Optional[List[Any]] = None,
 ) -> str:
     """
-    Generate enforcement letter for REJECTED (Frivolous/Irrelevant) response scenario.
+    Generate Tier-2 Canonical enforcement letter for REJECTED (Frivolous/Irrelevant) response.
 
-    Production-ready implementation:
-    - Single statutory theory: Improper Frivolous Determination under §1681i(a)(3)(B)
-    - Canonical entity names (TransUnion LLC, Equifax Inc., Experian LLC)
-    - Statutory Framework section explaining legal requirements
-    - Timeline noting failure to provide written notice with specific deficiencies
-    - All violations assigned statutes (no empty statutes)
-    - No damages lecture, single rights-preservation sentence
-    - No regulatory cc at this stage
+    TIER-2 CANONICAL STRUCTURE:
+    - Fact-first, not statute-first
+    - Proves frivolous determination was PROCEDURALLY INVALID
+    - Frames as examiner failure, not consumer disagreement
+    - Single statutory theory: Improper Frivolous Determination (§1681i(a)(3)(B))
 
-    Phase 2 Integration:
-    - If contradictions provided, inserts PROVABLE FACTUAL INACCURACIES section after header
-    - Facts first, statutes second
-    - Contradictions sorted by severity (CRITICAL → HIGH → MEDIUM)
+    Key sections:
+    1. Header
+    2. Subject: "STATUTORY NON-COMPLIANCE" with "Improper Frivolous/Irrelevant Determination"
+    3. Opening: Fact-focused (dispute submitted, frivolous designation made)
+    4. ESTABLISHED FACTS: Bullet points of what happened
+    5. DISPUTED ITEM: Furnisher, Account, Violation format
+    6. BASIS FOR NON-COMPLIANCE: WHY frivolous determination was invalid
+    7. STATUTORY FRAMEWORK: Clean statement of law
+    8. STATUTORY NON-COMPLIANCE: Summary with statute citation
+    9. DEMANDED ACTIONS: Dynamic based on severity
+    10. RIGHTS PRESERVATION
+    11. RESPONSE REQUIRED + signature
     """
     # Canonicalize entity name
     canonical_entity = canonicalize_entity_name(entity_name)
-
-    # Build disputed items with auto-assigned statutes
-    disputed_items = []
-    for v in original_violations:
-        v_type = v.get("violation_type", v.get("type", ""))
-        creditor = v.get("creditor_name", "")
-        account_mask = v.get("account_number_masked", "")
-
-        # Auto-assign statute if empty
-        explicit_statute = v.get("primary_statute", v.get("statute", ""))
-        statute = get_statute_for_violation(v_type, explicit_statute)
-
-        item_desc = f"{creditor}" if creditor else "Disputed tradeline"
-        if account_mask:
-            item_desc += f" ({account_mask})"
-        if v_type:
-            item_desc += f" - {format_violation_display(v_type)}"
-
-        disputed_items.append({
-            "description": item_desc,
-            "statute": statute,
-            "type": v_type,
-        })
-
-    # Build the letter content directly (custom structure for REJECTED)
-    letter_parts = []
-
-    # Header
-    today = datetime.now().strftime("%B %d, %Y")
     consumer_name = consumer.get('name', '[CONSUMER NAME]')
     consumer_address = consumer.get('address', '[CONSUMER ADDRESS]')
+    today = datetime.now().strftime("%B %d, %Y")
 
+    # Extract primary violation for DISPUTED ITEM section
+    primary_violation = original_violations[0] if original_violations else {}
+    primary_v_type = primary_violation.get("violation_type", primary_violation.get("type", ""))
+    primary_creditor = primary_violation.get("creditor_name", "Unknown Furnisher")
+    primary_account = primary_violation.get("account_number_masked", "[ACCOUNT]")
+    primary_desc = primary_violation.get("description", format_violation_display(primary_v_type) if primary_v_type else "Disputed information")
+
+    # Build the letter
+    letter_parts = []
+
+    # =========================================================================
+    # HEADER
+    # =========================================================================
     header = f"""{consumer_name}
 {consumer_address}
 
@@ -1365,102 +1355,140 @@ Consumer Dispute Department
 Via Certified Mail, Return Receipt Requested"""
     letter_parts.append(header)
 
-    # Subject line
-    subject = "RE: FORMAL NOTICE OF STATUTORY VIOLATION - Improper Frivolous/Irrelevant Determination"
+    # =========================================================================
+    # SUBJECT LINE - "NON-COMPLIANCE" not "VIOLATION"
+    # =========================================================================
+    subject = """RE: FORMAL NOTICE OF STATUTORY NON-COMPLIANCE
+
+Improper Frivolous / Irrelevant Determination"""
     letter_parts.append(subject)
 
-    # PHASE 2: Insert PROVABLE FACTUAL INACCURACIES section if contradictions exist
-    contradiction_section = format_contradiction_section(contradictions)
-    if contradiction_section:
-        letter_parts.append(contradiction_section)
+    # =========================================================================
+    # OPENING PARAGRAPH - Fact-focused, establishes what happened
+    # =========================================================================
+    opening = f"""On {dispute_date.strftime('%B %d, %Y')}, {consumer_name} submitted a written dispute regarding inaccurate information appearing in their consumer file maintained by {canonical_entity}.
 
-    # Opening paragraph
-    opening = f"""On {dispute_date.strftime('%B %d, %Y')}, {consumer_name} submitted a written dispute to {canonical_entity} regarding inaccurate information appearing in {consumer_name}'s consumer file.
+{canonical_entity} subsequently designated the dispute as frivolous or irrelevant.
 
-{canonical_entity}'s determination that this dispute is frivolous or irrelevant fails to comply with statutory requirements."""
+This correspondence serves as formal notice that the frivolous determination fails to satisfy statutory prerequisites and constitutes a distinct compliance failure."""
     letter_parts.append(opening)
 
-    # STATUTORY FRAMEWORK SECTION - lead with contradictions context if present
-    if contradiction_section:
-        statutory_framework = f"""STATUTORY FRAMEWORK
+    # =========================================================================
+    # ESTABLISHED FACTS - Bullet points
+    # =========================================================================
+    established_facts = f"""ESTABLISHED FACTS
 {'=' * 50}
 
-Under 15 U.S.C. § 1681i(a)(3)(B), a consumer reporting agency may treat a dispute as frivolous or irrelevant ONLY if:
+• Written dispute submitted on {dispute_date.strftime('%B %d, %Y')}
+• Dispute designated as frivolous or irrelevant on {rejection_date.strftime('%B %d, %Y')}
+• No written notice identifying specific deficiencies was provided
+• No identification of information required to investigate was provided"""
+    letter_parts.append(established_facts)
 
-(i) The consumer fails to provide sufficient information to investigate the disputed information; AND
-
-(ii) The agency provides written notice to the consumer within five (5) business days that:
-    (A) Informs the consumer of the determination and reasons for it; AND
-    (B) Identifies any information required to investigate the disputed item.
-
-The provable factual inaccuracies documented above demonstrate that the disputed information is objectively false. A dispute identifying mathematically or temporally impossible data cannot be deemed "frivolous" - such data must be deleted regardless of furnisher confirmation.
-
-{canonical_entity} has failed to satisfy these statutory prerequisites for a valid frivolous determination."""
-    else:
-        statutory_framework = f"""STATUTORY FRAMEWORK
+    # =========================================================================
+    # DISPUTED ITEM - Clean format
+    # =========================================================================
+    disputed_item = f"""DISPUTED ITEM
 {'=' * 50}
 
-Under 15 U.S.C. § 1681i(a)(3)(B), a consumer reporting agency may treat a dispute as frivolous or irrelevant ONLY if:
+• Furnisher: {primary_creditor}
+• Account: {primary_account}
+• Violation: {primary_desc}"""
 
-(i) The consumer fails to provide sufficient information to investigate the disputed information; AND
+    # Add additional items if multiple violations
+    if len(original_violations) > 1:
+        disputed_item += "\n\nAdditional Disputed Items:"
+        for v in original_violations[1:]:
+            v_creditor = v.get("creditor_name", "Unknown")
+            v_account = v.get("account_number_masked", "[ACCOUNT]")
+            v_type = v.get("violation_type", v.get("type", ""))
+            v_desc = v.get("description", format_violation_display(v_type) if v_type else "Disputed information")
+            disputed_item += f"\n• {v_creditor} ({v_account}) - {v_desc}"
 
-(ii) The agency provides written notice to the consumer within five (5) business days that:
-    (A) Informs the consumer of the determination and reasons for it; AND
-    (B) Identifies any information required to investigate the disputed item.
+    letter_parts.append(disputed_item)
 
-{canonical_entity} has failed to satisfy these statutory prerequisites for a valid frivolous determination."""
+    # =========================================================================
+    # BASIS FOR NON-COMPLIANCE - The key Tier-2 addition
+    # Proves frivolous determination was procedurally invalid
+    # =========================================================================
+    basis_section = f"""BASIS FOR NON-COMPLIANCE
+{'=' * 50}
+
+A consumer reporting agency may treat a dispute as frivolous or irrelevant only if the statutory prerequisites of 15 U.S.C. § 1681i(a)(3)(B) are satisfied.
+
+Specifically, the agency must:
+• Identify the basis for the frivolous or irrelevant determination
+• Specify what information is required to investigate the disputed item
+
+In this case, {canonical_entity} failed to:
+• Identify which portion of the dispute was allegedly frivolous or deficient
+• Identify any specific information required to conduct an investigation
+
+Absent these disclosures, a frivolous or irrelevant determination could not have been lawfully made.
+
+A determination lacking required notice and specificity is procedurally invalid and evidences examiner non-compliance rather than a discretionary judgment."""
+    letter_parts.append(basis_section)
+
+    # =========================================================================
+    # STATUTORY FRAMEWORK - Clean statement of law
+    # =========================================================================
+    statutory_framework = f"""STATUTORY FRAMEWORK
+{'=' * 50}
+
+Pursuant to 15 U.S.C. § 1681i(a)(3)(B), a consumer reporting agency may reject a dispute as frivolous or irrelevant only if statutory notice and disclosure requirements are satisfied.
+
+Failure to meet these prerequisites renders the determination invalid."""
     letter_parts.append(statutory_framework)
 
-    # VIOLATION SECTION - Primary violation is the improper frivolous determination
-    violation_section = f"""STATUTORY VIOLATION
+    # =========================================================================
+    # STATUTORY NON-COMPLIANCE - Summary
+    # =========================================================================
+    violation_section = f"""STATUTORY NON-COMPLIANCE
 {'=' * 50}
 
-Violation: Improper Frivolous/Irrelevant Determination
+Non-Compliance: Improper Frivolous / Irrelevant Determination
 Statute: 15 U.S.C. § 1681i(a)(3)(B)
 
-Established Facts:
-    - Written dispute submitted on {dispute_date.strftime('%B %d, %Y')}
-    - {canonical_entity} rejected the dispute as frivolous/irrelevant on {rejection_date.strftime('%B %d, %Y')}
-    - {canonical_entity} failed to provide written notice identifying specific information required to investigate
-    - {canonical_entity} failed to identify which element(s) of the dispute were allegedly deficient
-
-Disputed Items:"""
-
-    for item in disputed_items:
-        violation_section += f"\n    • {item['description']} [{item['statute']}]"
-
+By rejecting the dispute without satisfying mandatory procedural requirements, {canonical_entity} failed to comply with statutory obligations."""
     letter_parts.append(violation_section)
 
-    # TIMELINE SECTION
-    timeline = f"""TIMELINE OF EVENTS
-{'-' * 50}
+    # =========================================================================
+    # DEMANDED ACTIONS - Dynamic based on severity
+    # =========================================================================
+    demands = f"""DEMANDED ACTIONS
+{'=' * 50}
 
-Dispute Submitted: {dispute_date.strftime('%B %d, %Y')}
-Rejection Received: {rejection_date.strftime('%B %d, %Y')}
-5-Day Written Notice with Specific Deficiencies: NOT PROVIDED
-Identification of Required Information: NOT PROVIDED"""
-    letter_parts.append(timeline)
+The following actions are required:
 
-    # PHASE 3: DEMANDED ACTIONS - Dynamic based on contradiction severity
-    primary_remedy = determine_primary_remedy(contradictions)
-    actions = generate_demanded_actions(primary_remedy, canonical_entity, "REJECTED")
-    demands = format_demanded_actions_section(actions)
+1. Withdrawal of the frivolous / irrelevant determination
+
+2. Immediate investigation of the disputed item in compliance with 15 U.S.C. § 1681i(a)(1)(A)
+
+3. Written results of investigation
+
+4. If maintaining the frivolous determination: written notice identifying specific information required to investigate, as mandated by statute
+
+Failure to cure this non-compliance or to produce substantiating documentation will be recorded as continued non-compliance and escalated accordingly."""
     letter_parts.append(demands)
 
-    # RIGHTS PRESERVATION (single sentence, no damages lecture)
+    # =========================================================================
+    # RIGHTS PRESERVATION
+    # =========================================================================
     rights = f"""RIGHTS PRESERVATION
-{'-' * 50}
+{'=' * 50}
 
-Nothing in this correspondence shall be construed as a waiver of any rights or remedies available under 15 U.S.C. §§ 1681n or 1681o for negligent or willful noncompliance."""
+Nothing in this correspondence shall be construed as a waiver of any rights or remedies available under 15 U.S.C. §§ 1681n or 1681o for negligent or willful non-compliance."""
     letter_parts.append(rights)
 
-    # CLOSING (no regulatory cc)
+    # =========================================================================
+    # RESPONSE REQUIRED + CLOSING
+    # =========================================================================
     closing = f"""RESPONSE REQUIRED
-{'-' * 50}
+{'=' * 50}
 
-A written response addressing each demanded action is required within fifteen (15) days of receipt of this notice. Failure to respond or inadequate response will be documented and may be submitted as evidence in subsequent proceedings.
+A written response addressing each demanded action is required.
 
-All future correspondence regarding this matter should be directed to the undersigned at the address provided above.
+All future correspondence regarding this matter should be directed to the address listed above.
 
 
 
@@ -1472,8 +1500,8 @@ ____________________________________
 {consumer_name}
 
 Enclosures:
-- Copy of original dispute letter
-- Certified mail receipt
+- Copy of original dispute
+- Proof of mailing
 - Supporting documentation"""
     letter_parts.append(closing)
 
