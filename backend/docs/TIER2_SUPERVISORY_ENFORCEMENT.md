@@ -20,6 +20,7 @@ This is distinct from Tier 1 (contradiction detection) which identifies data err
 - Examiner-driven escalation (replacing attempt-count logic)
 - Automatic letter posture upgrade
 - Immutable ledger capture of examiner failures
+- **Tier-2 Canonical Letter Templates** for all response types
 
 ## Examiner Triggers Implemented
 
@@ -99,7 +100,7 @@ Response Evaluator → Execution Ledger → State Machine
 | `services/enforcement/response_evaluator.py` | Integrated ExaminerCheckService |
 | `services/enforcement/dispute_service.py` | Passes contradictions to evaluator |
 | `services/enforcement/state_machine.py` | Added examiner_failure_escalation() |
-| `services/enforcement/response_letter_generator.py` | Updated letter selection |
+| `services/enforcement/response_letter_generator.py` | Tier-2 canonical templates for all 4 response types |
 | `migrations/add_tier2_examiner_fields.py` | Database migration |
 | `tests/test_examiner_enforcement.py` | 21 regression tests |
 
@@ -120,6 +121,96 @@ Response Evaluator → Execution Ledger → State Machine
 | FAIL_MISLEADING | IMMEDIATE_DELETION |
 | FAIL_PERFUNCTORY | CORRECTION_WITH_DOCUMENTATION |
 | FAIL_NO_RESULTS | CORRECTION_WITH_DOCUMENTATION |
+
+## Tier-2 Canonical Letter Templates
+
+All response letters have been upgraded to Tier-2 canonical structure.
+
+### Core Principle: Fact-First, Not Statute-First
+
+Tier-2 letters prove that compliance was **procedurally impossible**, not just inadequate. This frames issues as examiner failures rather than consumer disagreements.
+
+### Subject Line Change
+
+| Before (Pre-Tier-2) | After (Tier-2) |
+|---------------------|----------------|
+| STATUTORY VIOLATION | STATUTORY NON-COMPLIANCE |
+
+### Key Section: BASIS FOR NON-COMPLIANCE
+
+Every Tier-2 letter includes a `BASIS FOR NON-COMPLIANCE` section that proves **why** compliance was impossible:
+
+| Response Type | Procedural Impossibility |
+|---------------|-------------------------|
+| VERIFIED | "Verification was impossible" (missing data, logical impossibility) |
+| REJECTED | "Frivolous determination could not legally exist" (missing required disclosures) |
+| NO_RESPONSE | "Compliance became procedurally impossible" (deadline elapsed) |
+| REINSERTION | "Lawful reinsertion could not have occurred" (missing certification/notice) |
+
+### Canonical Section Order
+
+All Tier-2 letters follow this structure:
+
+1. Header
+2. Subject: "STATUTORY NON-COMPLIANCE" + specific type
+3. Opening (fact-focused)
+4. **ESTABLISHED FACTS** (bullet points)
+5. **DISPUTED ITEM** or **REINSERTED ITEM** (clean format)
+6. **BASIS FOR NON-COMPLIANCE** (procedural impossibility)
+7. STATUTORY FRAMEWORK
+8. STATUTORY NON-COMPLIANCE (summary)
+9. DEMANDED ACTIONS (no redundant timeframes)
+10. RIGHTS PRESERVATION
+11. RESPONSE REQUIRED + signature
+
+### Letter Types Implemented
+
+| Letter Type | Function | Statute |
+|-------------|----------|---------|
+| VERIFIED | `generate_verified_response_letter()` | § 1681i(a)(1)(A) |
+| REJECTED (Frivolous) | `generate_rejected_response_letter()` | § 1681i(a)(3)(B) |
+| NO_RESPONSE | `generate_no_response_letter()` | § 1681i(a)(1)(A), § 1681i(a)(6)(A) |
+| REINSERTION | `generate_reinsertion_response_letter()` | § 1681i(a)(5)(B) |
+
+### Helper Functions
+
+| Function | Purpose |
+|----------|---------|
+| `format_violation_display()` | Preserves acronyms (DOFD, DLA, FCRA, etc.) |
+| `get_basis_for_non_compliance()` | Returns violation-specific basis text |
+| `canonicalize_entity_name()` | Converts to legal names (TransUnion LLC, etc.) |
+
+### Acronyms Preserved
+
+```python
+PRESERVE_ACRONYMS = {"dofd", "dla", "fcra", "fdcpa", "ecoa", "ssn", "oc", "au", "ncap", "udaap"}
+```
+
+### Example Output (VERIFIED)
+
+```
+RE: FORMAL NOTICE OF STATUTORY NON-COMPLIANCE
+
+Verification Without Reasonable Investigation
+
+...
+
+BASIS FOR NON-COMPLIANCE
+==================================================
+
+The disputed account is missing the Date of First Delinquency (DOFD),
+a mandatory compliance field required for the lawful reporting of
+delinquent accounts.
+
+An account missing a required compliance field cannot be verified as
+accurate, as the absence of DOFD prevents confirmation of:
+- Lawful aging of the account
+- Compliance with reporting period limitations
+- Accuracy and integrity controls required under the FCRA
+
+Verification of an account lacking mandatory compliance data is
+logically and procedurally impossible.
+```
 
 ## Constraints
 
