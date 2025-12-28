@@ -99,6 +99,247 @@ def get_statute_for_violation(violation_type: str, explicit_statute: str = None)
     return VIOLATION_STATUTE_DEFAULTS.get(v_type, VIOLATION_STATUTE_DEFAULTS["default"])
 
 
+# =============================================================================
+# TIER 2: BASIS FOR NON-COMPLIANCE MAPPINGS
+# =============================================================================
+# These explain WHY verification was impossible (fact-based), not just
+# that a statute was violated (law-based). This is the key to Tier-2 letters.
+
+BASIS_FOR_NON_COMPLIANCE = {
+    # -------------------------------------------------------------------------
+    # Missing Mandatory Fields - Cannot verify without required data
+    # -------------------------------------------------------------------------
+    "missing_dofd": """The disputed account is missing the Date of First Delinquency (DOFD), a mandatory compliance field required for the lawful reporting of delinquent accounts.
+
+An account missing a required compliance field cannot be verified as accurate, as the absence of DOFD prevents confirmation of:
+- Lawful aging of the account
+- Compliance with reporting period limitations
+- Accuracy and integrity controls required under the FCRA
+
+Verification of an account lacking mandatory compliance data is logically and procedurally impossible.""",
+
+    "chargeoff_missing_dofd": """The disputed account shows charge-off status but is missing the Date of First Delinquency (DOFD).
+
+Under Metro 2 reporting standards, DOFD is mandatory for any account with derogatory status. A charge-off without DOFD cannot be verified because:
+- The account aging cannot be validated
+- FCRA §605(a) obsolescence cannot be confirmed
+- The charge-off date itself may be fabricated
+
+Verification of a charge-off account without its required DOFD field is procedurally impossible.""",
+
+    "missing_date_opened": """The disputed account is missing the Date Opened field.
+
+Without Date Opened, the following cannot be verified:
+- Whether the account age is accurately represented
+- Whether payment history is consistent with account timeline
+- Whether the consumer was even legally capable of opening the account at the claimed time
+
+Verification without Date Opened is logically impossible.""",
+
+    "missing_original_creditor": """The disputed collection account is missing Original Creditor information.
+
+Under FCRA §623(a)(7) and Metro 2 K1 segment requirements, debt collectors must identify the original creditor. Without chain of title documentation:
+- Debt ownership cannot be established
+- The consumer cannot verify the debt is legitimately theirs
+- The accuracy of the claimed balance cannot be traced
+
+Verification of a collection without original creditor is procedurally impossible.""",
+
+    # -------------------------------------------------------------------------
+    # Temporal Impossibilities (T-series) - Mathematically impossible
+    # -------------------------------------------------------------------------
+    "payment_history_exceeds_account_age": """The disputed account shows payment history that exceeds the account age - a temporal impossibility.
+
+An account cannot have payment history for months before it existed. This is not a judgment call or disputed interpretation - it is mathematically impossible.
+
+Verification of information that is temporally impossible evidences a perfunctory investigation rather than a reasonable reinvestigation as required by statute.""",
+
+    "chargeoff_before_last_payment": """The disputed account shows a charge-off date that precedes the date of last payment.
+
+An account cannot be charged off before the consumer's final payment was made. This chronological impossibility demonstrates that the reported data is fabricated or corrupted.
+
+Verification of an impossible chronological sequence evidences a perfunctory investigation.""",
+
+    "delinquency_ladder_inversion": """The disputed account shows delinquency dates in impossible sequence - the 90-day delinquency date precedes the 30-day delinquency date.
+
+Delinquency progresses sequentially: 30 days → 60 days → 90 days → 120 days. An account cannot be 90 days late before it is 30 days late.
+
+Verification of an inverted delinquency ladder is logically impossible.""",
+
+    "impossible_timeline": """The disputed account contains dates that form an impossible timeline.
+
+The reported dates are chronologically impossible and cannot represent actual account history. No reasonable investigation could verify data that violates basic chronological reality.""",
+
+    # -------------------------------------------------------------------------
+    # Mathematical Impossibilities (M-series) - Numbers don't add up
+    # -------------------------------------------------------------------------
+    "balance_exceeds_legal_max": """The disputed account shows a balance that exceeds the legal maximum based on the original debt amount plus allowable interest and fees.
+
+Even with maximum statutory interest and all allowable fees, the balance cannot mathematically reach the reported amount. This indicates fabrication or unauthorized fee inflation.
+
+Verification of a mathematically impossible balance evidences a perfunctory investigation.""",
+
+    "balance_increase_after_chargeoff": """The disputed account shows a balance increase after the charge-off date without any new activity.
+
+Once an account is charged off, the balance is frozen. It cannot increase without new credit extensions (which are impossible on a charged-off account) or collection activity that must be separately documented.
+
+Verification of unexplained post-chargeoff balance increases is procedurally impossible.""",
+
+    "past_due_exceeds_balance": """The disputed account shows a past-due amount that exceeds the total balance.
+
+It is mathematically impossible for a consumer to owe more in past-due amounts than the total account balance. This is not a disputed interpretation - it is arithmetic impossibility.
+
+Verification of mathematically impossible amounts evidences a perfunctory investigation.""",
+
+    "balance_exceeds_credit_limit": """The disputed account shows a balance exceeding the credit limit by an amount inconsistent with allowable over-limit activity.
+
+While minor over-limit balances can occur, the reported balance exceeds any mathematically possible scenario and indicates data corruption or fabrication.
+
+Verification of an impossible balance-to-limit relationship evidences a perfunctory investigation.""",
+
+    # -------------------------------------------------------------------------
+    # Status/Field Contradictions (S-series) - Internal inconsistency
+    # -------------------------------------------------------------------------
+    "paid_status_with_balance": """The disputed account shows "Paid" status while reporting a balance greater than zero.
+
+An account cannot simultaneously be paid in full and have an outstanding balance. These fields directly contradict each other.
+
+Verification of internally contradictory data is logically impossible.""",
+
+    "paid_status_with_delinquencies": """The disputed account shows "Paid" status while the payment history contains delinquency indicators.
+
+If an account is marked as Paid, the payment history should reflect resolution. The presence of delinquency markers after paid status is internally inconsistent.
+
+Verification of self-contradicting fields evidences a perfunctory investigation.""",
+
+    "closed_account_post_activity": """The disputed account shows activity reported after the account closure date.
+
+A closed account cannot have new activity. Activity reported after closure is either fabricated or indicates the closure date is inaccurate.
+
+Verification of post-closure activity on a closed account is procedurally impossible.""",
+
+    "status_payment_history_mismatch": """The disputed account shows a status code that contradicts the payment history.
+
+The account status and payment history must be consistent. When they contradict each other, at least one field is inaccurate and verification requires resolving the discrepancy - not rubber-stamping it.
+
+Verification of status/history contradictions requires investigation, not mere confirmation.""",
+
+    # -------------------------------------------------------------------------
+    # DOFD/Aging Contradictions (D-series)
+    # -------------------------------------------------------------------------
+    "dofd_inferred_mismatch": """The disputed account's reported Date of First Delinquency (DOFD) does not match the DOFD inferable from the payment history.
+
+The first late marker in payment history should correspond to the DOFD. When they differ, the DOFD has been manipulated - likely to extend the reporting period beyond the 7-year FCRA limit.
+
+Verification of a DOFD that contradicts the payment history evidences failure to investigate.""",
+
+    "dofd_after_date_opened": """The disputed account shows a Date of First Delinquency that precedes the Date Opened.
+
+An account cannot become delinquent before it exists. This chronological impossibility indicates data corruption.
+
+Verification of an impossible DOFD/Date Opened relationship is logically impossible.""",
+
+    # -------------------------------------------------------------------------
+    # Cross-Bureau Contradictions
+    # -------------------------------------------------------------------------
+    "dofd_mismatch": """The disputed account shows different Dates of First Delinquency across credit bureaus.
+
+DOFD is an objective historical fact - the date cannot differ based on which bureau is reporting. One or more bureaus are reporting inaccurate information.
+
+Verification without reconciling cross-bureau discrepancies is procedurally inadequate.""",
+
+    "balance_mismatch": """The disputed account shows significantly different balances across credit bureaus.
+
+The balance at any point in time is an objective fact. Material discrepancies indicate at least one bureau is reporting inaccurate information.
+
+Verification without investigating cross-bureau balance discrepancies evidences perfunctory investigation.""",
+
+    "status_mismatch": """The disputed account shows conflicting account status across credit bureaus.
+
+An account cannot simultaneously be open and closed, or current and delinquent. Cross-bureau status conflicts indicate inaccurate reporting.
+
+Verification of conflicting status information requires investigation, not mere confirmation.""",
+
+    # -------------------------------------------------------------------------
+    # Obsolescence and Re-aging
+    # -------------------------------------------------------------------------
+    "obsolete_account": """The disputed account has exceeded the 7-year FCRA reporting period based on the Date of First Delinquency.
+
+Under 15 U.S.C. § 1681c(a), accounts more than 7 years past the DOFD must be deleted. An obsolete account cannot be verified as accurate because its continued presence is itself the violation.
+
+Verification of an obsolete account is meaningless - the account must be deleted regardless of its accuracy.""",
+
+    "re_aging": """The disputed account shows evidence of re-aging - manipulation of dates to extend the reporting period beyond FCRA limits.
+
+Re-aging violates 15 U.S.C. § 1681c(a) and cannot be legitimized through verification. The manipulation of dates is itself the violation.
+
+Verification of a re-aged account compounds the violation rather than resolving it.""",
+
+    "stale_reporting": """The disputed account shows reporting activity inconsistent with its last activity date, indicating stale or outdated data.
+
+When an account's reported data does not reflect current status, verification requires obtaining current information - not confirming stale data.""",
+
+    # -------------------------------------------------------------------------
+    # Collection-Specific
+    # -------------------------------------------------------------------------
+    "double_jeopardy": """The disputed debt appears on the credit report twice - once from the original creditor and once from a debt collector - with both reporting a balance.
+
+This is prohibited double-counting that artificially inflates the consumer's total debt load. When a debt is transferred, the original creditor must zero the balance.
+
+Verification of duplicate debt reporting is procedurally impossible - one entry must be deleted or zeroed.""",
+
+    "collection_balance_inflation": """The disputed collection account shows a balance that exceeds the legally collectible amount.
+
+Under FDCPA §1692f(1), collectors cannot add unauthorized amounts. A balance exceeding original debt plus allowable interest and fees is unauthorized.
+
+Verification of an inflated collection balance would validate an FDCPA violation.""",
+
+    # -------------------------------------------------------------------------
+    # Identity and Fraud Indicators
+    # -------------------------------------------------------------------------
+    "deceased_indicator_error": """The disputed record shows a deceased indicator for a living consumer.
+
+This is not a disputed interpretation - the consumer is alive. Verification of a deceased indicator for a living person is factually impossible and indicates a mixed file or fraud.
+
+Continued reporting of a deceased indicator on a living consumer's file requires deletion, not verification.""",
+
+    "child_identity_theft": """The disputed account was opened when the consumer was a minor (under 18).
+
+Minors cannot legally enter into credit agreements. An account opened before the consumer's 18th birthday is either identity theft or a data error.
+
+Verification of an account opened by a minor is procedurally impossible without proof of legal guardian authorization.""",
+}
+
+
+def get_basis_for_non_compliance(violation_type: str, violation_desc: str = "") -> str:
+    """
+    Returns explanation of WHY verification was impossible for this violation type.
+
+    This is the key to Tier-2 Canonical letters: proving verification was
+    logically or procedurally impossible, not just inadequate.
+
+    Args:
+        violation_type: The ViolationType enum value (e.g., "missing_dofd")
+        violation_desc: Optional description for generic fallback
+
+    Returns:
+        Multi-paragraph explanation of why verification was impossible
+    """
+    v_type = violation_type.lower().replace(" ", "_") if violation_type else ""
+
+    if v_type in BASIS_FOR_NON_COMPLIANCE:
+        return BASIS_FOR_NON_COMPLIANCE[v_type]
+
+    # Generic fallback for unmapped violation types
+    return f"""The disputed information contains a provable deficiency that prevents verification.
+
+The specific deficiency - {violation_desc or violation_type.replace('_', ' ')} - represents a data integrity failure that cannot be verified as accurate through any legitimate investigation process.
+
+Verification of information with documented deficiencies requires correction of those deficiencies, not mere confirmation that the deficient data exists.
+
+Accordingly, the claimed verification evidences a perfunctory investigation rather than a reasonable reinvestigation as required by statute."""
+
+
 # Canonical statute citations
 STATUTE_CITATIONS = {
     # FCRA - Credit Reporting Agency (CRA) obligations
@@ -832,53 +1073,50 @@ def generate_verified_response_letter(
     contradictions: Optional[List[Any]] = None,
 ) -> str:
     """
-    Generate enforcement letter for VERIFIED response scenario.
+    Generate Tier-2 Canonical enforcement letter for VERIFIED response scenario.
 
-    Production-ready implementation:
+    TIER-2 CANONICAL STRUCTURE:
+    - Fact-first, not statute-first
+    - Proves verification was IMPOSSIBLE, not just inadequate
+    - Frames as examiner failure, not consumer disagreement
     - Single statutory theory: Verification Without Reasonable Investigation (§611(a)(1)(A))
-    - Canonical entity names (TransUnion LLC, Equifax Inc., Experian LLC)
-    - Original violations referenced as facts, not separate violation entries
-    - No damages lecture, single rights-preservation sentence
-    - No regulatory cc at this stage
 
-    Phase 2 Integration:
-    - If contradictions provided, inserts PROVABLE FACTUAL INACCURACIES section after header
-    - Facts first, statutes second
-    - Contradictions sorted by severity (CRITICAL → HIGH → MEDIUM)
+    Key sections:
+    1. Header
+    2. Subject: "STATUTORY NON-COMPLIANCE" (not "VIOLATION")
+    3. Opening: Fact-focused (dispute submitted, verification claimed)
+    4. STATUTORY FRAMEWORK: Clean statement of law
+    5. ESTABLISHED FACTS: Bullet points of what happened
+    6. DISPUTED ITEM: Furnisher, Account, Violation format
+    7. BASIS FOR NON-COMPLIANCE: WHY verification was impossible
+    8. STATUTORY VIOLATION: Summary with statute citation
+    9. DEMANDED ACTIONS: Dynamic based on severity
+    10. RIGHTS PRESERVATION
+    11. RESPONSE REQUIRED + signature
     """
     # Canonicalize entity name
     canonical_entity = canonicalize_entity_name(entity_name)
-
-    # Build disputed items with auto-assigned statutes
-    disputed_items_facts = []
-    for v in original_violations:
-        v_type = v.get("violation_type", v.get("type", ""))
-        creditor = v.get("creditor_name", "")
-        account_mask = v.get("account_number_masked", "")
-        description = v.get("description", "")
-
-        # Auto-assign statute if empty
-        explicit_statute = v.get("primary_statute", v.get("statute", ""))
-        statute = get_statute_for_violation(v_type, explicit_statute)
-
-        item_desc = f"{creditor}" if creditor else "Disputed tradeline"
-        if account_mask:
-            item_desc += f" ({account_mask})"
-        if v_type:
-            item_desc += f" - {v_type.replace('_', ' ').title()}"
-        if statute:
-            item_desc += f" [{statute}]"
-
-        disputed_items_facts.append(item_desc)
-
-    # Build the letter content directly (custom structure for VERIFIED with contradictions)
-    letter_parts = []
-
-    # Header
-    today = datetime.now().strftime("%B %d, %Y")
     consumer_name = consumer.get('name', '[CONSUMER NAME]')
     consumer_address = consumer.get('address', '[CONSUMER ADDRESS]')
+    today = datetime.now().strftime("%B %d, %Y")
 
+    # Extract primary violation for BASIS section
+    primary_violation = original_violations[0] if original_violations else {}
+    primary_v_type = primary_violation.get("violation_type", primary_violation.get("type", ""))
+    primary_creditor = primary_violation.get("creditor_name", "Unknown Furnisher")
+    primary_account = primary_violation.get("account_number_masked", "[ACCOUNT]")
+    primary_desc = primary_violation.get("description", primary_v_type.replace("_", " ").title() if primary_v_type else "Disputed information")
+
+    # Auto-assign statute
+    explicit_statute = primary_violation.get("primary_statute", primary_violation.get("statute", ""))
+    primary_statute = get_statute_for_violation(primary_v_type, explicit_statute)
+
+    # Build the letter
+    letter_parts = []
+
+    # =========================================================================
+    # HEADER
+    # =========================================================================
     header = f"""{consumer_name}
 {consumer_address}
 
@@ -891,88 +1129,123 @@ Consumer Dispute Department
 Via Certified Mail, Return Receipt Requested"""
     letter_parts.append(header)
 
-    # Subject line
-    subject = "RE: FORMAL NOTICE OF STATUTORY VIOLATION - Verification Without Reasonable Investigation"
+    # =========================================================================
+    # SUBJECT LINE - "NON-COMPLIANCE" not "VIOLATION"
+    # =========================================================================
+    subject = """RE: FORMAL NOTICE OF STATUTORY NON-COMPLIANCE
+
+Verification Without Reasonable Investigation"""
     letter_parts.append(subject)
 
-    # PHASE 2: Insert PROVABLE FACTUAL INACCURACIES section if contradictions exist
-    contradiction_section = format_contradiction_section(contradictions)
-    if contradiction_section:
-        letter_parts.append(contradiction_section)
+    # =========================================================================
+    # OPENING PARAGRAPH - Fact-focused, establishes what happened
+    # =========================================================================
+    opening = f"""On {dispute_date.strftime('%B %d, %Y')}, {consumer_name} submitted a written dispute regarding inaccurate information appearing in their consumer file maintained by {canonical_entity}.
 
-    # Opening paragraph
-    opening = f"""On {dispute_date.strftime('%B %d, %Y')}, {consumer_name} submitted a written dispute to {canonical_entity} regarding inaccurate information appearing in {consumer_name}'s consumer file.
+On {response_date.strftime('%B %d, %Y')}, {canonical_entity} responded by claiming the disputed information was "VERIFIED."
 
-{canonical_entity}, as a credit reporting agency subject to the Fair Credit Reporting Act (FCRA), 15 U.S.C. § 1681 et seq., bears specific statutory obligations upon receipt of a consumer dispute.
-
-{canonical_entity}'s verification response fails to satisfy its statutory obligations and compounds its liability."""
+This correspondence serves as formal notice that the claimed verification fails to satisfy the statutory requirement of a reasonable reinvestigation and constitutes a distinct compliance violation."""
     letter_parts.append(opening)
 
-    # STATUTORY FRAMEWORK - lead with contradictions context if present
-    if contradiction_section:
-        statutory_framework = f"""STATUTORY FRAMEWORK
+    # =========================================================================
+    # STATUTORY FRAMEWORK - Clean statement of law
+    # =========================================================================
+    statutory_framework = f"""STATUTORY FRAMEWORK
 {'=' * 50}
 
-Under 15 U.S.C. § 1681i(a)(1)(A), upon receiving notice of a dispute, a consumer reporting agency shall conduct a reasonable reinvestigation to determine whether the disputed information is inaccurate.
+Pursuant to 15 U.S.C. § 1681i(a)(1)(A), upon receipt of a consumer dispute, a consumer reporting agency is required to conduct a reasonable reinvestigation to determine whether the disputed information is inaccurate.
 
-The provable factual inaccuracies documented above demonstrate that no reasonable investigation was conducted. Information that is mathematically or temporally impossible cannot be "verified" through any legitimate investigative process. {canonical_entity}'s claim of verification is therefore facially deficient."""
-    else:
-        statutory_framework = f"""STATUTORY FRAMEWORK
-{'=' * 50}
-
-Under 15 U.S.C. § 1681i(a)(1)(A), upon receiving notice of a dispute, a consumer reporting agency shall conduct a reasonable reinvestigation to determine whether the disputed information is inaccurate.
-
-{canonical_entity}'s claim of verification fails to satisfy this statutory standard."""
+A conclusory verification response does not satisfy this obligation where the disputed data cannot be reasonably verified as accurate."""
     letter_parts.append(statutory_framework)
 
-    # VIOLATION SECTION
+    # =========================================================================
+    # ESTABLISHED FACTS - Bullet points
+    # =========================================================================
+    established_facts = f"""ESTABLISHED FACTS
+{'=' * 50}
+
+• Written dispute submitted on {dispute_date.strftime('%B %d, %Y')}
+• Response received on {response_date.strftime('%B %d, %Y')} asserting verification
+• Disputed tradeline remains unchanged
+• Mandatory compliance data remains missing or deficient"""
+    letter_parts.append(established_facts)
+
+    # =========================================================================
+    # DISPUTED ITEM - Clean format
+    # =========================================================================
+    disputed_item = f"""DISPUTED ITEM
+{'=' * 50}
+
+• Furnisher: {primary_creditor}
+• Account: {primary_account}
+• Violation: {primary_desc}"""
+
+    # Add additional items if multiple violations
+    if len(original_violations) > 1:
+        disputed_item += "\n\nAdditional Disputed Items:"
+        for v in original_violations[1:]:
+            v_creditor = v.get("creditor_name", "Unknown")
+            v_account = v.get("account_number_masked", "[ACCOUNT]")
+            v_type = v.get("violation_type", v.get("type", ""))
+            v_desc = v.get("description", v_type.replace("_", " ").title() if v_type else "Disputed information")
+            disputed_item += f"\n• {v_creditor} ({v_account}) - {v_desc}"
+
+    letter_parts.append(disputed_item)
+
+    # =========================================================================
+    # BASIS FOR NON-COMPLIANCE - The key Tier-2 addition
+    # Explains WHY verification was impossible
+    # =========================================================================
+    basis_text = get_basis_for_non_compliance(primary_v_type, primary_desc)
+
+    basis_section = f"""BASIS FOR NON-COMPLIANCE
+{'=' * 50}
+
+{basis_text}
+
+Accordingly, {canonical_entity}'s verification response evidences a perfunctory investigation rather than a reasonable reinvestigation as required by statute."""
+    letter_parts.append(basis_section)
+
+    # =========================================================================
+    # STATUTORY VIOLATION - Summary
+    # =========================================================================
     violation_section = f"""STATUTORY VIOLATION
 {'=' * 50}
 
 Violation: Verification Without Reasonable Investigation
 Statute: 15 U.S.C. § 1681i(a)(1)(A)
 
-Established Facts:
-    - Written dispute submitted on {dispute_date.strftime('%B %d, %Y')}
-    - Response received on {response_date.strftime('%B %d, %Y')} claiming verification of disputed information
-    - {canonical_entity} failed to conduct a reasonable reinvestigation as required by statute
-
-Disputed Items:"""
-
-    for item in disputed_items_facts:
-        violation_section += f"\n    • {item}"
-
+By verifying information that cannot be substantiated due to the deficiencies documented above, {canonical_entity} failed to conduct a reasonable reinvestigation and is in statutory non-compliance."""
     letter_parts.append(violation_section)
 
-    # TIMELINE SECTION
-    timeline = f"""TIMELINE OF EVENTS
-{'-' * 50}
-
-Dispute Submitted: {dispute_date.strftime('%B %d, %Y')}
-Response Received: {response_date.strftime('%B %d, %Y')}
-Response Type: VERIFIED (Claimed)"""
-    letter_parts.append(timeline)
-
-    # PHASE 3: DEMANDED ACTIONS - Dynamic based on contradiction severity
+    # =========================================================================
+    # DEMANDED ACTIONS - Dynamic based on severity
+    # =========================================================================
     primary_remedy = determine_primary_remedy(contradictions)
     actions = generate_demanded_actions(primary_remedy, canonical_entity, "VERIFIED")
     demands = format_demanded_actions_section(actions)
     letter_parts.append(demands)
 
+    # =========================================================================
     # RIGHTS PRESERVATION
+    # =========================================================================
     rights = f"""RIGHTS PRESERVATION
-{'-' * 50}
+{'=' * 50}
 
-Nothing in this correspondence shall be construed as a waiver of any rights or remedies available under 15 U.S.C. §§ 1681n or 1681o for negligent or willful noncompliance."""
+Nothing in this correspondence shall be construed as a waiver of any rights or remedies available under 15 U.S.C. §§ 1681n or 1681o for negligent or willful non-compliance."""
     letter_parts.append(rights)
 
-    # CLOSING
+    # =========================================================================
+    # RESPONSE REQUIRED + CLOSING
+    # =========================================================================
     closing = f"""RESPONSE REQUIRED
-{'-' * 50}
+{'=' * 50}
 
-A written response addressing each demanded action is required within fifteen (15) days of receipt of this notice. Failure to respond or inadequate response will be documented and may be submitted as evidence in subsequent proceedings.
+A written response addressing each demanded action is required.
 
-All future correspondence regarding this matter should be directed to the undersigned at the address provided above.
+Failure to cure this violation or to produce substantiating documentation will be recorded as continued non-compliance and escalated accordingly.
+
+All future correspondence regarding this matter should be directed to the address listed above.
 
 
 
@@ -984,8 +1257,8 @@ ____________________________________
 {consumer_name}
 
 Enclosures:
-- Copy of original dispute letter
-- Certified mail receipt
+- Copy of original dispute
+- Proof of mailing
 - Supporting documentation"""
     letter_parts.append(closing)
 
