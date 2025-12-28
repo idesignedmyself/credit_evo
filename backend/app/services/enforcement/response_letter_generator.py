@@ -54,6 +54,31 @@ def canonicalize_entity_name(name: str) -> str:
     return CANONICAL_ENTITY_NAMES.get(lookup, name)
 
 
+# Known acronyms that should stay uppercase in violation display
+PRESERVE_ACRONYMS = {"dofd", "dla", "fcra", "fdcpa", "ecoa", "ssn", "oc", "au", "ncap", "udaap"}
+
+
+def format_violation_display(violation_type: str) -> str:
+    """
+    Format violation type for display, preserving known acronyms.
+
+    Examples:
+        "missing_dofd" -> "Missing DOFD"
+        "fcra_violation" -> "FCRA Violation"
+        "balance_exceeds_credit_limit" -> "Balance Exceeds Credit Limit"
+    """
+    if not violation_type:
+        return ""
+    words = violation_type.replace("_", " ").split()
+    formatted = []
+    for word in words:
+        if word.lower() in PRESERVE_ACRONYMS:
+            formatted.append(word.upper())
+        else:
+            formatted.append(word.capitalize())
+    return " ".join(formatted)
+
+
 # Violation type to statute auto-assignment
 # Maps violation types to their primary FCRA statute when not explicitly set
 VIOLATION_STATUTE_DEFAULTS = {
@@ -682,7 +707,7 @@ def generate_demanded_actions(
                 "Disclosure of the method of verification used for each disputed item"
             )
             actions.append(
-                "Written results of reinvestigation within fifteen (15) days"
+                "Written results of reinvestigation"
             )
         elif response_type == "REJECTED":
             actions.append(
@@ -701,7 +726,7 @@ def generate_demanded_actions(
                 "Production of all documents relied upon in the purported verification",
                 "Identification of the furnisher(s) contacted and date(s) of contact",
                 "Immediate reinvestigation using procedures that constitute a reasonable investigation",
-                "Written results of reinvestigation within fifteen (15) days",
+                "Written results of reinvestigation",
             ]
         elif response_type == "REJECTED":
             actions = [
@@ -922,7 +947,7 @@ Via Certified Mail, Return Receipt Requested"""
 
     def _format_violation_type(self, v_type: str) -> str:
         """Format violation type for display."""
-        return v_type.replace("_", " ").title()
+        return format_violation_display(v_type)
 
     def _generate_timeline_section(
         self,
@@ -1105,7 +1130,7 @@ def generate_verified_response_letter(
     primary_v_type = primary_violation.get("violation_type", primary_violation.get("type", ""))
     primary_creditor = primary_violation.get("creditor_name", "Unknown Furnisher")
     primary_account = primary_violation.get("account_number_masked", "[ACCOUNT]")
-    primary_desc = primary_violation.get("description", primary_v_type.replace("_", " ").title() if primary_v_type else "Disputed information")
+    primary_desc = primary_violation.get("description", format_violation_display(primary_v_type) if primary_v_type else "Disputed information")
 
     # Auto-assign statute
     explicit_statute = primary_violation.get("primary_statute", primary_violation.get("statute", ""))
@@ -1187,7 +1212,7 @@ A conclusory verification response does not satisfy this obligation where the di
             v_creditor = v.get("creditor_name", "Unknown")
             v_account = v.get("account_number_masked", "[ACCOUNT]")
             v_type = v.get("violation_type", v.get("type", ""))
-            v_desc = v.get("description", v_type.replace("_", " ").title() if v_type else "Disputed information")
+            v_desc = v.get("description", format_violation_display(v_type) if v_type else "Disputed information")
             disputed_item += f"\n• {v_creditor} ({v_account}) - {v_desc}"
 
     letter_parts.append(disputed_item)
@@ -1312,7 +1337,7 @@ def generate_rejected_response_letter(
         if account_mask:
             item_desc += f" ({account_mask})"
         if v_type:
-            item_desc += f" - {v_type.replace('_', ' ').title()}"
+            item_desc += f" - {format_violation_display(v_type)}"
 
         disputed_items.append({
             "description": item_desc,
