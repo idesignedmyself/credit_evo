@@ -13,7 +13,7 @@ Signals computed:
 Note: Suppression frequency is NOT exposed to Copilot (admin-only).
 """
 from uuid import uuid4
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 from sqlalchemy.orm import Session
@@ -86,8 +86,8 @@ class LedgerSignalAggregator:
         Returns:
             Summary of signals computed by scope type
         """
-        window_start = datetime.utcnow() - timedelta(days=window_days)
-        window_end = datetime.utcnow()
+        window_start = datetime.now(timezone.utc) - timedelta(days=window_days)
+        window_end = datetime.now(timezone.utc)
 
         summary = {
             "GLOBAL": 0,
@@ -442,7 +442,7 @@ class LedgerSignalAggregator:
 
         Deletes existing signals for the same scope before inserting.
         """
-        expires_at = datetime.utcnow() + timedelta(hours=self.SIGNAL_TTL_HOURS)
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=self.SIGNAL_TTL_HOURS)
 
         for signal in signals:
             # Delete existing signal for this scope/type
@@ -474,7 +474,7 @@ class LedgerSignalAggregator:
             Number of signals deleted
         """
         result = self.db.query(CopilotSignalCacheDB).filter(
-            CopilotSignalCacheDB.expires_at < datetime.utcnow()
+            CopilotSignalCacheDB.expires_at < datetime.now(timezone.utc)
         ).delete()
         self.db.commit()
         return result

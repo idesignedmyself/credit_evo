@@ -3,7 +3,7 @@ Credit Engine 2.0 - Admin Router
 Read-only intelligence console built on Execution Ledger truth.
 Admin observes, correlates, diagnoses - never mutates.
 """
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 import logging
 
@@ -145,7 +145,7 @@ async def get_dashboard_stats(
     Get dashboard statistics from Execution Ledger.
     All metrics are derived from immutable ledger data.
     """
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     thirty_days_ago = now - timedelta(days=30)
 
     # User counts
@@ -415,7 +415,7 @@ async def get_dispute_intelligence(
     Get population-level dispute analytics from Execution Ledger.
     Aggregates outcomes by bureau and furnisher.
     """
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
 
     # Get all outcomes in time window
     outcomes = db.query(
@@ -518,7 +518,7 @@ async def get_copilot_performance(
     Get Copilot performance metrics from Execution Ledger.
     Compares outcomes when user followed vs overrode Copilot advice.
     """
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
 
     # Get all suppressions (to find overrides)
     suppressions = db.query(ExecutionSuppressionEventDB).filter(

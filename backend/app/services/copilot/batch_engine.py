@@ -22,7 +22,7 @@ This is read-only with respect to disputes - it queries for lock detection
 but never modifies dispute state.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 from uuid import uuid4
 
@@ -445,6 +445,6 @@ class BatchEngine:
         batch.unlock_conditions = []
 
         if reason == "response_received":
-            batch.response_received_at = datetime.utcnow()
+            batch.response_received_at = datetime.now(timezone.utc)
 
         return batch

@@ -23,7 +23,7 @@ Execution Ledger Integration (B7):
 from __future__ import annotations
 
 from dataclasses import asdict, replace
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 from uuid import uuid4
 
@@ -173,7 +173,7 @@ class CopilotEngine:
             recommendation_id=str(uuid4()),
             user_id=user_id,
             report_id=report_id,
-            generated_at=datetime.utcnow(),
+            generated_at=datetime.now(timezone.utc),
             dispute_session_id=dispute_session_id,
             goal=goal,
             target_state=target,

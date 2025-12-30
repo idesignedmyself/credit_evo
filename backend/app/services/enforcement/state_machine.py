@@ -5,7 +5,7 @@ Deterministic state machine for dispute escalation.
 States are non-reversible once advanced past certain points.
 All transitions are logged immutably.
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any, Tuple
 from uuid import uuid4
 
@@ -255,7 +255,7 @@ class EscalationStateMachine:
 
         # Update dispute state
         dispute.current_state = to_state
-        dispute.updated_at = datetime.utcnow()
+        dispute.updated_at = datetime.now(timezone.utc)
 
         return True, f"Transitioned to {to_state.value}"
 

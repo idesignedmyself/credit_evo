@@ -19,6 +19,9 @@ This document tracks bugs, issues, and obstacles encountered during development 
 11. [B7: REJECTED/FRIVOLOUS Letter Production Hardening](#b7-rejectedfrivolous-letter-production-hardening)
 12. [B7: REINSERTION Letter Production Hardening](#b7-reinsertion-letter-production-hardening)
 13. [B14: Cross-Bureau Contradictions Not Included in Letters](#b14-cross-bureau-contradictions-not-included-in-letters)
+14. [B15: Tier-2 Adjudication UI Not Appearing](#b15-tier-2-adjudication-ui-not-appearing)
+15. [B15: Date Picker Showing Wrong Date](#b15-date-picker-showing-wrong-date-off-by-one-day)
+16. [B15: datetime.utcnow() Deprecation Warnings](#b15-datetimeutcnow-deprecation-warnings)
 
 ---
 
@@ -461,6 +464,167 @@ to ALL consumer reporting agencies.
 - `frontend/src/state/violationStore.js` - Added `setSelectedDiscrepancies()`
 - `frontend/src/components/copilot/RecommendedPlanTab.jsx` - Pass both ID types
 - `frontend/src/components/ViolationList.jsx` - Set selections and navigate
+
+---
+
+## B15: Tier-2 Adjudication UI Not Appearing
+
+**Date:** December 29, 2024
+
+**Symptom:**
+Tier-2 supervisory response UI never appeared in the frontend after logging a response, even though Tier-2 letters were generated.
+
+**Root Cause:**
+Multiple issues in the data flow:
+
+1. **Missing `violation_id` in Contradiction-Based Violations:**
+   Violations generated from the contradiction engine use `account_id` instead of `violation_id`. When responses were saved, they stored `violation_id = null`, causing backend enrichment to fail silently.
+
+2. **Backend Assumed Dict Format:**
+   The `log_response` method called `.get()` on `original_violation_data` assuming it was always a dict, but letter generation stores it as a list.
+   ```
+   Error: 'list' object has no attribute 'get'
+   ```
+
+3. **Legacy Response Matching:**
+   Responses saved before the fix had `violation_id = null` and couldn't be matched to violations during enrichment.
+
+**Solution:**
+
+1. **Generate `violation_id` if not present:**
+   ```python
+   # In dispute_service.py enrichment
+   if not v_copy.get("violation_id"):
+       v_copy["violation_id"] = v.get("account_id") or f"{d.id}-v{idx}"
+   ```
+
+2. **Check type before accessing dict methods:**
+   ```python
+   if isinstance(dispute.original_violation_data, dict):
+       original_contradictions = dispute.original_violation_data.get("contradictions", [])
+   else:
+       # It's a list, handle accordingly
+       pass
+   ```
+
+3. **Add fallback matching for legacy responses:**
+   ```python
+   responses_without_vid = [r for r in d.responses if not r.violation_id]
+   responses_without_vid_idx = 0
+
+   for idx, v in enumerate(violation_data):
+       # ... try violation_id match first ...
+       # Fallback: assign legacy responses in order
+       elif responses_without_vid_idx < len(responses_without_vid):
+           v_copy["logged_response"] = responses_without_vid[responses_without_vid_idx]
+           responses_without_vid_idx += 1
+   ```
+
+**Files Modified:**
+- `backend/app/services/enforcement/dispute_service.py`
+
+---
+
+## B15: Date Picker Showing Wrong Date (Off by One Day)
+
+**Date:** December 29, 2024
+
+**Symptom:**
+Date picker displayed "12/30" when today was "12/29". User couldn't even select the 30th in the calendar.
+
+**Root Cause:**
+UTC timestamp was missing the 'Z' suffix. JavaScript's `new Date()` treated the timestamp as local time instead of UTC, causing timezone offset issues.
+
+**Solution:**
+Add 'Z' suffix to indicate UTC:
+```python
+# Before
+"tier2_notice_sent_at": now.isoformat()  # "2024-12-29T10:30:00"
+
+# After
+"tier2_notice_sent_at": now.isoformat() + "Z"  # "2024-12-29T10:30:00Z"
+```
+
+**Files Modified:**
+- `backend/app/services/enforcement/dispute_service.py`
+
+---
+
+## B15: `datetime.utcnow()` Deprecation Warnings
+
+**Date:** December 29, 2024
+
+**Symptom:**
+Python 3.12+ shows deprecation warnings during test runs:
+```
+DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled
+for removal in a future version. Use timezone-aware objects to represent
+datetimes in UTC: datetime.datetime.now(datetime.UTC).
+```
+
+**Root Cause:**
+Using deprecated `datetime.utcnow()` method throughout codebase.
+
+**Solution:**
+Replace all instances with timezone-aware alternative:
+```python
+# Before
+from datetime import datetime
+now = datetime.utcnow()
+
+# After
+from datetime import datetime, timezone
+now = datetime.now(timezone.utc)
+```
+
+For `datetime.fromtimestamp()`, also add timezone:
+```python
+# Before
+datetime.fromtimestamp(exp)
+
+# After
+datetime.fromtimestamp(exp, tz=timezone.utc)
+```
+
+**Files Modified (38 instances across 15 files):**
+- `app/auth.py`
+- `app/routers/admin.py`
+- `app/routers/outcomes.py`
+- `app/routers/scheduler.py`
+- `app/services/copilot/batch_engine.py`
+- `app/services/copilot/copilot_engine.py`
+- `app/services/enforcement/deadline_engine.py`
+- `app/services/enforcement/dispute_service.py`
+- `app/services/enforcement/execution_ledger.py`
+- `app/services/enforcement/execution_outcome_detector.py`
+- `app/services/enforcement/ledger_signal_aggregator.py`
+- `app/services/enforcement/reinsertion_detector.py`
+- `app/services/enforcement/state_machine.py`
+- `app/services/enforcement/tier3_promotion.py`
+- `dry_run_execution.py`
+- `test_execution_ledger.py`
+
+---
+
+## Quick Reference: Data Format Handling
+
+When working with `original_violation_data`, always check the format:
+
+```python
+raw_data = dispute.original_violation_data or []
+
+if isinstance(raw_data, dict):
+    # From audit/contradiction engine
+    violations = (
+        raw_data.get("violations") or
+        raw_data.get("contradictions") or
+        raw_data.get("items") or
+        []
+    )
+else:
+    # From letter generation (list format)
+    violations = raw_data
+```
 
 ---
 

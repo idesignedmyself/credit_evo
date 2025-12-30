@@ -12,7 +12,7 @@ Run with: python dry_run_execution.py
 """
 import os
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 # Add app to path
@@ -273,7 +273,7 @@ def step3_send_letter(db, context: dict):
     execution = ledger.emit_execution_event(
         dispute_session_id=new_session_id,
         user_id=context["user_id"],
-        executed_at=datetime.utcnow(),
+        executed_at=datetime.now(timezone.utc),
         action_type="DELETE_DEMAND",
         credit_goal="mortgage",
         target_state_hash="abc123def456",
@@ -281,7 +281,7 @@ def step3_send_letter(db, context: dict):
         risk_flags=["TACTICAL_VERIFICATION_RISK"],
         document_hash="sha256_letter_hash_here",
         artifact_pointer="s3://letters/test-letter.pdf",
-        due_by=datetime.utcnow() + timedelta(days=30),
+        due_by=datetime.now(timezone.utc) + timedelta(days=30),
         report_id=context["report_id"],
         creditor_name="Test Collection Agency",
         account_fingerprint="TEST COLLECTION AGENCY|1234567890",
@@ -382,7 +382,7 @@ def step4_log_response(db, context: dict):
         execution_id=execution_id,
         dispute_session_id=session_id,
         response_type="DELETED",
-        response_received_at=datetime.utcnow(),
+        response_received_at=datetime.now(timezone.utc),
         bureau="EXPERIAN",
         response_reason="Account removed per consumer dispute",
         document_hash="sha256_response_evidence_hash",
@@ -467,7 +467,7 @@ def step5_upload_report(db, context: dict):
         execution_id=execution_id,
         dispute_session_id=session_id,
         final_outcome=FinalOutcome.DELETED,
-        resolved_at=datetime.utcnow(),
+        resolved_at=datetime.now(timezone.utc),
         previous_state_hash="hash_before_dispute",
         current_state_hash=None,  # Account no longer exists
         account_removed=True,

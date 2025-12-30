@@ -9,7 +9,7 @@ to prevent parser hallucinations and ensure accurate outcome detection.
 """
 import hashlib
 import json
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass
 from sqlalchemy.orm import Session
@@ -275,7 +275,7 @@ class ExecutionOutcomeDetector:
             execution_id=execution.id,
             dispute_session_id=execution.dispute_session_id,
             final_outcome=outcome,
-            resolved_at=datetime.utcnow(),
+            resolved_at=datetime.now(timezone.utc),
             new_report_id=new_report_id,
             previous_state_hash=previous_state_hash,
             current_state_hash=current_state_hash,
@@ -424,7 +424,7 @@ def detect_reinsertion(
     from sqlalchemy import and_
     from datetime import timedelta
 
-    cutoff = datetime.utcnow() - timedelta(days=days_threshold)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days_threshold)
 
     deleted_outcomes = (
         db.query(ExecutionOutcomeDB)
@@ -449,13 +449,13 @@ def detect_reinsertion(
             account = fingerprint_to_account[execution.account_fingerprint]
 
             # Emit REINSERTED outcome
-            days_since_deletion = (datetime.utcnow() - outcome.resolved_at).days
+            days_since_deletion = (datetime.now(timezone.utc) - outcome.resolved_at).days
 
             ledger.emit_execution_outcome(
                 execution_id=execution.id,
                 dispute_session_id=execution.dispute_session_id,
                 final_outcome=FinalOutcome.REINSERTED,
-                resolved_at=datetime.utcnow(),
+                resolved_at=datetime.now(timezone.utc),
                 previous_state_hash=outcome.current_state_hash,
                 current_state_hash=detector.compute_account_state_hash(account),
                 days_until_reinsertion=days_since_deletion,

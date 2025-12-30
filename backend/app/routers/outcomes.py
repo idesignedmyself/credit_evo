@@ -7,7 +7,7 @@ Part of the B7 Execution Ledger system.
 Note: Downstream outcomes are informational only and are NEVER used
 directly for enforcement decisions. They do NOT feed Copilot.
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 from uuid import uuid4
 
@@ -91,7 +91,7 @@ async def report_downstream_outcome(
         user_id=current_user.id,
         credit_goal=credit_goal,
         event_type=event_type,
-        reported_at=datetime.utcnow(),
+        reported_at=datetime.now(timezone.utc),
         dispute_session_id=request.dispute_session_id,
         notes=request.notes,
     )

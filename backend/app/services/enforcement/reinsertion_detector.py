@@ -15,7 +15,7 @@ Key behaviors:
 The 90-day monitoring window starts when an item is DELETED.
 If the item reappears without 5-day advance notice, it's an automatic violation.
 """
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any, Tuple
 from uuid import uuid4
 
@@ -367,7 +367,7 @@ class ReinsertionDetector:
                 })
 
         return {
-            "scan_date": datetime.utcnow().isoformat(),
+            "scan_date": datetime.now(timezone.utc).isoformat(),
             "watches_checked": len(active_watches),
             "reinsertions_found": len(reinsertions_found),
             "reinsertions_processed": len(reinsertions_processed),

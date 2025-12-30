@@ -19,7 +19,7 @@ MANDATORY CONSTRAINTS:
 - No retroactive edits
 """
 from uuid import uuid4
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -100,7 +100,7 @@ class ExecutionLedgerService:
             credit_goal=credit_goal,
             copilot_version=self.COPILOT_VERSION,
             suppression_reason=suppression_reason,
-            suppressed_at=suppressed_at or datetime.utcnow(),
+            suppressed_at=suppressed_at or datetime.now(timezone.utc),
         )
         self.db.add(event)
         self.db.flush()  # Get ID without committing
@@ -418,7 +418,7 @@ class ExecutionLedgerService:
         Returns:
             Dictionary of signal_type -> signal_value
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         query = self.db.query(CopilotSignalCacheDB).filter(
             CopilotSignalCacheDB.scope_type == scope_type,

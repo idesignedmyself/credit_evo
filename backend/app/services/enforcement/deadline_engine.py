@@ -15,7 +15,7 @@ Key behaviors:
 All deadline breaches are SYSTEM-DETECTED violations.
 User cannot extend or override deadlines.
 """
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any, Tuple
 from uuid import uuid4
 
@@ -237,7 +237,7 @@ class DeadlineEngine:
 
         # Update dispute
         dispute.deadline_date = new_deadline
-        dispute.updated_at = datetime.utcnow()
+        dispute.updated_at = datetime.now(timezone.utc)
 
         # Create paper trail entry
         paper_trail = PaperTrailDB(
@@ -345,7 +345,7 @@ class DeadlineScheduler:
         self.db.commit()
 
         return {
-            "run_date": datetime.utcnow().isoformat(),
+            "run_date": datetime.now(timezone.utc).isoformat(),
             "breaches_found": len(breaches_found),
             "breaches_processed": len(breaches_processed),
             "errors": len(errors),
@@ -412,7 +412,7 @@ class DeadlineScheduler:
         self.db.commit()
 
         return {
-            "run_date": datetime.utcnow().isoformat(),
+            "run_date": datetime.now(timezone.utc).isoformat(),
             "stalls_found": len(stalls_found),
             "stalls_processed": len(stalls_processed),
             "errors": len(errors),

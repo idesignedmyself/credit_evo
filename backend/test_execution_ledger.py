@@ -16,7 +16,7 @@ Key tests:
 10. Snapshot hashing consistency
 """
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 from unittest.mock import MagicMock, patch
 
@@ -144,7 +144,7 @@ class TestExecutionLedgerService:
 
     def test_emit_execution_event(self, ledger_service, mock_db):
         """Execution events are created correctly."""
-        executed_at = datetime.utcnow()
+        executed_at = datetime.now(timezone.utc)
 
         event = ledger_service.emit_execution_event(
             dispute_session_id="session-123",
@@ -171,7 +171,7 @@ class TestExecutionLedgerService:
             execution_id="exec-123",
             dispute_session_id="session-123",
             response_type="DELETED",
-            response_received_at=datetime.utcnow(),
+            response_received_at=datetime.now(timezone.utc),
             bureau="EXPERIAN",
             dofd_changed=True,
         )
@@ -189,7 +189,7 @@ class TestExecutionLedgerService:
             execution_id="exec-123",
             dispute_session_id="session-123",
             final_outcome=FinalOutcome.DELETED,
-            resolved_at=datetime.utcnow(),
+            resolved_at=datetime.now(timezone.utc),
             account_removed=True,
             durability_score=80,
         )
@@ -207,7 +207,7 @@ class TestExecutionLedgerService:
             user_id="user-456",
             credit_goal="mortgage",
             event_type=DownstreamEventType.LOAN_APPROVED,
-            reported_at=datetime.utcnow(),
+            reported_at=datetime.now(timezone.utc),
             notes="30-year fixed approved!",
         )
 
@@ -411,7 +411,7 @@ class TestAppendOnlyConstraints:
         event = ledger_service.emit_execution_event(
             dispute_session_id="session-123",
             user_id="user-456",
-            executed_at=datetime.utcnow(),
+            executed_at=datetime.now(timezone.utc),
             action_type="DELETE_DEMAND",
             credit_goal="mortgage",
         )
@@ -440,7 +440,7 @@ class TestCorrelationIds:
         execution = ledger_service.emit_execution_event(
             dispute_session_id=session_id,
             user_id="user-1",
-            executed_at=datetime.utcnow(),
+            executed_at=datetime.now(timezone.utc),
             action_type="DELETE_DEMAND",
             credit_goal="mortgage",
         )

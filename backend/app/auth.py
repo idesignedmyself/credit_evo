@@ -3,7 +3,7 @@ Credit Engine 2.0 - Authentication Utilities
 Password hashing, JWT tokens, and auth dependencies
 """
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import bcrypt
@@ -40,7 +40,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def create_access_token(user_id: str, email: str, role: str = "user") -> str:
     """Create a JWT access token with role claim."""
-    expire = datetime.utcnow() + timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
+    expire = datetime.now(timezone.utc) + timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
     to_encode = {
         "sub": user_id,
         "email": email,
@@ -85,7 +85,7 @@ async def get_current_user(
 
     # Check token expiration
     exp = payload.get("exp")
-    if exp is None or datetime.fromtimestamp(exp) < datetime.utcnow():
+    if exp is None or datetime.fromtimestamp(exp, tz=timezone.utc) < datetime.now(timezone.utc):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token has expired",

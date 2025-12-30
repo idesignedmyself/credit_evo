@@ -7,7 +7,7 @@ Deadline checks, reinsertion scans, stall detection.
 B7 Execution Ledger:
 - Signal aggregation endpoint for nightly job
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Header
 from pydantic import BaseModel
@@ -80,7 +80,7 @@ async def run_reinsertion_scan(
 
     return {
         "task": "reinsertion_scan",
-        "run_date": datetime.utcnow().isoformat(),
+        "run_date": datetime.now(timezone.utc).isoformat(),
         **result,
     }
 
@@ -185,7 +185,7 @@ async def run_signal_aggregation(
 
     return {
         "task": "signal_aggregation",
-        "run_date": datetime.utcnow().isoformat(),
+        "run_date": datetime.now(timezone.utc).isoformat(),
         "window_days": window_days,
         "signals_computed": summary,
     }
@@ -207,7 +207,7 @@ async def cleanup_expired_signals(
 
     return {
         "task": "cleanup_expired_signals",
-        "run_date": datetime.utcnow().isoformat(),
+        "run_date": datetime.now(timezone.utc).isoformat(),
         "deleted_count": deleted_count,
     }
 
@@ -264,6 +264,6 @@ async def trigger_all_tasks(
     db.commit()
 
     return {
-        "run_date": datetime.utcnow().isoformat(),
+        "run_date": datetime.now(timezone.utc).isoformat(),
         "results": results,
     }
