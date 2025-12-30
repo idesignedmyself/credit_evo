@@ -1,28 +1,30 @@
 # Credit Engine System Checklist
 
-## System Tiers — Roadmap
+## Product Tiers — Roadmap
 
-| Tier | Name | Purpose | Status |
-|------|------|---------|--------|
-| Tier 1 | Data-Level Enforcement | Prove reported data is impossible or inconsistent | ✅ SHIPPED |
-| Tier 2 | Supervisory Enforcement | Prove responses fail examiner standards | ✅ SHIPPED |
-| Tier 3 | Examiner Priority Modeling | Predict escalation likelihood | 🔲 DEFERRED |
-| Tier 4 | Counterparty Risk Intelligence | Model CRA / furnisher behavior | 🔲 DEFERRED |
-| Tier 5 | Product & Revenue Leverage | B2B, attorneys, outcome pricing | 🔲 DEFERRED |
-| Tier 6 | Copilot as Regulator Translator | UX trust & explanation layer | 🔲 DEFERRED |
+| Product Tier | Name | Purpose | Status |
+|--------------|------|---------|--------|
+| Product Tier 1 | Data-Level Enforcement | Prove reported data is impossible or inconsistent | ✅ SHIPPED |
+| Product Tier 2 | Supervisory Enforcement | Prove responses fail examiner standards | ✅ SHIPPED |
+| Product Tier 3 | Examiner Priority Modeling | Predict escalation likelihood | 🔲 DEFERRED |
+| Product Tier 4 | Counterparty Risk Intelligence | Model CRA / furnisher behavior | 🔲 DEFERRED |
+| Product Tier 5 | Product & Revenue Leverage | B2B, attorneys, outcome pricing | 🔲 DEFERRED |
+| Product Tier 6 | Copilot as Regulator Translator | UX trust & explanation layer | 🔲 DEFERRED |
+
+> **Note:** "Product Tiers" (1-6) describe feature capabilities. "Enforcement Tiers" (1-3) describe a dispute's escalation state. See [Enforcement Tier Lifecycle](#enforcement-tier-lifecycle) below.
 
 ---
 
-### Tier 1 — Contradiction Detection (Data Layer)
+### Product Tier 1 — Contradiction Detection (Data Layer)
 **Status:** ✅ SHIPPED
 Detects Metro 2 data contradictions and generates violations.
 
-### Tier 2 — Supervisory Enforcement (Response Layer)
+### Product Tier 2 — Supervisory Enforcement (Response Layer)
 **Status:** ✅ SHIPPED
 **Tests:** 21/21 passing
 **Scope:** Locked
 
-Tier 2 adds examiner-standard enforcement to the system.
+Product Tier 2 adds examiner-standard enforcement to the system.
 
 **Capabilities Delivered:**
 - Response-layer violations created for VERIFIED / NO RESPONSE failures
@@ -54,12 +56,30 @@ Tier 2 adds examiner-standard enforcement to the system.
 - ✅ Tier-3 writes immutable ledger entry
 - ✅ 19 tests covering Tier-3 promotion flow
 
-Tier 1 behavior unchanged.
-Tier 3+ (Examiner Priority Modeling) explicitly deferred.
+Product Tier 1 behavior unchanged.
+Product Tier 3+ (Examiner Priority Modeling) explicitly deferred.
 
 *This tier is sufficient for monetization.*
 
 See: [docs/TIER2_SUPERVISORY_ENFORCEMENT.md](docs/TIER2_SUPERVISORY_ENFORCEMENT.md)
+
+---
+
+### Enforcement Tier Lifecycle
+
+Individual disputes progress through **Enforcement Tiers** (separate from Product Tiers):
+
+| Enforcement Tier | State | Trigger |
+|------------------|-------|---------|
+| Enforcement Tier 1 | Dispute Active | Initial dispute letter sent |
+| Enforcement Tier 2 | Supervisory Escalation | Tier-2 supervisory notice sent |
+| Enforcement Tier 3 | Locked/Closed | Non-CURED response after Tier-2 |
+
+**Enforcement Tier 3 = Terminal State:**
+- Violation record locked (immutable)
+- Examiner failure classified
+- Ledger entry written
+- No further escalation in system (regulatory/litigation is external)
 
 ---
 
