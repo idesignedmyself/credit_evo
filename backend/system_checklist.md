@@ -6,7 +6,7 @@
 |--------------|------|---------|--------|
 | Product Tier 1 | Data-Level Enforcement | Prove reported data is impossible or inconsistent | ✅ SHIPPED |
 | Product Tier 2 | Supervisory Enforcement | Prove responses fail examiner standards | ✅ SHIPPED |
-| Product Tier 3 | Examiner Priority Modeling | Predict escalation likelihood | 🔲 DEFERRED |
+| Product Tier 3 | Examiner Priority Modeling | Predict escalation likelihood | ✅ SHIPPED |
 | Product Tier 4 | Counterparty Risk Intelligence | Model CRA / furnisher behavior | 🔲 DEFERRED |
 | Product Tier 5 | Product & Revenue Leverage | B2B, attorneys, outcome pricing | 🔲 DEFERRED |
 | Product Tier 6 | Copilot as Regulator Translator | UX trust & explanation layer | 🔲 DEFERRED |
@@ -57,7 +57,7 @@ Product Tier 2 adds examiner-standard enforcement to the system.
 - ✅ 19 tests covering Tier-3 promotion flow
 
 Product Tier 1 behavior unchanged.
-Product Tier 3+ (Examiner Priority Modeling) explicitly deferred.
+Product Tier 4+ explicitly deferred.
 
 *This tier is sufficient for monetization.*
 
