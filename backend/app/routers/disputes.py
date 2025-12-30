@@ -13,7 +13,8 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..auth import get_current_user
 from ..models.db_models import (
-    EntityType, ResponseType, DisputeSource, DisputeStatus, EscalationState
+    EntityType, ResponseType, DisputeSource, DisputeStatus, EscalationState,
+    Tier2ResponseType
 )
 from ..services.enforcement import DisputeService
 
@@ -862,3 +863,96 @@ async def log_reinsertion_notice(
     db.commit()
 
     return result
+
+
+# =============================================================================
+# TIER-2 NOTICE SENT ENDPOINT
+# =============================================================================
+
+@router.post("/{dispute_id}/mark-tier2-sent", response_model=dict)
+async def mark_tier2_notice_sent(
+    dispute_id: str,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user),
+):
+    """
+    Mark Tier-2 supervisory notice as sent.
+
+    This is the authoritative event that transitions the dispute to Tier-2.
+    After this, the Tier-2 adjudication UI becomes visible.
+
+    GUARDRAILS:
+    - Cannot unmark once sent
+    - Cannot mark sent multiple times
+    - Must be called before logging Tier-2 response
+    """
+    from ..models.db_models import DisputeDB
+
+    service = DisputeService(db)
+
+    # Verify dispute exists and user owns it
+    dispute = db.query(DisputeDB).filter(
+        DisputeDB.id == dispute_id,
+        DisputeDB.user_id == current_user.id
+    ).first()
+
+    if not dispute:
+        raise HTTPException(status_code=404, detail="Dispute not found")
+
+    try:
+        result = service.mark_tier2_notice_sent(dispute_id=dispute_id)
+        db.commit()
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# =============================================================================
+# TIER-2 RESPONSE ENDPOINT
+# =============================================================================
+
+class LogTier2ResponseRequest(BaseModel):
+    """Request to log final Tier-2 supervisory response."""
+    response_type: Tier2ResponseType = Field(..., description="Final Tier-2 response type")
+    response_date: date = Field(..., description="Date response was received")
+
+
+@router.post("/{dispute_id}/tier2-response", response_model=dict)
+async def log_tier2_response(
+    dispute_id: str,
+    request: LogTier2ResponseRequest,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user),
+):
+    """
+    Log final Tier-2 supervisory response.
+
+    Tier-2 is exhausted after exactly ONE response evaluation.
+    - CURED → Close as CURED_AT_TIER_2
+    - Others → Auto-promote to Tier-3 (lock + classify + ledger write)
+
+    Tier-3 does NOT generate letters, contact regulators, or trigger litigation.
+    """
+    from ..models.db_models import DisputeDB
+
+    service = DisputeService(db)
+
+    # Verify dispute exists and user owns it
+    dispute = db.query(DisputeDB).filter(
+        DisputeDB.id == dispute_id,
+        DisputeDB.user_id == current_user.id
+    ).first()
+
+    if not dispute:
+        raise HTTPException(status_code=404, detail="Dispute not found")
+
+    try:
+        result = service.log_tier2_response(
+            dispute_id=dispute_id,
+            response_type=request.response_type,
+            response_date=request.response_date,
+        )
+        db.commit()
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))

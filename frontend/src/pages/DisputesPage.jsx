@@ -52,6 +52,9 @@ import {
   RESPONSE_TYPES,
   ESCALATION_STATES,
   LETTER_TYPES,
+  TIER2_RESPONSE_TYPES,
+  markTier2NoticeSent,
+  logTier2Response,
 } from '../api/disputeApi';
 import DeleteIcon from '@mui/icons-material/Delete';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
@@ -63,6 +66,10 @@ import AutorenewIcon from '@mui/icons-material/Autorenew';
 import EditIcon from '@mui/icons-material/Edit';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import SaveIcon from '@mui/icons-material/Save';
+import SendIcon from '@mui/icons-material/Send';
+import LockIcon from '@mui/icons-material/Lock';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import WarningIcon from '@mui/icons-material/Warning';
 import { jsPDF } from 'jspdf';
 
 // =============================================================================
@@ -94,12 +101,89 @@ const formatDeadlineDate = (dateStr) => {
 // SINGLE VIOLATION RESPONSE ROW
 // =============================================================================
 
-const ViolationResponseRow = ({ violation, disputeId, entityName, onResponseLogged, onGenerateLetter, trackingStarted, deadlineDate, testMode }) => {
+const ViolationResponseRow = ({
+  violation,
+  disputeId,
+  entityName,
+  onResponseLogged,
+  onGenerateLetter,
+  trackingStarted,
+  deadlineDate,
+  testMode,
+  // Tier-2 props (passed from dispute level)
+  tier2NoticeSent: initialTier2Sent,
+  tier2NoticeSentAt: initialTier2SentAt,
+  disputeLocked,
+  disputeTierReached,
+}) => {
   const [responseType, setResponseType] = useState(violation.logged_response || '');
   const [responseDate, setResponseDate] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState(null);
+
+  // Tier-2 state (local for UI updates)
+  const [tier2NoticeSent, setTier2NoticeSent] = useState(initialTier2Sent || false);
+  const [tier2NoticeSentAt, setTier2NoticeSentAt] = useState(initialTier2SentAt || null);
+  const [markingSent, setMarkingSent] = useState(false);
+  const [tier2ResponseType, setTier2ResponseType] = useState('');
+  const [tier2ResponseDate, setTier2ResponseDate] = useState(null);
+  const [submittingTier2, setSubmittingTier2] = useState(false);
+  const [tier2Result, setTier2Result] = useState(null);
+
+  // Sync state with props when violation data changes (after data refresh)
+  useEffect(() => {
+    if (violation.logged_response && violation.logged_response !== responseType) {
+      setResponseType(violation.logged_response);
+    }
+  }, [violation.logged_response]);
+
+  // Sync tier2 state with props
+  useEffect(() => {
+    setTier2NoticeSent(initialTier2Sent || false);
+    setTier2NoticeSentAt(initialTier2SentAt || null);
+  }, [initialTier2Sent, initialTier2SentAt]);
+
+  // Check if this violation has an enforcement response
+  const hasEnforcementResponse = ['VERIFIED', 'NO_RESPONSE', 'REJECTED', 'REINSERTION'].includes(responseType);
+  const isLocked = disputeLocked || disputeTierReached >= 3;
+
+  // Tier-2 handlers
+  const handleMarkTier2Sent = async () => {
+    setMarkingSent(true);
+    setError(null);
+    try {
+      const response = await markTier2NoticeSent(disputeId);
+      setTier2NoticeSent(true);
+      setTier2NoticeSentAt(response.tier2_notice_sent_at);
+      onResponseLogged?.();
+    } catch (err) {
+      setError(err.response?.data?.detail || err.message || 'Failed to mark Tier-2 notice as sent');
+    } finally {
+      setMarkingSent(false);
+    }
+  };
+
+  const handleSubmitTier2Response = async () => {
+    if (!tier2ResponseType) {
+      setError('Please select a Tier-2 response type');
+      return;
+    }
+    setSubmittingTier2(true);
+    setError(null);
+    try {
+      const response = await logTier2Response(disputeId, {
+        response_type: tier2ResponseType,
+        response_date: tier2ResponseDate ? tier2ResponseDate.format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD'),
+      });
+      setTier2Result(response);
+      onResponseLogged?.();
+    } catch (err) {
+      setError(err.response?.data?.detail || err.message || 'Failed to log Tier-2 response');
+    } finally {
+      setSubmittingTier2(false);
+    }
+  };
 
   // NO_RESPONSE is only available if:
   // 1. testMode is enabled (bypass deadline check), OR
@@ -338,6 +422,409 @@ const ViolationResponseRow = ({ violation, disputeId, entityName, onResponseLogg
           </Typography>
         </Alert>
       )}
+
+      {/* Tier-2 Section - only show for violations with enforcement responses */}
+      {hasEnforcementResponse && !isLocked && (
+        <Box sx={{ mt: 2, pt: 2, borderTop: '1px dashed', borderColor: 'divider' }}>
+          <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', display: 'block', mb: 1 }}>
+            Tier-2 Supervisory Escalation
+          </Typography>
+
+          {tier2Result ? (
+            // Show result after Tier-2 response submitted
+            <Alert
+              severity={tier2Result.status === 'CURED_AT_TIER_2' ? 'success' : 'error'}
+              icon={tier2Result.status === 'CURED_AT_TIER_2' ? <CheckCircleIcon /> : <LockIcon />}
+            >
+              <Typography variant="body2">
+                {tier2Result.status === 'CURED_AT_TIER_2'
+                  ? 'Violation cured at Tier-2. Dispute closed.'
+                  : `Promoted to Tier-3 (Locked). Classification: ${tier2Result.ledger_entry?.examiner_classification || 'N/A'}`}
+              </Typography>
+            </Alert>
+          ) : !tier2NoticeSent ? (
+            // Mark as Sent button
+            <Stack direction="row" spacing={2} alignItems="center">
+              <Button
+                variant="outlined"
+                size="small"
+                color="warning"
+                startIcon={markingSent ? <CircularProgress size={16} color="inherit" /> : <SendIcon />}
+                onClick={handleMarkTier2Sent}
+                disabled={markingSent}
+              >
+                {markingSent ? 'Marking...' : 'Mark Tier-2 Notice Sent'}
+              </Button>
+              <Typography variant="caption" color="text.secondary">
+                Click after sending your Tier-2 supervisory letter
+              </Typography>
+            </Stack>
+          ) : (
+            // Tier-2 adjudication form
+            <Box>
+              <Alert severity="success" sx={{ mb: 1.5, py: 0 }}>
+                <Typography variant="caption">
+                  Tier-2 notice sent on {new Date(tier2NoticeSentAt).toLocaleDateString()}
+                </Typography>
+              </Alert>
+              <Alert severity="warning" sx={{ mb: 1.5, py: 0 }}>
+                <Typography variant="caption">
+                  <strong>Warning:</strong> ONE response only. Non-CURED → Tier-3 (locked).
+                </Typography>
+              </Alert>
+              <Stack direction="row" spacing={1.5} alignItems="center">
+                <FormControl size="small" sx={{ minWidth: 200 }}>
+                  <InputLabel>Tier-2 Response *</InputLabel>
+                  <Select
+                    value={tier2ResponseType}
+                    label="Tier-2 Response *"
+                    onChange={(e) => setTier2ResponseType(e.target.value)}
+                    disabled={submittingTier2}
+                  >
+                    <MenuItem value=""><em>Select...</em></MenuItem>
+                    {Object.entries(TIER2_RESPONSE_TYPES).map(([key, { value, label }]) => (
+                      <MenuItem key={key} value={value}>{label}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+                <LocalizationProvider dateAdapter={AdapterDayjs}>
+                  <DatePicker
+                    label="Response Date"
+                    value={tier2ResponseDate}
+                    onChange={setTier2ResponseDate}
+                    maxDate={dayjs()}
+                    slotProps={{ textField: { size: 'small', sx: { minWidth: 170 } } }}
+                  />
+                </LocalizationProvider>
+                <Button
+                  variant="contained"
+                  size="small"
+                  color={tier2ResponseType && TIER2_RESPONSE_TYPES[tier2ResponseType]?.outcome === 'tier3' ? 'error' : 'primary'}
+                  onClick={handleSubmitTier2Response}
+                  disabled={submittingTier2 || !tier2ResponseType}
+                >
+                  {submittingTier2 ? <CircularProgress size={18} /> : 'Log Response'}
+                </Button>
+              </Stack>
+            </Box>
+          )}
+        </Box>
+      )}
+
+      {/* Show locked state if at Tier-3 */}
+      {hasEnforcementResponse && isLocked && (
+        <Box sx={{ mt: 2, pt: 2, borderTop: '1px dashed', borderColor: 'divider' }}>
+          <Alert severity="error" icon={<LockIcon />}>
+            <Typography variant="body2">
+              <strong>Tier-3 Locked</strong> — This violation has been promoted to Tier-3. Record is immutable.
+            </Typography>
+          </Alert>
+        </Box>
+      )}
+    </Box>
+  );
+};
+
+// =============================================================================
+// TIER-2 SUPERVISORY RESPONSE SECTION
+// =============================================================================
+
+const Tier2ResponseSection = ({ dispute, onResponseLogged }) => {
+  const [tier2NoticeSent, setTier2NoticeSent] = useState(dispute.tier2_notice_sent || false);
+  const [tier2NoticeSentAt, setTier2NoticeSentAt] = useState(dispute.tier2_notice_sent_at || null);
+  const [markingSent, setMarkingSent] = useState(false);
+  const [submittingResponse, setSubmittingResponse] = useState(false);
+  const [error, setError] = useState(null);
+  const [tier2ResponseType, setTier2ResponseType] = useState('');
+  const [tier2ResponseDate, setTier2ResponseDate] = useState(null);
+  const [result, setResult] = useState(null);
+
+  // Check if any violation has an enforcement response logged (VERIFIED, NO_RESPONSE, REJECTED, REINSERTION)
+  const violations = dispute.violation_data || [];
+  const hasEnforcementResponse = violations.some(v =>
+    ['VERIFIED', 'NO_RESPONSE', 'REJECTED', 'REINSERTION'].includes(v.logged_response)
+  );
+
+  // Don't show if dispute is at Tier-3 (locked) and already has a result
+  const isLocked = dispute.locked || dispute.tier_reached >= 3;
+
+  // Don't show section if no enforcement response has been logged
+  if (!hasEnforcementResponse) {
+    return null;
+  }
+
+  const handleMarkSent = async () => {
+    setMarkingSent(true);
+    setError(null);
+    try {
+      const response = await markTier2NoticeSent(dispute.id);
+      setTier2NoticeSent(true);
+      setTier2NoticeSentAt(response.tier2_notice_sent_at);
+      onResponseLogged?.();
+    } catch (err) {
+      setError(err.response?.data?.detail || err.message || 'Failed to mark Tier-2 notice as sent');
+    } finally {
+      setMarkingSent(false);
+    }
+  };
+
+  const handleSubmitTier2Response = async () => {
+    if (!tier2ResponseType) {
+      setError('Please select a response type');
+      return;
+    }
+    setSubmittingResponse(true);
+    setError(null);
+    try {
+      const response = await logTier2Response(dispute.id, {
+        response_type: tier2ResponseType,
+        response_date: tier2ResponseDate ? tier2ResponseDate.format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD'),
+      });
+      setResult(response);
+      onResponseLogged?.();
+    } catch (err) {
+      setError(err.response?.data?.detail || err.message || 'Failed to log Tier-2 response');
+    } finally {
+      setSubmittingResponse(false);
+    }
+  };
+
+  const selectedType = tier2ResponseType ? TIER2_RESPONSE_TYPES[tier2ResponseType] : null;
+
+  // Show result after submission
+  if (result) {
+    const isCured = result.status === 'CURED_AT_TIER_2';
+    return (
+      <Box sx={{ mb: 3 }}>
+        <Divider sx={{ mb: 3 }} />
+        <Paper sx={{ p: 3, textAlign: 'center', bgcolor: isCured ? 'success.50' : 'error.50' }}>
+          {isCured ? (
+            <>
+              <CheckCircleIcon sx={{ fontSize: 48, color: 'success.main', mb: 1 }} />
+              <Typography variant="h6" color="success.main" gutterBottom>
+                Violation Cured at Tier-2
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                The entity has corrected the violation. This dispute is now closed.
+              </Typography>
+              <Chip label={`Tier ${result.tier_reached} - Resolved`} color="success" sx={{ mt: 2 }} />
+            </>
+          ) : (
+            <>
+              <LockIcon sx={{ fontSize: 48, color: 'error.main', mb: 1 }} />
+              <Typography variant="h6" color="error.main" gutterBottom>
+                Promoted to Tier-3
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                The violation has been locked and classified. Ledger entry created.
+              </Typography>
+              <Chip label={`Tier ${result.tier_reached} - Locked`} color="error" icon={<LockIcon />} sx={{ mt: 2 }} />
+            </>
+          )}
+        </Paper>
+      </Box>
+    );
+  }
+
+  // Show locked state if already at Tier-3
+  if (isLocked) {
+    return (
+      <Box sx={{ mb: 3 }}>
+        <Divider sx={{ mb: 3 }} />
+        <Paper sx={{ p: 3, bgcolor: '#fef2f2', border: '1px solid', borderColor: 'error.light' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <LockIcon color="error" />
+            <Typography variant="subtitle2" color="error.main" sx={{ fontWeight: 600 }}>
+              Tier-3 — Violation Locked
+            </Typography>
+          </Box>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+            This violation has been promoted to Tier-3. The record is locked and no further modifications are allowed.
+          </Typography>
+        </Paper>
+      </Box>
+    );
+  }
+
+  // Get violations with enforcement responses for context
+  const escalatedViolations = violations.filter(v =>
+    ['VERIFIED', 'NO_RESPONSE', 'REJECTED', 'REINSERTION'].includes(v.logged_response)
+  );
+
+  return (
+    <Box sx={{ mb: 3 }}>
+      <Divider sx={{ mb: 3 }} />
+      <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 2 }}>
+        Tier-2 Supervisory Response
+      </Typography>
+
+      {/* Show which violations are being escalated */}
+      <Paper sx={{ p: 2, mb: 2, bgcolor: 'grey.50', border: '1px solid', borderColor: 'grey.200' }}>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+          <strong>Violations with enforcement responses:</strong>
+        </Typography>
+        {escalatedViolations.map((v, idx) => (
+          <Box key={idx} sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+            <Typography variant="body2" sx={{ fontWeight: 500 }}>
+              {v.creditor_name || 'Unknown'}
+            </Typography>
+            {v.account_number_masked && (
+              <Typography variant="body2" color="text.secondary">
+                ({v.account_number_masked})
+              </Typography>
+            )}
+            <Chip
+              label={v.violation_type?.replace(/_/g, ' ') || 'Violation'}
+              size="small"
+              variant="outlined"
+              sx={{ textTransform: 'capitalize', height: 20, fontSize: '0.7rem' }}
+            />
+            <Chip
+              label={v.logged_response}
+              size="small"
+              color={v.logged_response === 'VERIFIED' ? 'warning' : 'error'}
+              sx={{ height: 20, fontSize: '0.7rem' }}
+            />
+          </Box>
+        ))}
+      </Paper>
+
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+          {error}
+        </Alert>
+      )}
+
+      {/* If notice not sent, show "Mark as Sent" button */}
+      {!tier2NoticeSent ? (
+        <Paper sx={{ p: 3, bgcolor: '#f0f9ff', border: '1px solid', borderColor: 'info.light' }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            After sending your Tier-2 supervisory notice letter, mark it as sent to begin the cure window.
+          </Typography>
+          <Alert severity="info" variant="outlined" sx={{ mb: 2 }}>
+            <Typography variant="body2">
+              Once marked as sent, you can log the entity's final response.
+              The cure window will be anchored to the sent date.
+            </Typography>
+          </Alert>
+          <Button
+            variant="contained"
+            color="primary"
+            startIcon={markingSent ? <CircularProgress size={20} color="inherit" /> : <SendIcon />}
+            onClick={handleMarkSent}
+            disabled={markingSent}
+            size="large"
+          >
+            {markingSent ? 'Marking as Sent...' : 'Mark Tier-2 Supervisory Notice as Sent'}
+          </Button>
+        </Paper>
+      ) : (
+        /* Notice sent, show adjudication UI */
+        <Paper sx={{ p: 3, bgcolor: '#f0fdf4', border: '1px solid', borderColor: 'success.light' }}>
+          <Alert severity="success" variant="outlined" sx={{ mb: 2 }}>
+            <Typography variant="body2">
+              Tier-2 notice marked as sent
+              {tier2NoticeSentAt && ` on ${new Date(tier2NoticeSentAt).toLocaleDateString()}`}
+            </Typography>
+          </Alert>
+
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Log the final response to your Tier-2 supervisory notice.
+          </Typography>
+
+          <Alert severity="warning" variant="outlined" sx={{ mb: 2 }}>
+            <Typography variant="body2">
+              <strong>Warning:</strong> Tier-2 is exhausted after ONE response.
+              Non-CURED responses auto-promote to Tier-3 (locked record).
+            </Typography>
+          </Alert>
+
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems="flex-start">
+            <FormControl size="small" sx={{ minWidth: 280 }}>
+              <InputLabel>Tier-2 Response *</InputLabel>
+              <Select
+                value={tier2ResponseType}
+                label="Tier-2 Response *"
+                onChange={(e) => setTier2ResponseType(e.target.value)}
+                disabled={submittingResponse}
+              >
+                <MenuItem value="">
+                  <em>Select response...</em>
+                </MenuItem>
+                {Object.entries(TIER2_RESPONSE_TYPES).map(([key, { value, label, description, outcome }]) => (
+                  <MenuItem key={key} value={value}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+                      <Box sx={{ flex: 1 }}>
+                        <Typography variant="body2">{label}</Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {description}
+                        </Typography>
+                      </Box>
+                      <Chip
+                        size="small"
+                        label={outcome === 'close' ? 'Closes' : 'Tier-3'}
+                        color={outcome === 'close' ? 'success' : 'error'}
+                        variant="outlined"
+                      />
+                    </Box>
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
+            <LocalizationProvider dateAdapter={AdapterDayjs}>
+              <DatePicker
+                label="Response Date"
+                value={tier2ResponseDate}
+                onChange={setTier2ResponseDate}
+                maxDate={dayjs()}
+                slotProps={{
+                  textField: {
+                    size: 'small',
+                    sx: { minWidth: 170 },
+                  },
+                }}
+              />
+            </LocalizationProvider>
+
+            <Button
+              variant="contained"
+              color={selectedType?.outcome === 'tier3' ? 'error' : 'primary'}
+              onClick={handleSubmitTier2Response}
+              disabled={submittingResponse || !tier2ResponseType}
+              sx={{ minWidth: 140, height: 40 }}
+            >
+              {submittingResponse ? (
+                <CircularProgress size={20} />
+              ) : selectedType?.outcome === 'tier3' ? (
+                'Promote to Tier-3'
+              ) : (
+                'Log Response'
+              )}
+            </Button>
+          </Stack>
+
+          {/* Show outcome preview */}
+          {selectedType && (
+            <Alert
+              severity={selectedType.outcome === 'close' ? 'success' : 'warning'}
+              icon={selectedType.outcome === 'close' ? <CheckCircleIcon /> : <WarningIcon />}
+              sx={{ mt: 2 }}
+            >
+              {selectedType.outcome === 'close' ? (
+                <Typography variant="body2">
+                  This will close the dispute as <strong>CURED_AT_TIER_2</strong>.
+                </Typography>
+              ) : (
+                <Typography variant="body2">
+                  This will <strong>promote to Tier-3</strong>: lock the violation record,
+                  classify the examiner failure, and write an immutable ledger entry.
+                </Typography>
+              )}
+            </Alert>
+          )}
+        </Paper>
+      )}
     </Box>
   );
 };
@@ -510,6 +997,11 @@ const ExpandedRowContent = ({ dispute, onResponseLogged, onStartTracking, onGene
               trackingStarted={dispute.tracking_started}
               deadlineDate={dispute.deadline_date}
               testMode={testMode}
+              // Tier-2 props
+              tier2NoticeSent={dispute.tier2_notice_sent}
+              tier2NoticeSentAt={dispute.tier2_notice_sent_at}
+              disputeLocked={dispute.locked}
+              disputeTierReached={dispute.tier_reached}
             />
           ))}
         </Box>

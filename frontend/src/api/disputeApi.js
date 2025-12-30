@@ -127,6 +127,35 @@ export const logReinsertionNotice = async (disputeId, noticeData) => {
 };
 
 /**
+ * Mark Tier-2 supervisory notice as sent
+ * This is the authoritative event that transitions the dispute to Tier-2.
+ * After this, the Tier-2 adjudication UI becomes visible.
+ * @param {string} disputeId - ID of the dispute
+ */
+export const markTier2NoticeSent = async (disputeId) => {
+  const response = await apiClient.post(`/disputes/${disputeId}/mark-tier2-sent`);
+  return response.data;
+};
+
+/**
+ * Log final Tier-2 supervisory response
+ * Tier-2 is exhausted after exactly ONE response evaluation.
+ * - CURED → Close as CURED_AT_TIER_2
+ * - Others → Auto-promote to Tier-3 (lock + classify + ledger write)
+ * @param {string} disputeId - ID of the dispute
+ * @param {Object} responseData - Tier-2 response data
+ * @param {string} responseData.response_type - CURED, REPEAT_VERIFIED, DEFLECTION_FRIVOLOUS, NO_RESPONSE_AFTER_CURE_WINDOW
+ * @param {string} responseData.response_date - Date response was received (YYYY-MM-DD)
+ */
+export const logTier2Response = async (disputeId, responseData) => {
+  const response = await apiClient.post(`/disputes/${disputeId}/tier2-response`, {
+    response_type: responseData.response_type,
+    response_date: responseData.response_date,
+  });
+  return response.data;
+};
+
+/**
  * Delete a dispute
  */
 export const deleteDispute = async (disputeId) => {
@@ -264,4 +293,33 @@ export const ESCALATION_STATES = {
   LITIGATION_READY: { label: 'Litigation Ready', tone: 'litigation', color: 'error' },
   RESOLVED_DELETED: { label: 'Resolved - Deleted', tone: 'informational', color: 'success' },
   RESOLVED_CURED: { label: 'Resolved - Cured', tone: 'informational', color: 'success' },
+};
+
+// Tier-2 Supervisory Response Types
+// Used after Tier-2 letter has been sent - final response evaluation
+export const TIER2_RESPONSE_TYPES = {
+  CURED: {
+    value: 'CURED',
+    label: 'Cured',
+    description: 'Entity corrected the violation',
+    outcome: 'close',
+  },
+  REPEAT_VERIFIED: {
+    value: 'REPEAT_VERIFIED',
+    label: 'Repeat Verified',
+    description: 'Entity re-verified without correction',
+    outcome: 'tier3',
+  },
+  DEFLECTION_FRIVOLOUS: {
+    value: 'DEFLECTION_FRIVOLOUS',
+    label: 'Deflection / Frivolous',
+    description: 'Entity called dispute frivolous',
+    outcome: 'tier3',
+  },
+  NO_RESPONSE_AFTER_CURE_WINDOW: {
+    value: 'NO_RESPONSE_AFTER_CURE_WINDOW',
+    label: 'No Response (Cure Window)',
+    description: 'Entity failed to respond within cure window',
+    outcome: 'tier3',
+  },
 };

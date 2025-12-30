@@ -76,6 +76,14 @@ class ActorType(str, Enum):
     ENTITY = "ENTITY"
 
 
+class Tier2ResponseType(str, Enum):
+    """Final response types for Tier-2 supervisory notice."""
+    CURED = "CURED"
+    REPEAT_VERIFIED = "REPEAT_VERIFIED"
+    DEFLECTION_FRIVOLOUS = "DEFLECTION_FRIVOLOUS"
+    NO_RESPONSE_AFTER_CURE_WINDOW = "NO_RESPONSE_AFTER_CURE_WINDOW"
+
+
 class UserDB(Base):
     """User account model with full profile for audit engine integration."""
     __tablename__ = "users"
@@ -256,12 +264,19 @@ class DisputeDB(Base):
     account_fingerprint = Column(String(255), nullable=True)  # For reinsertion detection
     original_violation_data = Column(JSON, nullable=True)  # Snapshot of violation at dispute time
 
+    # Tier Tracking
+    tier_reached = Column(Integer, default=1)  # 1, 2, or 3
+    locked = Column(Boolean, default=False)  # True when promoted to Tier-3
+    tier2_notice_sent = Column(Boolean, default=False)  # True when Tier-2 letter marked as sent
+    tier2_notice_sent_at = Column(DateTime, nullable=True)  # When Tier-2 letter was sent
+
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
     responses = relationship("DisputeResponseDB", back_populates="dispute", cascade="all, delete-orphan")
+    tier2_responses = relationship("Tier2ResponseDB", back_populates="dispute", cascade="all, delete-orphan")
     escalation_log = relationship("EscalationLogDB", back_populates="dispute", cascade="all, delete-orphan")
     paper_trail = relationship("PaperTrailDB", back_populates="dispute", cascade="all, delete-orphan")
     reinsertion_watch = relationship("ReinsertionWatchDB", back_populates="dispute", cascade="all, delete-orphan")
@@ -304,6 +319,32 @@ class DisputeResponseDB(Base):
 
     # Relationships
     dispute = relationship("DisputeDB", back_populates="responses")
+
+
+class Tier2ResponseDB(Base):
+    """
+    Tracks final responses to Tier-2 supervisory notices.
+    Only ONE response allowed per dispute (Tier-2 exhaustion rule).
+    """
+    __tablename__ = "tier2_responses"
+
+    id = Column(String(36), primary_key=True)  # UUID
+    dispute_id = Column(String(36), ForeignKey("disputes.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    # Response Details
+    response_type = Column(SQLEnum(Tier2ResponseType), nullable=False)
+    response_date = Column(Date, nullable=False)
+
+    # Tier-3 Promotion Fields
+    tier3_promoted = Column(Boolean, default=False)
+    tier3_promotion_date = Column(DateTime, nullable=True)
+    tier3_classification = Column(String(100), nullable=True)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    dispute = relationship("DisputeDB", back_populates="tier2_responses")
 
 
 class ReinsertionWatchDB(Base):

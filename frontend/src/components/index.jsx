@@ -19,3 +19,4 @@ export { default as DisputeList } from './DisputeList';
 export { default as DisputeTimeline } from './DisputeTimeline';
 export { default as DisputeStateIndicator } from './DisputeStateIndicator';
 export { default as ResponseInputForm } from './ResponseInputForm';
+export { default as Tier2ResponseForm } from './Tier2ResponseForm';

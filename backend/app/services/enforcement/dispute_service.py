@@ -26,7 +26,7 @@ EXECUTION LEDGER INTEGRATION (B7):
 - Suppression events emitted when action is intentionally blocked
 - All events linked by dispute_session_id
 """
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any, Tuple
 from uuid import uuid4
 import hashlib
@@ -35,6 +35,7 @@ from sqlalchemy.orm import Session
 
 from ...models.db_models import (
     DisputeDB, DisputeResponseDB, PaperTrailDB, ReinsertionWatchDB,
+    Tier2ResponseDB, Tier2ResponseType,
     EscalationState, ResponseType, EntityType, ActorType, DisputeSource,
     DisputeStatus, SuppressionReason, LetterDB, UserDB
 )
@@ -45,6 +46,7 @@ from .reinsertion_detector import ReinsertionDetector
 from .cross_entity_intelligence import CrossEntityIntelligence
 from .execution_ledger import ExecutionLedgerService
 from .dispute_session import DisputeSessionService
+from .tier3_promotion import Tier3PromotionService
 
 
 # =============================================================================
@@ -256,10 +258,13 @@ class DisputeService:
         cross_bureau_contradictions = []
 
         if dispute.original_violation_data:
-            # Extract Tier 1 contradictions that were detected during audit
-            original_contradictions = dispute.original_violation_data.get("contradictions", [])
-            # Extract cross-bureau contradictions (same tradeline across bureaus)
-            cross_bureau_contradictions = dispute.original_violation_data.get("cross_bureau_contradictions", [])
+            # Handle both dict format (from audit) and list format (from letter generation)
+            if isinstance(dispute.original_violation_data, dict):
+                # Extract Tier 1 contradictions that were detected during audit
+                original_contradictions = dispute.original_violation_data.get("contradictions", [])
+                # Extract cross-bureau contradictions (same tradeline across bureaus)
+                cross_bureau_contradictions = dispute.original_violation_data.get("cross_bureau_contradictions", [])
+            # If it's a list, there are no nested contradictions to extract
 
         # Evaluate response (system action) - now with Tier 2 examiner check
         evaluation = self.response_evaluator.evaluate_response(
@@ -374,9 +379,13 @@ class DisputeService:
 
         # Generate dispute_session_id if not provided
         if not dispute_session_id:
+            # Handle both dict and list formats for original_violation_data
+            report_id = None
+            if dispute.original_violation_data and isinstance(dispute.original_violation_data, dict):
+                report_id = dispute.original_violation_data.get("report_id")
             dispute_session_id = self.session_service.create_session(
                 user_id=dispute.user_id,
-                report_id=dispute.original_violation_data.get("report_id") if dispute.original_violation_data else None,
+                report_id=report_id,
                 credit_goal=credit_goal,
             )
 
@@ -677,9 +686,65 @@ class DisputeService:
         disputes = query.order_by(DisputeDB.created_at.desc()).all()
 
         today = date.today()
+        results = []
 
-        return [
-            {
+        for d in disputes:
+            # Build response lookup by violation_id
+            response_lookup = {}
+            # Also track responses without violation_id (legacy) by index
+            responses_without_vid = []
+            for resp in d.responses:
+                if resp.violation_id:
+                    response_lookup[resp.violation_id] = resp.response_type.value
+                else:
+                    # Response logged before violation_id was added - track separately
+                    responses_without_vid.append(resp.response_type.value)
+
+            # Enrich violation_data with logged responses
+            # Handle both list format (from letter generation) and dict format (legacy)
+            raw_violation_data = d.original_violation_data or []
+
+            # Normalize: if dict format, extract the list from common keys
+            if isinstance(raw_violation_data, dict):
+                # Legacy dict format might have violations under various keys
+                violation_data = (
+                    raw_violation_data.get("violations") or
+                    raw_violation_data.get("contradictions") or
+                    raw_violation_data.get("items") or
+                    []
+                )
+            else:
+                # Already a list
+                violation_data = raw_violation_data
+
+            enriched_violations = []
+            responses_without_vid_idx = 0  # Track which legacy response to assign next
+
+            for idx, v in enumerate(violation_data):
+                # Skip non-dict items (shouldn't happen but be defensive)
+                if not isinstance(v, dict):
+                    continue
+                v_copy = dict(v)
+
+                # Generate violation_id if not present (for contradictions which use account_id)
+                # This ensures consistent ID across frontend and backend
+                if not v_copy.get("violation_id"):
+                    # Use account_id if available, otherwise generate from index
+                    v_copy["violation_id"] = v.get("account_id") or f"{d.id}-v{idx}"
+
+                v_id = v_copy.get("violation_id")
+
+                # Try to match by violation_id first
+                if v_id and v_id in response_lookup:
+                    v_copy["logged_response"] = response_lookup[v_id]
+                # Fallback: assign legacy responses (without violation_id) in order
+                elif responses_without_vid_idx < len(responses_without_vid):
+                    v_copy["logged_response"] = responses_without_vid[responses_without_vid_idx]
+                    responses_without_vid_idx += 1
+
+                enriched_violations.append(v_copy)
+
+            results.append({
                 "id": d.id,
                 "entity_type": d.entity_type.value,
                 "entity_name": d.entity_name,
@@ -690,10 +755,15 @@ class DisputeService:
                 "deadline_date": d.deadline_date.isoformat() if d.deadline_date else None,
                 "days_to_deadline": (d.deadline_date - today).days if d.deadline_date else None,
                 "created_at": d.created_at.isoformat(),
-                "violation_data": d.original_violation_data,
-            }
-            for d in disputes
-        ]
+                "violation_data": enriched_violations,
+                # Tier-2/Tier-3 tracking fields
+                "tier_reached": d.tier_reached,
+                "locked": d.locked,
+                "tier2_notice_sent": d.tier2_notice_sent,
+                "tier2_notice_sent_at": (d.tier2_notice_sent_at.isoformat() + "Z") if d.tier2_notice_sent_at else None,
+            })
+
+        return results
 
     # =========================================================================
     # UTILITIES
@@ -796,7 +866,7 @@ class DisputeService:
             account_fingerprint, user_id
         )
         if last_execution:
-            days_since = (datetime.utcnow() - last_execution).days
+            days_since = (datetime.now(timezone.utc) - last_execution).days
             if days_since < 30:
                 self.ledger.emit_suppression_event(
                     dispute_session_id=dispute_session_id,
@@ -810,3 +880,171 @@ class DisputeService:
                 }
 
         return None
+
+    # =========================================================================
+    # TIER-2 NOTICE SENT TRACKING
+    # =========================================================================
+
+    def mark_tier2_notice_sent(self, dispute_id: str) -> Dict[str, Any]:
+        """
+        Mark a Tier-2 supervisory notice as sent.
+
+        This is the authoritative event that transitions the dispute to Tier-2.
+        After this, the Tier-2 adjudication UI becomes visible.
+
+        GUARDRAILS:
+        - Cannot unmark once sent
+        - Cannot mark sent multiple times
+        - Must be called before logging Tier-2 response
+
+        Args:
+            dispute_id: The dispute to mark as sent
+
+        Returns:
+            Dict with tier2_notice_sent status and timestamp
+
+        Raises:
+            ValueError: If dispute not found or already marked sent
+        """
+        dispute = self.db.query(DisputeDB).filter(DisputeDB.id == dispute_id).first()
+        if not dispute:
+            raise ValueError(f"Dispute not found: {dispute_id}")
+
+        # Prevent double-marking
+        if dispute.tier2_notice_sent:
+            raise ValueError("Tier-2 notice already marked as sent. Cannot send multiple times.")
+
+        # Prevent marking if already at Tier-3
+        if dispute.locked:
+            raise ValueError("Dispute is locked at Tier-3. Cannot modify Tier-2 notice status.")
+
+        # Mark as sent
+        now = datetime.now(timezone.utc)
+        dispute.tier2_notice_sent = True
+        dispute.tier2_notice_sent_at = now
+
+        # Transition to Tier-2 if not already
+        if dispute.tier_reached < 2:
+            dispute.tier_reached = 2
+
+        # Create paper trail entry
+        paper_trail = PaperTrailDB(
+            id=str(uuid4()),
+            dispute_id=dispute_id,
+            event_type="tier2_notice_sent",
+            actor=ActorType.USER,
+            description="Tier-2 supervisory notice marked as sent",
+            event_metadata={
+                "sent_at": now.isoformat(),
+                "tier_reached": dispute.tier_reached,
+            }
+        )
+        self.db.add(paper_trail)
+
+        return {
+            "status": "TIER2_NOTICE_SENT",
+            "tier2_notice_sent": True,
+            "tier2_notice_sent_at": now.isoformat() + "Z",  # Add Z to indicate UTC
+            "tier_reached": dispute.tier_reached,
+        }
+
+    # =========================================================================
+    # TIER-2 RESPONSE LOGGING
+    # =========================================================================
+
+    def log_tier2_response(
+        self,
+        dispute_id: str,
+        response_type: Tier2ResponseType,
+        response_date: date,
+    ) -> Dict[str, Any]:
+        """
+        Log final Tier-2 supervisory response and handle promotion.
+
+        TIER-2 EXHAUSTION RULE:
+        - Only ONE Tier-2 response allowed per dispute
+        - No looping, no additional letters
+
+        OUTCOMES:
+        - CURED → Close as CURED_AT_TIER_2 (tier_reached=2, state=RESOLVED_CURED)
+        - Other → Auto-promote to Tier-3 (lock + classify + ledger)
+
+        Args:
+            dispute_id: The dispute to log response for
+            response_type: One of CURED, REPEAT_VERIFIED, DEFLECTION_FRIVOLOUS, NO_RESPONSE_AFTER_CURE_WINDOW
+            response_date: Date the response was received
+
+        Returns:
+            Dict with status and tier_reached, plus ledger_entry if promoted to Tier-3
+
+        Raises:
+            ValueError: If dispute not found or Tier-2 already exhausted
+        """
+        # Get dispute
+        dispute = self.db.query(DisputeDB).filter(DisputeDB.id == dispute_id).first()
+        if not dispute:
+            raise ValueError(f"Dispute not found: {dispute_id}")
+
+        # Check if dispute is locked (already at Tier-3)
+        if dispute.locked:
+            raise ValueError("Dispute is locked at Tier-3. No further responses allowed.")
+
+        # Require Tier-2 notice to be sent before logging response
+        if not dispute.tier2_notice_sent:
+            raise ValueError("Tier-2 notice has not been marked as sent. Mark Tier-2 notice as sent first.")
+
+        # Enforce Tier-2 exhaustion rule - only ONE response allowed
+        existing = self.db.query(Tier2ResponseDB).filter(
+            Tier2ResponseDB.dispute_id == dispute_id
+        ).first()
+        if existing:
+            raise ValueError("Tier-2 response already logged. Tier-2 is exhausted after one supervisory response.")
+
+        # Create Tier-2 response record
+        tier2_response = Tier2ResponseDB(
+            id=str(uuid4()),
+            dispute_id=dispute_id,
+            response_type=response_type,
+            response_date=response_date,
+        )
+        self.db.add(tier2_response)
+
+        # Handle outcome based on response type
+        if response_type == Tier2ResponseType.CURED:
+            # Close as CURED_AT_TIER_2
+            dispute.tier_reached = 2
+            dispute.current_state = EscalationState.RESOLVED_CURED
+
+            # Create paper trail entry
+            paper_trail = PaperTrailDB(
+                id=str(uuid4()),
+                dispute_id=dispute_id,
+                event_type="tier2_cured",
+                actor=ActorType.USER,
+                description="Violation cured at Tier-2 after supervisory notice",
+                event_metadata={
+                    "response_type": response_type.value,
+                    "response_date": response_date.isoformat(),
+                    "tier_reached": 2,
+                    "outcome": "CURED_AT_TIER_2",
+                }
+            )
+            self.db.add(paper_trail)
+
+            return {
+                "status": "CURED_AT_TIER_2",
+                "tier_reached": 2,
+                "locked": False,
+            }
+        else:
+            # Auto-promote to Tier-3
+            promotion_service = Tier3PromotionService(self.db)
+            ledger_entry = promotion_service.promote_to_tier3(dispute, tier2_response)
+
+            return {
+                "status": "PROMOTED_TO_TIER_3",
+                "tier_reached": 3,
+                "locked": True,
+                "classification": tier2_response.tier3_classification,
+                "ledger_entry": ledger_entry,
+            }

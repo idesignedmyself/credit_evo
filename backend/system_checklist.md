@@ -45,8 +45,17 @@ Tier 2 adds examiner-standard enforcement to the system.
 - ✅ NO_RESPONSE — Failure to Provide Results of Reinvestigation
 - ✅ REINSERTION — Reinsertion Without Required Certification and Notice
 
+**Tier-2 Exhaustion → Tier-3 Promotion:**
+- ✅ Mark Tier-2 Notice Sent (explicit lifecycle tracking)
+- ✅ Tier-2 Adjudication UI (integrated into violation cards)
+- ✅ Non-CURED responses auto-promote to Tier-3
+- ✅ Tier-3 locks violation record (immutable)
+- ✅ Tier-3 classifies examiner failure type
+- ✅ Tier-3 writes immutable ledger entry
+- ✅ 19 tests covering Tier-3 promotion flow
+
 Tier 1 behavior unchanged.
-Tier 3+ explicitly deferred.
+Tier 3+ (Examiner Priority Modeling) explicitly deferred.
 
 *This tier is sufficient for monetization.*
 
