@@ -1,13 +1,24 @@
 # Credit Engine System Checklist
 
-## System Tiers
+## System Tiers — Roadmap
+
+| Tier | Name | Purpose | Status |
+|------|------|---------|--------|
+| Tier 1 | Data-Level Enforcement | Prove reported data is impossible or inconsistent | ✅ SHIPPED |
+| Tier 2 | Supervisory Enforcement | Prove responses fail examiner standards | ✅ SHIPPED |
+| Tier 3 | Examiner Priority Modeling | Predict escalation likelihood | 🔲 DEFERRED |
+| Tier 4 | Counterparty Risk Intelligence | Model CRA / furnisher behavior | 🔲 DEFERRED |
+| Tier 5 | Product & Revenue Leverage | B2B, attorneys, outcome pricing | 🔲 DEFERRED |
+| Tier 6 | Copilot as Regulator Translator | UX trust & explanation layer | 🔲 DEFERRED |
+
+---
 
 ### Tier 1 — Contradiction Detection (Data Layer)
-**Status:** SHIPPED
+**Status:** ✅ SHIPPED
 Detects Metro 2 data contradictions and generates violations.
 
 ### Tier 2 — Supervisory Enforcement (Response Layer)
-**Status:** SHIPPED
+**Status:** ✅ SHIPPED
 **Tests:** 21/21 passing
 **Scope:** Locked
 
@@ -20,12 +31,19 @@ Tier 2 adds examiner-standard enforcement to the system.
 - Examiner-driven escalation (replacing attempt-count logic)
 - Automatic letter posture upgrade
 - Immutable ledger capture of examiner failures
+- **Tier-2 Canonical Letter Templates** (fact-first, BASIS FOR NON-COMPLIANCE)
 
 **Examiner Triggers Implemented:**
 - PERFUNCTORY_INVESTIGATION
 - NOTICE_OF_RESULTS_FAILURE
 - SYSTEMIC_ACCURACY_FAILURE (same tradeline, same cycle)
 - UDAAP_MISLEADING_VERIFICATION (CRITICAL impossibility only)
+
+**Tier-2 Canonical Letters:**
+- ✅ VERIFIED — Verification Without Reasonable Investigation
+- ✅ REJECTED — Improper Frivolous/Irrelevant Determination
+- ✅ NO_RESPONSE — Failure to Provide Results of Reinvestigation
+- ✅ REINSERTION — Reinsertion Without Required Certification and Notice
 
 Tier 1 behavior unchanged.
 Tier 3+ explicitly deferred.
