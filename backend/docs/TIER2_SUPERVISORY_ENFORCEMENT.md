@@ -251,4 +251,14 @@ All 21 tests cover:
 **This tier is sufficient for monetization.**
 
 Tier 1 behavior unchanged.
-Tier 3+ explicitly deferred.
+
+---
+
+## Related Documentation
+
+- **Tier 3:** Promotion + Ledger Classification → `tier3_promotion.py`
+- **Tier 4:** Counterparty Risk Intelligence → `services/intelligence/`
+- **Tier 5:** Attorney Packet Builder → `services/artifacts/`
+- **Tier 6:** Explanation Renderer → `services/copilot/explanation_renderer.py`
+
+See [jan1_system_status.md](../../jan1_system_status.md) for complete v1.0 system documentation.

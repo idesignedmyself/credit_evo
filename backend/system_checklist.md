@@ -7,11 +7,13 @@
 | Product Tier 1 | Data-Level Enforcement | Prove reported data is impossible or inconsistent | ✅ SHIPPED |
 | Product Tier 2 | Supervisory Enforcement | Prove responses fail examiner standards | ✅ SHIPPED |
 | Product Tier 3 | Examiner Priority Modeling | Predict escalation likelihood | ✅ SHIPPED |
-| Product Tier 4 | Counterparty Risk Intelligence | Model CRA / furnisher behavior | 🔲 DEFERRED |
-| Product Tier 5 | Product & Revenue Leverage | B2B, attorneys, outcome pricing | 🔲 DEFERRED |
-| Product Tier 6 | Copilot as Regulator Translator | UX trust & explanation layer | 🔲 DEFERRED |
+| Product Tier 4 | Counterparty Risk Intelligence | Model CRA / furnisher behavior | ✅ SHIPPED (Read-Only) |
+| Product Tier 5 | Product & Revenue Leverage | B2B, attorneys, outcome pricing | ✅ SHIPPED (Generation) |
+| Product Tier 6 | Copilot as Regulator Translator | UX trust & explanation layer | ✅ SHIPPED (Read-Only) |
 
 > **Note:** "Product Tiers" (1-6) describe feature capabilities. "Enforcement Tiers" (1-3) describe a dispute's escalation state. See [Enforcement Tier Lifecycle](#enforcement-tier-lifecycle) below.
+>
+> **v1.0 Complete:** All six product tiers are implemented as of January 1, 2026. See [jan1_system_status.md](../jan1_system_status.md) for full details.
 
 ---
 
@@ -57,11 +59,86 @@ Product Tier 2 adds examiner-standard enforcement to the system.
 - ✅ 19 tests covering Tier-3 promotion flow
 
 Product Tier 1 behavior unchanged.
-Product Tier 4+ explicitly deferred.
 
 *This tier is sufficient for monetization.*
 
 See: [docs/TIER2_SUPERVISORY_ENFORCEMENT.md](docs/TIER2_SUPERVISORY_ENFORCEMENT.md)
+
+---
+
+### Product Tier 4 — Counterparty Risk Intelligence
+**Status:** ✅ SHIPPED (Read-Only)
+**Tests:** Integrated with Tier 4 nightly aggregator
+**Scope:** Behavior profiling from execution ledger
+
+Product Tier 4 learns CRA/furnisher behavior patterns from ledger outcomes.
+
+**Capabilities Delivered:**
+- ResponseQualityScorer: Boilerplate detection, evidence ignored flags, timing anomaly detection
+- FurnisherBehaviorProfile: Entity-level behavioral aggregation
+- Nightly signal computation from execution ledger
+- Read-only usage — no enforcement decisions modified
+
+**Signals Computed:**
+- avg_response_time_hours
+- first_round_deletion_rate
+- second_round_flip_rate
+- reinsertion_rate
+- boilerplate_score
+- timing_anomaly_rate
+
+**Files:**
+- `services/intelligence/response_quality_scorer.py`
+- `services/intelligence/furnisher_behavior_profile.py`
+- `services/intelligence/nightly_aggregator.py`
+
+---
+
+### Product Tier 5 — Product & Revenue Leverage
+**Status:** ✅ SHIPPED (Generation Only)
+**Scope:** Monetizable artifact packaging
+
+Product Tier 5 packages Tier-3 outcomes into attorney/regulatory-ready artifacts.
+
+**Capabilities Delivered:**
+- AttorneyPacketBuilder: Full litigation-ready case packets (JSON)
+- ReferralArtifact: Minimal schema for intake systems
+- Dispute tagging: ATTORNEY_READY, REGULATORY_READY
+- No auto-sending — generation only
+
+**Packet Contents:**
+- Primary violations with evidence
+- Examiner failure classifications
+- Complete timeline with document hashes
+- Statutes violated
+- Potential damages calculation
+
+**Files:**
+- `services/artifacts/attorney_packet_builder.py`
+- `services/artifacts/referral_artifact.py`
+
+---
+
+### Product Tier 6 — Copilot as Regulator Translator
+**Status:** ✅ SHIPPED (Read-Only)
+**Scope:** Human-readable outcome explanations
+
+Product Tier 6 renders Tier-3 outcomes in three dialects for different audiences.
+
+**Capabilities Delivered:**
+- ExplanationRenderer with three dialect modes
+- Template mapping for each Tier-3 classification
+- Consumer view (plain English, empowering)
+- Examiner view (procedural failure, regulatory lens)
+- Attorney view (legal elements + evidence + case law)
+
+**Dialect Examples:**
+
+| Classification | Consumer | Examiner | Attorney |
+|----------------|----------|----------|----------|
+| REPEATED_VERIFICATION_FAILURE | "The credit bureau refused to fix proven errors" | "Perfunctory Investigation — FCRA § 1681i(a)(1)(A) Violation" | "FCRA § 1681i(a)(1)(A) — Failure to Conduct Reasonable Investigation" |
+
+**File:** `services/copilot/explanation_renderer.py`
 
 ---
 
