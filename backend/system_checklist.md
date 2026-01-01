@@ -101,21 +101,32 @@ Product Tier 4 learns CRA/furnisher behavior patterns from ledger outcomes.
 Product Tier 5 packages Tier-3 outcomes into attorney/regulatory-ready artifacts.
 
 **Capabilities Delivered:**
-- AttorneyPacketBuilder: Full litigation-ready case packets (JSON)
+- AttorneyPacketBuilder: **Printable litigation-ready documents** for attorneys
 - ReferralArtifact: Minimal schema for intake systems
 - Dispute tagging: ATTORNEY_READY, REGULATORY_READY
 - No auto-sending — generation only
 
-**Packet Contents:**
-- Primary violations with evidence
-- Examiner failure classifications
-- Complete timeline with document hashes
-- Statutes violated
-- Potential damages calculation
+**Attorney Packet Features:**
+- Printable text document (default) or JSON format
+- Complete violation list with statutes and severity
+- Full dispute timeline
+- Examiner failure analysis
+- Elements of FCRA claim with satisfaction status
+- Willfulness indicators for punitive damages
+- Damages calculation with statutory ranges
+- Evidence integrity hashes
+
+**API Endpoint:**
+```
+GET /disputes/{dispute_id}/attorney-packet           # Printable document
+GET /disputes/{dispute_id}/attorney-packet?format=json  # JSON data
+```
 
 **Files:**
 - `services/artifacts/attorney_packet_builder.py`
 - `services/artifacts/referral_artifact.py`
+
+See: [docs/ATTORNEY_PACKET.md](docs/ATTORNEY_PACKET.md)
 
 ---
 
