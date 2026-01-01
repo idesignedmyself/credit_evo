@@ -158,6 +158,246 @@ class AttorneyPacket:
         json_str = json.dumps(content, sort_keys=True)
         return hashlib.sha256(json_str.encode()).hexdigest()
 
+    def render_document(self) -> str:
+        """
+        Render the packet as a printable document for attorney consultation.
+
+        Returns a formatted text document suitable for printing.
+        """
+        lines = []
+        w = 80  # Document width
+
+        def header(text: str) -> str:
+            return "=" * w + "\n" + text.center(w) + "\n" + "=" * w
+
+        def section(text: str) -> str:
+            return "\n" + "=" * w + "\n" + text.center(w) + "\n" + "=" * w + "\n"
+
+        def subsection(text: str) -> str:
+            return "\n" + text + "\n" + "━" * w + "\n"
+
+        # Title
+        lines.append(header("FCRA VIOLATION CASE PACKET\nPrepared for Attorney Consultation"))
+        lines.append("")
+        lines.append(f"CASE REFERENCE: {self.packet_id}")
+        lines.append(f"GENERATED:      {self.created_at.strftime('%B %d, %Y')}")
+        lines.append(f"STATUS:         {self.readiness_status.replace('_', '-')} (Tier-3 Exhausted)")
+
+        # Parties
+        lines.append(section("PARTIES INVOLVED"))
+        lines.append(f"CONSUMER:           [Name Redacted]")
+        if self.consumer_name:
+            lines.append(f"                    {self.consumer_name}")
+        lines.append("")
+        lines.append(f"CREDIT BUREAU:      {self.cra_name or 'Unknown CRA'}")
+        lines.append("")
+        if self.furnisher_name:
+            lines.append(f"FURNISHER:          {self.furnisher_name}")
+            lines.append("")
+
+        # Violations
+        lines.append(section("VIOLATIONS DETECTED"))
+
+        for i, v in enumerate(self.primary_violations, 1):
+            violation_title = f"VIOLATION #{i}: {v.violation_type.replace('_', ' ')} (Rule {v.violation_type[:2] if len(v.violation_type) >= 2 else v.violation_type})"
+            lines.append(subsection(violation_title))
+
+            # Description
+            if v.description:
+                # Word wrap description
+                desc_lines = self._wrap_text(v.description, w - 4)
+                for dl in desc_lines:
+                    lines.append(dl)
+                lines.append("")
+
+            lines.append(f"    Severity:    {v.severity}")
+            if v.statute:
+                lines.append(f"    Statute:     {v.statute}")
+            if v.metro2_field:
+                lines.append(f"    Field:       {v.metro2_field}")
+            lines.append("")
+
+        # Dispute History / Timeline
+        lines.append(section("DISPUTE HISTORY"))
+        lines.append("")
+        lines.append("DATE           ACTION                                              OUTCOME")
+        lines.append("─" * w)
+
+        for event in self.timeline:
+            date_str = event.date.strftime("%b %d, %Y") if event.date else "Unknown"
+            desc = event.description[:50] if event.description else event.event_type
+            lines.append(f"{date_str:<14} {desc:<55}")
+
+        lines.append("")
+
+        # Examiner Failures
+        if self.examiner_failures:
+            lines.append(section("EXAMINER FAILURE ANALYSIS"))
+            lines.append("")
+            lines.append("The following regulatory examination standards were applied.")
+            lines.append("")
+
+            for i, failure in enumerate(self.examiner_failures, 1):
+                result = failure.get("result", "UNKNOWN")
+                reason = failure.get("reason", "No reason provided")
+
+                check_name = result.replace("FAIL_", "").replace("_", " ").title()
+                lines.append(f"CHECK #{i}: {check_name}")
+                lines.append("━" * w)
+                lines.append(f"    Result:    FAILED")
+                lines.append(f"    Finding:   {reason}")
+                lines.append("")
+
+        # Tier-3 Classification
+        lines.append(section("BASIS FOR LEGAL ACTION"))
+        lines.append("")
+
+        classification_text = {
+            "REPEATED_VERIFICATION_FAILURE": (
+                "REPEATED VERIFICATION FAILURE:\n\n"
+                "    The credit reporting agency verified disputed information multiple times\n"
+                "    despite receiving documentary evidence proving the information is inaccurate.\n"
+                "    This pattern indicates willful noncompliance with FCRA investigation\n"
+                "    requirements."
+            ),
+            "FRIVOLOUS_DEFLECTION": (
+                "FRIVOLOUS DEFLECTION:\n\n"
+                "    The credit reporting agency improperly rejected the dispute as frivolous\n"
+                "    without meeting the statutory requirements for such a determination.\n"
+                "    The required written notice with specific reasons was not provided."
+            ),
+            "CURE_WINDOW_EXPIRED": (
+                "CURE WINDOW EXPIRED:\n\n"
+                "    The credit reporting agency failed to complete its investigation within\n"
+                "    the 30-day statutory window (or 45 days if extended). The consumer's\n"
+                "    right to timely investigation was violated."
+            ),
+        }
+
+        lines.append(classification_text.get(
+            self.tier3_classification,
+            f"Classification: {self.tier3_classification}"
+        ))
+        lines.append("")
+        lines.append("CURE ATTEMPT EXHAUSTED:")
+        lines.append("")
+        lines.append(f"    • Dispute rounds completed: {len([t for t in self.timeline if 'dispute' in t.event_type.lower()])}")
+        lines.append(f"    • Examiner failures recorded: {len(self.examiner_failures)}")
+        lines.append(f"    • Consumer remedies through dispute process: EXHAUSTED")
+
+        # Elements of Claim
+        lines.append(section("ELEMENTS OF FCRA CLAIM"))
+        lines.append("")
+
+        elements = [
+            ("1. INACCURATE INFORMATION REPORTED", bool(self.primary_violations)),
+            ("2. CONSUMER DISPUTED THE INACCURACY", bool(self.timeline)),
+            ("3. FAILURE TO CONDUCT REASONABLE INVESTIGATION", bool(self.examiner_failures)),
+            ("4. CONTINUED REPORTING OF INACCURATE INFORMATION", self.tier3_classification == "REPEATED_VERIFICATION_FAILURE"),
+        ]
+
+        for element, satisfied in elements:
+            status = "✓ SATISFIED" if satisfied else "○ PENDING"
+            lines.append(f"{element:<55} {status}")
+            lines.append("─" * w)
+            lines.append("")
+
+        # Willfulness Indicators
+        damages = self.potential_damages
+        if damages.get("willful_likely"):
+            lines.append(section("WILLFULNESS INDICATORS"))
+            lines.append("")
+            lines.append("The following factors suggest WILLFUL rather than negligent noncompliance:")
+            lines.append("")
+
+            if self.tier3_classification == "REPEATED_VERIFICATION_FAILURE":
+                lines.append("    ☒ Verified disputed information multiple times")
+            if len(self.examiner_failures) >= 2:
+                lines.append("    ☒ Multiple examiner check failures")
+            for v in self.primary_violations:
+                if v.severity == "CRITICAL":
+                    lines.append(f"    ☒ Critical violation: {v.violation_type}")
+            lines.append("    ☒ Pattern consistent with automated verification without human review")
+            lines.append("")
+
+        # Damages
+        lines.append(section("DAMAGES AVAILABLE"))
+        lines.append("")
+        lines.append("STATUTORY DAMAGES (15 U.S.C. § 1681n(a)(1)(A))")
+        lines.append(f"    Range: ${damages.get('fcra_statutory_min', 100):,} – ${damages.get('fcra_statutory_max', 1000):,} per willful violation")
+        lines.append("")
+
+        if damages.get("punitive_eligible"):
+            lines.append("PUNITIVE DAMAGES (15 U.S.C. § 1681n(a)(2))")
+            lines.append("    Available where willfulness is established")
+            lines.append("    No statutory cap")
+            lines.append("")
+
+        lines.append("ACTUAL DAMAGES")
+        lines.append("    • Credit denials or adverse terms")
+        lines.append("    • Increased interest rates paid")
+        lines.append("    • Emotional distress")
+        lines.append("    • Time spent disputing")
+        lines.append("")
+        lines.append("ATTORNEY'S FEES (15 U.S.C. § 1681n(a)(3))")
+        lines.append("    Recoverable by prevailing plaintiff")
+
+        # Statutes
+        lines.append(section("STATUTES VIOLATED"))
+        lines.append("")
+        for statute in self.statutes_violated:
+            lines.append(f"    • {statute}")
+        lines.append("")
+
+        # Evidence
+        lines.append(section("ATTACHED EXHIBITS"))
+        lines.append("")
+        lines.append("    Exhibit A:  Credit report with violations highlighted")
+        lines.append("    Exhibit B:  Dispute letters with certified mail receipts")
+        lines.append("    Exhibit C:  Entity response letters")
+        lines.append("    Exhibit D:  Current credit report showing unchanged data")
+        if self.document_hashes:
+            lines.append(f"    Exhibit E:  Evidence integrity hashes ({len(self.document_hashes)} documents)")
+        lines.append("")
+
+        # Footer
+        lines.append("=" * w)
+        lines.append("")
+        lines.append("    This packet was generated by an automated FCRA enforcement system.")
+        lines.append("    All violations were detected using deterministic rules applied to")
+        lines.append("    Metro 2 credit data schema fields. No AI interpretation was used")
+        lines.append("    in violation detection.")
+        lines.append("")
+        lines.append(f"    Case Packet ID: {self.packet_id}")
+        lines.append(f"    Generated: {self.created_at.strftime('%Y-%m-%d %H:%M:%S')} UTC")
+        lines.append(f"    Integrity Hash: {self.packet_hash[:16]}...")
+        lines.append("")
+        lines.append("=" * w)
+
+        return "\n".join(lines)
+
+    def _wrap_text(self, text: str, width: int) -> List[str]:
+        """Wrap text to specified width."""
+        words = text.split()
+        lines = []
+        current_line = []
+        current_length = 0
+
+        for word in words:
+            if current_length + len(word) + 1 <= width:
+                current_line.append(word)
+                current_length += len(word) + 1
+            else:
+                if current_line:
+                    lines.append(" ".join(current_line))
+                current_line = [word]
+                current_length = len(word)
+
+        if current_line:
+            lines.append(" ".join(current_line))
+
+        return lines
+
 
 class AttorneyPacketBuilder:
     """

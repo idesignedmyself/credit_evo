@@ -962,14 +962,21 @@ async def log_tier2_response(
 # TIER 5: ATTORNEY PACKETS & REFERRAL ARTIFACTS
 # =============================================================================
 
-@router.get("/{dispute_id}/attorney-packet", response_model=dict)
+@router.get("/{dispute_id}/attorney-packet")
 async def get_attorney_packet(
     dispute_id: str,
+    format: str = Query(
+        default="document",
+        description="Output format: 'document' (printable text) or 'json' (structured data)"
+    ),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user),
 ):
     """
     Generate attorney-ready case packet for a Tier-3 dispute.
+
+    Use format=document (default) for a printable text document to give to your attorney.
+    Use format=json for structured data.
 
     Returns a complete litigation packet containing:
     - Primary violations with evidence
@@ -980,6 +987,7 @@ async def get_attorney_packet(
 
     Requires: Dispute must be at Tier-3 (locked).
     """
+    from fastapi.responses import PlainTextResponse
     from ..models.db_models import DisputeDB
     from ..services.artifacts import AttorneyPacketBuilder
 
@@ -1004,10 +1012,17 @@ async def get_attorney_packet(
     if not packet:
         raise HTTPException(status_code=500, detail="Failed to generate attorney packet")
 
-    return {
-        "status": "generated",
-        "packet": packet.to_dict(),
-    }
+    # Return printable document or JSON based on format parameter
+    if format.lower() == "document":
+        return PlainTextResponse(
+            content=packet.render_document(),
+            media_type="text/plain; charset=utf-8"
+        )
+    else:
+        return {
+            "status": "generated",
+            "packet": packet.to_dict(),
+        }
 
 
 @router.get("/{dispute_id}/referral-artifact", response_model=dict)
