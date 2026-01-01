@@ -7,11 +7,12 @@ No auto-sending — generation only.
 """
 
 from .attorney_packet_builder import AttorneyPacketBuilder, AttorneyPacket
-from .referral_artifact import ReferralArtifact, ReferralArtifactBuilder
+from .referral_artifact import ReferralArtifact, ReferralArtifactBuilder, ReferralType
 
 __all__ = [
     "AttorneyPacketBuilder",
     "AttorneyPacket",
     "ReferralArtifact",
     "ReferralArtifactBuilder",
+    "ReferralType",
 ]

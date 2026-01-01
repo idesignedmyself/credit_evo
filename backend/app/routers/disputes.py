@@ -956,3 +956,233 @@ async def log_tier2_response(
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+# =============================================================================
+# TIER 5: ATTORNEY PACKETS & REFERRAL ARTIFACTS
+# =============================================================================
+
+@router.get("/{dispute_id}/attorney-packet", response_model=dict)
+async def get_attorney_packet(
+    dispute_id: str,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user),
+):
+    """
+    Generate attorney-ready case packet for a Tier-3 dispute.
+
+    Returns a complete litigation packet containing:
+    - Primary violations with evidence
+    - Examiner failure classifications
+    - Complete timeline with document hashes
+    - Statutes violated
+    - Potential damages calculation
+
+    Requires: Dispute must be at Tier-3 (locked).
+    """
+    from ..models.db_models import DisputeDB
+    from ..services.artifacts import AttorneyPacketBuilder
+
+    # Verify dispute exists and user owns it
+    dispute = db.query(DisputeDB).filter(
+        DisputeDB.id == dispute_id,
+        DisputeDB.user_id == current_user.id
+    ).first()
+
+    if not dispute:
+        raise HTTPException(status_code=404, detail="Dispute not found")
+
+    if dispute.tier_reached < 3:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Attorney packets require Tier-3 disputes. Current tier: {dispute.tier_reached}"
+        )
+
+    builder = AttorneyPacketBuilder(db)
+    packet = builder.build_packet(dispute_id)
+
+    if not packet:
+        raise HTTPException(status_code=500, detail="Failed to generate attorney packet")
+
+    return {
+        "status": "generated",
+        "packet": packet.to_dict(),
+    }
+
+
+@router.get("/{dispute_id}/referral-artifact", response_model=dict)
+async def get_referral_artifact(
+    dispute_id: str,
+    referral_type: str = Query(
+        default="attorney",
+        description="Referral type: attorney, cfpb, state_ag, ftc"
+    ),
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user),
+):
+    """
+    Generate minimal referral artifact for attorney/regulatory intake.
+
+    Returns a compact, machine-readable artifact containing:
+    - Violations summary
+    - Cure attempt record
+    - Failure mode classification
+
+    Requires: Dispute must be at Tier-3 (locked).
+    """
+    from ..models.db_models import DisputeDB
+    from ..services.artifacts import ReferralArtifactBuilder, ReferralType
+
+    # Verify dispute exists and user owns it
+    dispute = db.query(DisputeDB).filter(
+        DisputeDB.id == dispute_id,
+        DisputeDB.user_id == current_user.id
+    ).first()
+
+    if not dispute:
+        raise HTTPException(status_code=404, detail="Dispute not found")
+
+    if dispute.tier_reached < 3:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Referral artifacts require Tier-3 disputes. Current tier: {dispute.tier_reached}"
+        )
+
+    # Map referral type string to enum
+    type_map = {
+        "attorney": ReferralType.ATTORNEY,
+        "cfpb": ReferralType.CFPB,
+        "state_ag": ReferralType.STATE_AG,
+        "ftc": ReferralType.FTC,
+    }
+    ref_type = type_map.get(referral_type.lower())
+    if not ref_type:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid referral type: {referral_type}. Must be: attorney, cfpb, state_ag, ftc"
+        )
+
+    builder = ReferralArtifactBuilder(db)
+    artifact = builder.build_artifact(dispute_id, ref_type)
+
+    if not artifact:
+        raise HTTPException(status_code=500, detail="Failed to generate referral artifact")
+
+    return {
+        "status": "generated",
+        "referral_type": referral_type,
+        "artifact": artifact.to_dict(),
+    }
+
+
+# =============================================================================
+# TIER 6: HUMAN-READABLE EXPLANATIONS
+# =============================================================================
+
+@router.get("/{dispute_id}/explanation", response_model=dict)
+async def get_explanation(
+    dispute_id: str,
+    dialect: str = Query(
+        default="consumer",
+        description="Explanation dialect: consumer, examiner, attorney"
+    ),
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user),
+):
+    """
+    Get human-readable explanation for a Tier-3 dispute outcome.
+
+    Renders the dispute outcome in plain language for the specified audience:
+    - consumer: Plain English, empowering language
+    - examiner: Procedural compliance, regulatory lens
+    - attorney: Legal elements, evidence, case law
+
+    Requires: Dispute must be at Tier-3 (locked).
+    """
+    from ..models.db_models import DisputeDB
+    from ..services.copilot import ExplanationRenderer, ExplanationDialect
+
+    # Verify dispute exists and user owns it
+    dispute = db.query(DisputeDB).filter(
+        DisputeDB.id == dispute_id,
+        DisputeDB.user_id == current_user.id
+    ).first()
+
+    if not dispute:
+        raise HTTPException(status_code=404, detail="Dispute not found")
+
+    if dispute.tier_reached < 3:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Explanations require Tier-3 disputes. Current tier: {dispute.tier_reached}"
+        )
+
+    # Map dialect string to enum
+    dialect_map = {
+        "consumer": ExplanationDialect.CONSUMER,
+        "examiner": ExplanationDialect.EXAMINER,
+        "attorney": ExplanationDialect.ATTORNEY,
+    }
+    exp_dialect = dialect_map.get(dialect.lower())
+    if not exp_dialect:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid dialect: {dialect}. Must be: consumer, examiner, attorney"
+        )
+
+    renderer = ExplanationRenderer(db)
+    explanation = renderer.render(dispute_id, exp_dialect)
+
+    if not explanation:
+        raise HTTPException(status_code=500, detail="Failed to generate explanation")
+
+    return {
+        "status": "generated",
+        "dialect": dialect,
+        "explanation": explanation.to_dict(),
+    }
+
+
+@router.get("/{dispute_id}/explanations", response_model=dict)
+async def get_all_explanations(
+    dispute_id: str,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user),
+):
+    """
+    Get explanations in all three dialects for a Tier-3 dispute.
+
+    Returns consumer, examiner, and attorney views simultaneously.
+    Useful for displaying toggle views in the UI.
+
+    Requires: Dispute must be at Tier-3 (locked).
+    """
+    from ..models.db_models import DisputeDB
+    from ..services.copilot import ExplanationRenderer
+
+    # Verify dispute exists and user owns it
+    dispute = db.query(DisputeDB).filter(
+        DisputeDB.id == dispute_id,
+        DisputeDB.user_id == current_user.id
+    ).first()
+
+    if not dispute:
+        raise HTTPException(status_code=404, detail="Dispute not found")
+
+    if dispute.tier_reached < 3:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Explanations require Tier-3 disputes. Current tier: {dispute.tier_reached}"
+        )
+
+    renderer = ExplanationRenderer(db)
+    explanations = renderer.render_all_dialects(dispute_id)
+
+    if not explanations:
+        raise HTTPException(status_code=500, detail="Failed to generate explanations")
+
+    return {
+        "status": "generated",
+        "dispute_id": dispute_id,
+        "explanations": {k: v.to_dict() for k, v in explanations.items()},
+    }

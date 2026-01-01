@@ -586,3 +586,138 @@ async def get_copilot_performance(
         overridden_deletion_rate=round(overridden_deletion_rate, 1),
         by_goal=goal_metrics
     )
+
+
+# =============================================================================
+# TIER 4: COUNTERPARTY RISK INTELLIGENCE
+# =============================================================================
+
+class FurnisherProfileResponse(BaseModel):
+    """Furnisher behavior profile."""
+    entity_name: str
+    entity_type: str
+    total_executions: int
+    total_responses: int
+    avg_response_time_hours: float
+    first_round_deletion_rate: float
+    first_round_verification_rate: float
+    second_round_flip_rate: float
+    reinsertion_rate: float
+    sample_window_days: int
+
+
+class ProfileListResponse(BaseModel):
+    """List of furnisher profiles."""
+    profiles: List[FurnisherProfileResponse]
+    total_count: int
+    computed_at: str
+
+
+@router.get("/intelligence/profiles", response_model=ProfileListResponse)
+async def get_furnisher_profiles(
+    entity_type: Optional[str] = Query(None, description="Filter by entity type: CRA, CREDITOR"),
+    min_executions: int = Query(5, ge=1, description="Minimum executions to include"),
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    admin: UserDB = Depends(require_admin)
+):
+    """
+    Get behavioral profiles for all CRAs and furnishers.
+
+    Tier-4 intelligence. Shows behavioral patterns learned from execution ledger:
+    - Response times
+    - First-round deletion rates
+    - Second-round flip rates (VERIFIED → DELETED)
+    - Reinsertion rates
+
+    Admin-only. Read-only intelligence.
+    """
+    from ..services.intelligence import FurnisherBehaviorProfileService
+
+    service = FurnisherBehaviorProfileService(db)
+    profiles = service.compute_all_profiles(window_days=90)
+
+    # Filter by entity type if specified
+    if entity_type:
+        profiles = [p for p in profiles if p.entity_type.upper() == entity_type.upper()]
+
+    # Filter by minimum executions
+    profiles = [p for p in profiles if p.total_executions >= min_executions]
+
+    # Sort by total executions descending
+    profiles.sort(key=lambda p: p.total_executions, reverse=True)
+
+    # Limit results
+    profiles = profiles[:limit]
+
+    return ProfileListResponse(
+        profiles=[
+            FurnisherProfileResponse(
+                entity_name=p.entity_name,
+                entity_type=p.entity_type,
+                total_executions=p.total_executions,
+                total_responses=p.total_responses,
+                avg_response_time_hours=round(p.avg_response_time_hours, 1),
+                first_round_deletion_rate=round(p.first_round_deletion_rate * 100, 1),
+                first_round_verification_rate=round(p.first_round_verification_rate * 100, 1),
+                second_round_flip_rate=round(p.second_round_flip_rate * 100, 1),
+                reinsertion_rate=round(p.reinsertion_rate * 100, 1),
+                sample_window_days=90,
+            )
+            for p in profiles
+        ],
+        total_count=len(profiles),
+        computed_at=datetime.now(timezone.utc).isoformat(),
+    )
+
+
+@router.get("/intelligence/profiles/{entity_name}", response_model=dict)
+async def get_furnisher_profile(
+    entity_name: str,
+    db: Session = Depends(get_db),
+    admin: UserDB = Depends(require_admin)
+):
+    """
+    Get detailed behavioral profile for a specific entity.
+
+    Tier-4 intelligence. Admin-only.
+    """
+    from ..services.intelligence import FurnisherBehaviorProfileService
+
+    service = FurnisherBehaviorProfileService(db)
+    profile = service.compute_profile(entity_name=entity_name, window_days=90)
+
+    if not profile:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No profile data for entity: {entity_name}"
+        )
+
+    return {
+        "status": "found",
+        "profile": profile.to_dict(),
+    }
+
+
+@router.post("/intelligence/run-aggregation", response_model=dict)
+async def run_tier4_aggregation(
+    window_days: int = Query(90, ge=30, le=365),
+    db: Session = Depends(get_db),
+    admin: UserDB = Depends(require_admin)
+):
+    """
+    Manually trigger Tier-4 nightly aggregation.
+
+    Computes all behavioral signals and persists to cache.
+    Normally runs on a nightly schedule.
+
+    Admin-only.
+    """
+    from ..services.intelligence.nightly_aggregator import run_tier4_nightly
+
+    result = run_tier4_nightly(db, window_days=window_days)
+
+    return {
+        "status": "completed",
+        "result": result,
+    }
