@@ -555,3 +555,108 @@ class ExecutionLedgerService:
             .filter(ExecutionEventDB.dispute_id == dispute_id)
             .first()
         )
+
+    # =========================================================================
+    # CFPB Channel Adapter Events
+    # =========================================================================
+
+    # CFPB Action Types (constants for ledger consistency)
+    CFPB_INITIAL_SUBMITTED = "CFPB_INITIAL_SUBMITTED"
+    CFPB_ESCALATION_SUBMITTED = "CFPB_ESCALATION_SUBMITTED"
+    CFPB_FINAL_SUBMITTED = "CFPB_FINAL_SUBMITTED"
+    CFPB_RESPONSE_RECEIVED = "CFPB_RESPONSE_RECEIVED"
+
+    def emit_cfpb_submission_event(
+        self,
+        dispute_session_id: str,
+        user_id: str,
+        cfpb_stage: str,
+        cfpb_case_id: str,
+        credit_goal: str,
+        submitted_at: datetime,
+        cfpb_case_number: Optional[str] = None,
+        document_hash: Optional[str] = None,
+        artifact_pointer: Optional[str] = None,
+    ) -> ExecutionEventDB:
+        """
+        Emit a CFPB submission event.
+
+        Called when user submits CFPB complaint (initial, escalation, or final).
+        Maps to execution_events with CFPB-specific action_type.
+
+        Args:
+            dispute_session_id: Links to existing dispute lifecycle
+            user_id: User submitting the complaint
+            cfpb_stage: "initial", "escalation", or "final"
+            cfpb_case_id: CFPB case record ID
+            credit_goal: User's credit goal
+            submitted_at: When submission occurred
+            cfpb_case_number: CFPB portal case number (if known)
+            document_hash: SHA256 of complaint text
+            artifact_pointer: Path to stored complaint
+
+        Returns:
+            The created execution event record
+        """
+        # Map stage to action type
+        action_type_map = {
+            "initial": self.CFPB_INITIAL_SUBMITTED,
+            "escalation": self.CFPB_ESCALATION_SUBMITTED,
+            "final": self.CFPB_FINAL_SUBMITTED,
+        }
+        action_type = action_type_map.get(cfpb_stage, self.CFPB_INITIAL_SUBMITTED)
+
+        return self.emit_execution_event(
+            dispute_session_id=dispute_session_id,
+            user_id=user_id,
+            executed_at=submitted_at,
+            action_type=action_type,
+            credit_goal=credit_goal,
+            document_hash=document_hash,
+            artifact_pointer=artifact_pointer,
+            # Store CFPB-specific context in risk_flags
+            risk_flags=[f"cfpb_case_id:{cfpb_case_id}"] + (
+                [f"cfpb_case_number:{cfpb_case_number}"] if cfpb_case_number else []
+            ),
+        )
+
+    def emit_cfpb_response_event(
+        self,
+        execution_id: str,
+        dispute_session_id: str,
+        cfpb_case_id: str,
+        response_classification: str,
+        response_received_at: datetime,
+        responding_entity: Optional[str] = None,
+        document_hash: Optional[str] = None,
+        artifact_pointer: Optional[str] = None,
+    ) -> ExecutionResponseDB:
+        """
+        Emit a CFPB response event.
+
+        Called when user logs CFPB response from entity.
+        Maps to execution_responses with CFPB context.
+
+        Args:
+            execution_id: Link to the submission execution event
+            dispute_session_id: Links to existing dispute lifecycle
+            cfpb_case_id: CFPB case record ID
+            response_classification: ADDRESSED_FACTS, IGNORED_FACTS, GENERIC_RESPONSE
+            response_received_at: When response was received
+            responding_entity: CRA or Furnisher
+            document_hash: SHA256 of response document
+            artifact_pointer: Path to stored response
+
+        Returns:
+            The created execution response record
+        """
+        return self.emit_execution_response(
+            execution_id=execution_id,
+            dispute_session_id=dispute_session_id,
+            response_type=self.CFPB_RESPONSE_RECEIVED,
+            response_received_at=response_received_at,
+            response_reason=f"CFPB response: {response_classification}",
+            document_hash=document_hash,
+            artifact_pointer=artifact_pointer,
+            escalation_basis=f"cfpb_case_id:{cfpb_case_id},entity:{responding_entity}",
+        )

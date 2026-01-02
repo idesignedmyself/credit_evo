@@ -182,6 +182,38 @@ class Severity(str, Enum):
     LOW = "low"
 
 
+# =============================================================================
+# CFPB CHANNEL ADAPTER ENUMS
+# =============================================================================
+
+class CFPBState(str, Enum):
+    """
+    Single source of truth for CFPB escalation state.
+    Derives all other status information from this enum.
+    """
+    NONE = "NONE"
+    INITIAL_SUBMITTED = "INITIAL_SUBMITTED"
+    RESPONSE_RECEIVED = "RESPONSE_RECEIVED"
+    ESCALATION_SUBMITTED = "ESCALATION_SUBMITTED"
+    ESCALATION_RESPONSE_RECEIVED = "ESCALATION_RESPONSE_RECEIVED"
+    FINAL_SUBMITTED = "FINAL_SUBMITTED"
+    CLOSED = "CLOSED"
+
+
+class CFPBEventType(str, Enum):
+    """Event types for CFPB case tracking."""
+    SUBMISSION = "SUBMISSION"
+    RESPONSE = "RESPONSE"
+    EVALUATION = "EVALUATION"
+
+
+class CFPBResponseClassification(str, Enum):
+    """Classification of CFPB responses (informational, does not gate state)."""
+    ADDRESSED_FACTS = "ADDRESSED_FACTS"
+    IGNORED_FACTS = "IGNORED_FACTS"
+    GENERIC_RESPONSE = "GENERIC_RESPONSE"
+
+
 class Tone(str, Enum):
     FORMAL = "formal"
     CONVERSATIONAL = "conversational"

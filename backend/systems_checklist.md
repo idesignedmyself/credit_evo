@@ -107,6 +107,29 @@ Result:       ALL CHECKS PASSED
 | `/reports/upload` | POST | ACTIVE | Yes |
 | `/reports/{id}/audit` | GET | ACTIVE | Yes |
 | `/letters/generate` | POST | ACTIVE | Yes |
+| `/cfpb/letters/generate` | POST | ACTIVE | Yes |
+| `/cfpb/complaints/submit` | POST | ACTIVE | Yes |
+| `/cfpb/complaints/response` | POST | ACTIVE | Yes |
+| `/cfpb/evaluate` | POST | ACTIVE | Yes |
+| `/cfpb/cases` | GET | ACTIVE | Yes |
+| `/cfpb/cases/{id}` | GET | ACTIVE | Yes |
+| `/cfpb/cases/{id}/events` | GET | ACTIVE | Yes |
+
+---
+
+## CFPB Channel Adapter
+
+| Component | Status | Location |
+|-----------|--------|----------|
+| CFPBService | ACTIVE | `app/services/cfpb/cfpb_service.py` |
+| CFPBStateMachine | ACTIVE | `app/services/cfpb/cfpb_state_machine.py` |
+| CFPBLetterGenerator | ACTIVE | `app/services/cfpb/cfpb_letter_generator.py` |
+| CFPB Router | ACTIVE | `app/routers/cfpb.py` |
+| Database Tables | ACTIVE | `cfpb_cases`, `cfpb_events` |
+
+**State Flow:** NONE → INITIAL_SUBMITTED → RESPONSE_RECEIVED → ESCALATION_SUBMITTED → ESCALATION_RESPONSE_RECEIVED → FINAL_SUBMITTED → CLOSED
+
+**Gating Rules:** Escalation requires CRA exhaustion (VERIFIED/NO_RESPONSE/REJECTED) AND unresolved_contradictions_count > 0
 
 ---
 
@@ -127,6 +150,7 @@ Result:       ALL CHECKS PASSED
 7. **Medical Debt Compliance** - NEW: Catches "zombie medical bills" that should have been deleted under NCAP 2022/2023 (paid medical, under $500)
 8. **Post-Settlement Negative Reporting** - NEW: Detects "zombie history" where late markers are reported AFTER an account was closed/settled (artificially refreshes Date of Last Activity)
 9. **Missing Tradelines Detection** - NEW: Detects accounts appearing on some bureaus but missing from others (explains score discrepancies between bureaus)
+10. **CFPB Channel Adapter** - NEW: CFPB-specific escalation track mirroring CRA lifecycle. Same facts/contradictions/severity, different audience rendering. Includes state machine with escalation gating, 3 letter variants, and full ledger integration.
 
 ---
 
@@ -140,4 +164,4 @@ Result:       ALL CHECKS PASSED
 
 ---
 
-*Last Updated: 2025-12-07*
+*Last Updated: 2026-01-01*

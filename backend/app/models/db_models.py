@@ -751,3 +751,92 @@ class CopilotSignalCacheDB(Base):
     # Timestamps
     computed_at = Column(DateTime, default=datetime.utcnow)
     expires_at = Column(DateTime, nullable=True)  # When this cache entry becomes stale
+
+
+# =============================================================================
+# CFPB CHANNEL ADAPTER MODELS
+# =============================================================================
+# CFPB escalation track - mirrors CRA lifecycle with different audience rendering.
+# Single state enum (CFPBState) is the source of truth.
+# Case continuity: one cfpb_case_number per lifecycle.
+# =============================================================================
+
+class CFPBState(str, Enum):
+    """
+    Single source of truth for CFPB escalation state.
+    Imported from ssot.py but duplicated here for SQLAlchemy compatibility.
+    """
+    NONE = "NONE"
+    INITIAL_SUBMITTED = "INITIAL_SUBMITTED"
+    RESPONSE_RECEIVED = "RESPONSE_RECEIVED"
+    ESCALATION_SUBMITTED = "ESCALATION_SUBMITTED"
+    ESCALATION_RESPONSE_RECEIVED = "ESCALATION_RESPONSE_RECEIVED"
+    FINAL_SUBMITTED = "FINAL_SUBMITTED"
+    CLOSED = "CLOSED"
+
+
+class CFPBEventType(str, Enum):
+    """Event types for CFPB case tracking."""
+    SUBMISSION = "SUBMISSION"
+    RESPONSE = "RESPONSE"
+    EVALUATION = "EVALUATION"
+
+
+class CFPBCaseDB(Base):
+    """
+    CFPB Case tracking table.
+
+    Key rules:
+    - One case per dispute_session_id lifecycle
+    - cfpb_case_number is nullable until user provides from CFPB portal
+    - cfpb_state is the single source of truth (no Stage/Status separation)
+    - ESCALATION_SUBMITTED and FINAL_SUBMITTED reference same case (continuity)
+    """
+    __tablename__ = "cfpb_cases"
+
+    id = Column(String(36), primary_key=True)  # UUID
+
+    # Links to existing dispute lifecycle
+    dispute_session_id = Column(String(36), nullable=False, index=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    # CFPB portal case number - nullable until user provides after submitting via portal
+    cfpb_case_number = Column(String(100), nullable=True)
+
+    # Single state enum - source of truth
+    cfpb_state = Column(SQLEnum(CFPBState), default=CFPBState.NONE, nullable=False)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    events = relationship("CFPBEventDB", back_populates="cfpb_case", cascade="all, delete-orphan")
+
+
+class CFPBEventDB(Base):
+    """
+    CFPB event log table (convenience layer).
+
+    Execution ledger remains the canonical audit trail.
+    This table provides CFPB-specific event details.
+    """
+    __tablename__ = "cfpb_events"
+
+    id = Column(String(36), primary_key=True)  # UUID
+    cfpb_case_id = Column(String(36), ForeignKey("cfpb_cases.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    # Event type
+    event_type = Column(SQLEnum(CFPBEventType), nullable=False)
+
+    # Event payload (JSON for flexibility)
+    # SUBMISSION: {stage, complaint_text, attachments}
+    # RESPONSE: {response_text, responding_entity, classification}
+    # EVALUATION: {unresolved_contradictions, recommendation}
+    payload = Column(JSON, nullable=True)
+
+    # Timestamp (immutable)
+    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationship
+    cfpb_case = relationship("CFPBCaseDB", back_populates="events")
