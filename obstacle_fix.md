@@ -28,7 +28,6 @@ This document tracks bugs, issues, and obstacles encountered during development 
 20. [B16: Discrepancies Not Appearing in "Log Response" Section](#b16-discrepancies-not-appearing-in-log-response-section)
 21. [B16: Letter Generation Failing for Cross-Bureau Discrepancies](#b16-letter-generation-failing-for-cross-bureau-discrepancies)
 22. [B16: VERIFIED Letter Missing Statutory Double-Tap](#b16-verified-letter-missing-statutory-double-tap)
-23. [B16: Logged Response Disappearing for Cross-Bureau Discrepancies](#b16-logged-response-disappearing-for-cross-bureau-discrepancies)
 
 ---
 
@@ -862,49 +861,6 @@ Add statutory double-tap in `response_letter_generator.py`:
 
 **Files Modified:**
 - `backend/app/services/enforcement/response_letter_generator.py`
-
----
-
-## B16: Logged Response Disappearing for Cross-Bureau Discrepancies
-
-**Date:** January 2025
-
-**Symptom:**
-When logging a response (e.g., VERIFIED) for a cross-bureau discrepancy item and clicking "Save", the response would save to the database but then appear to "disappear" when the page refreshed. The dropdown would reset to empty.
-
-**Root Cause:**
-The `get_user_disputes()` method in `dispute_service.py` was enriching `violation_data` with `logged_response` values from the `response_lookup` dictionary, but `discrepancies_data` was returned as-is without enrichment:
-
-```python
-# Old code - discrepancies not enriched
-"discrepancies_data": d.discrepancies_data or [],  # Missing logged_response!
-```
-
-When a response was logged for a discrepancy, it was saved with `violation_id=discrepancy_id` in the `DisputeResponseDB` table. But on fetch, the `discrepancies_data` wasn't being matched with the response lookup, so `logged_response` was never populated.
-
-**Solution:**
-Add the same enrichment logic for discrepancies as violations:
-
-```python
-# Enrich discrepancies_data with logged responses (same as violations)
-raw_discrepancies = d.discrepancies_data or []
-enriched_discrepancies = []
-for idx, disc in enumerate(raw_discrepancies):
-    if not isinstance(disc, dict):
-        continue
-    d_copy = dict(disc)
-    # Use discrepancy_id to match responses
-    d_id = d_copy.get("discrepancy_id")
-    if d_id and d_id in response_lookup:
-        d_copy["logged_response"] = response_lookup[d_id]
-    enriched_discrepancies.append(d_copy)
-
-# Then use enriched_discrepancies instead of raw
-"discrepancies_data": enriched_discrepancies,
-```
-
-**Files Modified:**
-- `backend/app/services/enforcement/dispute_service.py` (lines 763-788)
 
 ---
 
