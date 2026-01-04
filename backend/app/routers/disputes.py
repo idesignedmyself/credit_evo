@@ -626,6 +626,82 @@ async def generate_response_letter(
             has_specific_reason=has_specific_reason,
         )
 
+    # =========================================================================
+    # TIER-2 RESPONSE TYPE ROUTING
+    # Maps Tier-2 outcomes to existing Canonical rebuttal letter generators
+    # =========================================================================
+
+    elif response_type == "REPEAT_VERIFIED":
+        # Tier-2: They re-verified after supervisory notice
+        # Route to verified response letter (same canonical structure)
+        response = db.query(DisputeResponseDB).filter(
+            DisputeResponseDB.dispute_id == dispute_id,
+            DisputeResponseDB.response_type == ResponseType.VERIFIED
+        ).first()
+
+        response_date = response.response_date if response else datetime.now().date()
+
+        letter_content = generate_verified_response_letter(
+            consumer=consumer,
+            entity_type=entity_type,
+            entity_name=entity_name,
+            original_violations=violations,
+            dispute_date=datetime.combine(dispute_date, datetime.min.time()) if dispute_date else datetime.now(),
+            response_date=datetime.combine(response_date, datetime.min.time()) if response_date else datetime.now(),
+        )
+
+    elif response_type == "DEFLECTION_FRIVOLOUS":
+        # Tier-2: They called it frivolous again after supervisory notice
+        # Route to rejected response letter (same canonical structure)
+        response = db.query(DisputeResponseDB).filter(
+            DisputeResponseDB.dispute_id == dispute_id,
+            DisputeResponseDB.response_type == ResponseType.REJECTED
+        ).first()
+
+        rejection_date = response.response_date if response else datetime.now().date()
+        rejection_reason = response.rejection_reason if response and hasattr(response, 'rejection_reason') else None
+        has_5_day_notice = response.has_5_day_notice if response and hasattr(response, 'has_5_day_notice') else False
+        has_specific_reason = response.has_specific_reason if response and hasattr(response, 'has_specific_reason') else False
+
+        letter_content = generate_rejected_response_letter(
+            consumer=consumer,
+            entity_type=entity_type,
+            entity_name=entity_name,
+            original_violations=violations,
+            dispute_date=datetime.combine(dispute_date, datetime.min.time()) if dispute_date else datetime.now(),
+            rejection_date=datetime.combine(rejection_date, datetime.min.time()) if rejection_date else datetime.now(),
+            rejection_reason=rejection_reason,
+            has_5_day_notice=has_5_day_notice,
+            has_specific_reason=has_specific_reason,
+        )
+
+    elif response_type == "NO_RESPONSE_AFTER_CURE_WINDOW":
+        # Tier-2: They failed to respond within cure window after supervisory notice
+        # Route to no response letter (same canonical structure)
+        test_dispute_date = dispute_date or datetime.now().date()
+        test_deadline_date = deadline_date or datetime.now().date()
+
+        letter_content = generate_no_response_letter(
+            consumer=consumer,
+            entity_type=entity_type,
+            entity_name=entity_name,
+            original_violations=violations,
+            dispute_date=datetime.combine(test_dispute_date, datetime.min.time()),
+            deadline_date=datetime.combine(test_deadline_date, datetime.min.time()),
+            test_context=request.test_context,
+        )
+
+    elif response_type == "CURED":
+        # Tier-2: They cured the issue - no letter needed
+        return {
+            "dispute_id": dispute_id,
+            "letter_type": "none",
+            "response_type": response_type,
+            "content": None,
+            "message": "No letter needed - dispute was cured at Tier-2",
+            "generated_at": datetime.now().isoformat(),
+        }
+
     else:
         # Generic enforcement letter
         generator = ResponseLetterGenerator()

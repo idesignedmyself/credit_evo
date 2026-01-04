@@ -28,6 +28,7 @@ This document tracks bugs, issues, and obstacles encountered during development 
 20. [B16: Discrepancies Not Appearing in "Log Response" Section](#b16-discrepancies-not-appearing-in-log-response-section)
 21. [B16: Letter Generation Failing for Cross-Bureau Discrepancies](#b16-letter-generation-failing-for-cross-bureau-discrepancies)
 22. [B16: VERIFIED Letter Missing Statutory Double-Tap](#b16-verified-letter-missing-statutory-double-tap)
+23. [B6: Tier-2 UI Reset Bug + Missing Generate Letter Button](#b6-tier-2-ui-reset-bug--missing-generate-letter-button)
 
 ---
 
@@ -861,6 +862,65 @@ Add statutory double-tap in `response_letter_generator.py`:
 
 **Files Modified:**
 - `backend/app/services/enforcement/response_letter_generator.py`
+
+---
+
+## B6: Tier-2 UI Reset Bug + Missing Generate Letter Button
+
+**Date:** January 2025
+
+**Symptom:**
+1. After clicking "Mark Tier-2 Notice Sent", the UI would reset to empty state (dropdown cleared, Verified chip disappeared)
+2. User had to re-select the response type to see the Tier-2 adjudication section
+3. No "Generate Letter" button in the Tier-2 section - users couldn't generate letters for Tier-2 responses
+
+**Root Cause:**
+1. UI Reset: `handleMarkTier2Sent()` called `onResponseLogged?.()` which triggered `setRefreshKey((k) => k + 1)` causing a full data refresh that reset the UI state
+2. Missing Button: Tier-2 response types (REPEAT_VERIFIED, DEFLECTION_FRIVOLOUS, NO_RESPONSE_AFTER_CURE_WINDOW) were not wired to the letter generation endpoint
+
+**Solution:**
+
+1. **Fix UI Reset** - Remove `onResponseLogged?.()` from `handleMarkTier2Sent()`:
+```javascript
+const handleMarkTier2Sent = async () => {
+  // ...
+  setTier2NoticeSent(true);
+  setTier2NoticeSentAt(response.tier2_notice_sent_at);
+  // Local state update only - don't trigger refresh
+};
+```
+
+2. **Add Generate Letter Button** to Tier-2 section:
+```jsx
+{tier2ResponseType && tier2ResponseType !== 'CURED' && (
+  <Button
+    variant="outlined"
+    size="small"
+    startIcon={<DescriptionIcon />}
+    onClick={() => onGenerateLetter(violation, tier2ResponseType)}
+  >
+    Generate Letter
+  </Button>
+)}
+```
+
+3. **Wire Backend Routing** - Map Tier-2 types to existing Canonical letter generators:
+```python
+elif response_type == "REPEAT_VERIFIED":
+    letter_content = generate_verified_response_letter(...)
+elif response_type == "DEFLECTION_FRIVOLOUS":
+    letter_content = generate_rejected_response_letter(...)
+elif response_type == "NO_RESPONSE_AFTER_CURE_WINDOW":
+    letter_content = generate_no_response_letter(...)
+elif response_type == "CURED":
+    return {"content": None, "message": "No letter needed"}
+```
+
+**Key Insight:** Tier-2 is not a new letter type - it's a new trigger-point for existing Canonical rebuttal letters. The Tier-2 Canonical structure (with BASIS FOR NON-COMPLIANCE sections) already exists in the response letter generators.
+
+**Files Modified:**
+- `frontend/src/pages/DisputesPage.jsx` - Fixed UI reset, added Generate Letter button
+- `backend/app/routers/disputes.py` - Added Tier-2 response type routing
 
 ---
 

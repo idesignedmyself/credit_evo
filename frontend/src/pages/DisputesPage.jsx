@@ -156,7 +156,7 @@ const ViolationResponseRow = ({
       const response = await markTier2NoticeSent(disputeId);
       setTier2NoticeSent(true);
       setTier2NoticeSentAt(response.tier2_notice_sent_at);
-      onResponseLogged?.();
+      // Local state update only - don't trigger refresh which resets UI
     } catch (err) {
       setError(err.response?.data?.detail || err.message || 'Failed to mark Tier-2 notice as sent');
     } finally {
@@ -496,6 +496,17 @@ const ViolationResponseRow = ({
                     slotProps={{ textField: { size: 'small', sx: { minWidth: 170 } } }}
                   />
                 </LocalizationProvider>
+                {/* Generate Letter button - only show when response type selected and not CURED */}
+                {tier2ResponseType && tier2ResponseType !== 'CURED' && (
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    startIcon={<DescriptionIcon />}
+                    onClick={() => onGenerateLetter(violation, tier2ResponseType)}
+                  >
+                    Generate Letter
+                  </Button>
+                )}
                 <Button
                   variant="contained"
                   size="small"
