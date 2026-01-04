@@ -22,6 +22,12 @@ This document tracks bugs, issues, and obstacles encountered during development 
 14. [B15: Tier-2 Adjudication UI Not Appearing](#b15-tier-2-adjudication-ui-not-appearing)
 15. [B15: Date Picker Showing Wrong Date](#b15-date-picker-showing-wrong-date-off-by-one-day)
 16. [B15: datetime.utcnow() Deprecation Warnings](#b15-datetimeutcnow-deprecation-warnings)
+17. [B16: Cross-Bureau Discrepancies Not Showing on Letters Page](#b16-cross-bureau-discrepancies-not-showing-on-letters-page)
+18. [B16: Cross-Bureau Discrepancies Not Showing on Disputes Page](#b16-cross-bureau-discrepancies-not-showing-on-disputes-page)
+19. [B16: Import Path Error in dispute_service.py](#b16-import-path-error-in-dispute_servicepy)
+20. [B16: Discrepancies Not Appearing in "Log Response" Section](#b16-discrepancies-not-appearing-in-log-response-section)
+21. [B16: Letter Generation Failing for Cross-Bureau Discrepancies](#b16-letter-generation-failing-for-cross-bureau-discrepancies)
+22. [B16: VERIFIED Letter Missing Statutory Double-Tap](#b16-verified-letter-missing-statutory-double-tap)
 
 ---
 
@@ -625,6 +631,236 @@ else:
     # From letter generation (list format)
     violations = raw_data
 ```
+
+---
+
+## B16: Cross-Bureau Discrepancies Not Showing on Letters Page
+
+**Date:** January 2025
+
+**Symptom:**
+Discrepancies were included in letter text but not displayed in UI metadata on `/letter/:id` page.
+
+**Root Cause:**
+`LetterDB` model lacked `discrepancies_cited` column.
+
+**Solution:**
+1. Add column to model (`app/models/db_models.py`):
+   ```python
+   discrepancies_cited = Column(JSON)  # List of cross-bureau discrepancies
+   ```
+
+2. Create migration (`migrations/add_discrepancies_cited.py`):
+   ```sql
+   ALTER TABLE letters
+   ADD COLUMN discrepancies_cited JSONB DEFAULT '[]'::jsonb;
+   ```
+
+3. Update letter generation to persist discrepancies when creating letters.
+
+4. Update API response to return `discrepancies_cited` field.
+
+**Files Modified:**
+- `backend/app/models/db_models.py`
+- `backend/migrations/add_discrepancies_cited.py`
+- `backend/app/routers/letters.py`
+
+---
+
+## B16: Cross-Bureau Discrepancies Not Showing on Disputes Page
+
+**Date:** January 2025
+
+**Symptom:**
+```
+AttributeError: 'DisputeDB' object has no attribute 'discrepancies_data'
+```
+
+**Root Cause:**
+`DisputeDB` model had no `discrepancies_data` column in database.
+
+**Solution:**
+1. Add column to model (`app/models/db_models.py`):
+   ```python
+   discrepancies_data = Column(JSON, nullable=True)  # Cross-bureau discrepancies from letter
+   ```
+
+2. Create migration (`migrations/add_discrepancies_to_disputes.py`):
+   ```sql
+   ALTER TABLE disputes
+   ADD COLUMN discrepancies_data JSONB;
+   ```
+
+3. Copy discrepancies from letter to dispute when creating dispute:
+   ```python
+   if letter_id:
+       from app.models.db_models import LetterDB
+       letter = self.db.query(LetterDB).filter(LetterDB.id == letter_id).first()
+       if letter and letter.discrepancies_cited:
+           discrepancies_data = letter.discrepancies_cited
+   ```
+
+**Files Modified:**
+- `backend/app/models/db_models.py`
+- `backend/migrations/add_discrepancies_to_disputes.py`
+- `backend/app/services/enforcement/dispute_service.py`
+
+---
+
+## B16: Import Path Error in dispute_service.py
+
+**Date:** January 2025
+
+**Symptom:**
+```
+ModuleNotFoundError: No module named 'app.services.models'
+```
+
+**Root Cause:**
+Relative import `from ..models.db_models import LetterDB` failed in nested service module.
+
+**Solution:**
+Use absolute import:
+```python
+from app.models.db_models import LetterDB
+```
+
+**Rule:** Always use absolute imports for cross-module references in services.
+
+**Files Modified:**
+- `backend/app/services/enforcement/dispute_service.py`
+
+---
+
+## B16: Discrepancies Not Appearing in "Log Response" Section
+
+**Date:** January 2025
+
+**Symptom:**
+Cross-bureau discrepancies showed in dispute summary but not in the "Log Response from [bureau]" section where users log responses.
+
+**Root Cause:**
+Only violations were mapped to `ViolationResponseRow` component. Discrepancies were displayed but not actionable.
+
+**Solution:**
+Reuse existing `ViolationResponseRow` component by adapting discrepancy shape:
+```jsx
+{dispute.discrepancies_data?.map((d, idx) => (
+  <ViolationResponseRow
+    key={`discrepancy-${d.discrepancy_id || idx}`}
+    violation={{
+      violation_id: d.discrepancy_id,        // Required for backend API
+      violation_type: 'CROSS_BUREAU',
+      creditor_name: d.creditor_name,
+      account_number_masked: d.account_number_masked,
+      description: `${d.field_name} mismatch across bureaus`,
+      logged_response: d.logged_response,
+      severity: 'MEDIUM',
+    }}
+    disputeId={dispute.id}
+    // ... other props
+  />
+))}
+```
+
+**Principle:** Don't create duplicate components. Adapt data shape to fit existing components.
+
+**Files Modified:**
+- `frontend/src/pages/DisputesPage.jsx`
+
+---
+
+## B16: Letter Generation Failing for Cross-Bureau Discrepancies
+
+**Date:** January 2025
+
+**Symptom:**
+```
+Violation not found. Looking for: cf5e876e-1866-4fa7-b0bb-15a3a4709899.
+Available: ['e6e25dfb-e2ac-4c80-916a-2e0a3af551179-v0', ...]
+```
+
+**Root Cause:**
+Letter generation endpoint only searched `original_violation_data`, not `discrepancies_data`.
+
+**Solution:**
+Update `app/routers/disputes.py` to search both sources:
+```python
+all_violations = dispute.original_violation_data or []
+all_discrepancies = dispute.discrepancies_data or []
+
+if request.violation_id:
+    violations = [v for v in all_violations if str(v.get('violation_id', '')) == str(request.violation_id)]
+
+    # If not found in violations, check discrepancies
+    if not violations:
+        matching_discrepancies = [
+            d for d in all_discrepancies
+            if str(d.get('discrepancy_id', '')) == str(request.violation_id)
+        ]
+        if matching_discrepancies:
+            d = matching_discrepancies[0]
+            violations = [{
+                'violation_id': d.get('discrepancy_id'),
+                'violation_type': 'CROSS_BUREAU',
+                'creditor_name': d.get('creditor_name'),
+                'account_number_masked': d.get('account_number_masked'),
+                'field_name': d.get('field_name'),
+                'description': f"{d.get('field_name', 'Field')} mismatch across bureaus",
+                'severity': 'MEDIUM',
+                'logged_response': d.get('logged_response'),
+                'is_discrepancy': True,
+            }]
+```
+
+**Important:** Always include `logged_response` when adapting discrepancies for consistent response state reasoning.
+
+**Files Modified:**
+- `backend/app/routers/disputes.py`
+
+---
+
+## B16: VERIFIED Letter Missing Statutory Double-Tap
+
+**Date:** January 2025
+
+**Symptom:**
+VERIFIED letter only cited § 1681i(a)(1)(A) (failure to investigate), missing the § 1681e(b) (maximum possible accuracy) argument that creates a legal trap.
+
+**Root Cause:**
+Letter template was designed with single statutory theory. Cross-bureau discrepancies require the "logical impossibility" argument.
+
+**Solution:**
+Add statutory double-tap in `response_letter_generator.py`:
+
+1. **Subject line:**
+   ```
+   Verification Without Reasonable Investigation & Failure to Assure Accuracy
+   ```
+
+2. **Statutory Framework:** Add § 1681e(b):
+   ```
+   Additionally, pursuant to 15 U.S.C. § 1681e(b), a consumer reporting agency must follow
+   reasonable procedures to assure maximum possible accuracy of the information reported.
+   ```
+
+3. **Add CROSS_BUREAU basis template:**
+   ```python
+   "cross_bureau": """A single tradeline cannot possess multiple values for the same field
+   across consumer reporting agencies. At least one reported value is necessarily inaccurate.
+   Verification of information that is contradicted across bureaus is not a verification of
+   accuracy, but a confirmation of defective data."""
+   ```
+
+4. **Cure period framing:**
+   ```
+   within fifteen (15) days of receipt of this notice as a good-faith cure period
+   ```
+
+**Strategic value:** Forces bureau into a trap - they either admit they didn't investigate (§ 1681i) or admit they verified an impossibility (§ 1681e(b)). The "good-faith cure period" framing sets up willful violation (§ 1681n) for punitive damages if ignored.
+
+**Files Modified:**
+- `backend/app/services/enforcement/response_letter_generator.py`
 
 ---
 
