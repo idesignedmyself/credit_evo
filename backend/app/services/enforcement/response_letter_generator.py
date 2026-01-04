@@ -1779,10 +1779,10 @@ This correspondence serves as formal notice that the reinsertion failed to satis
     established_facts = f"""ESTABLISHED FACTS
 {'=' * 50}
 
-• Disputed information was previously deleted from the consumer file
-• The same information was later reinserted
-• No written notice of reinsertion was received
-• No certification of accuracy was provided"""
+• Disputed information was previously deleted from the consumer file.
+• The same information was later reinserted.
+• No written notice of reinsertion was received within five (5) business days.
+• No certification of accuracy was provided."""
     letter_parts.append(established_facts)
 
     # =========================================================================
@@ -1801,30 +1801,14 @@ This correspondence serves as formal notice that the reinsertion failed to satis
 
     # =========================================================================
     # BASIS FOR NON-COMPLIANCE - The key Tier-2 addition
-    # Proves lawful reinsertion could not have occurred
+    # Proves lawful reinsertion could not have occurred - void as a matter of law
     # =========================================================================
     basis_section = f"""BASIS FOR NON-COMPLIANCE
 {'=' * 50}
 
-Under 15 U.S.C. § 1681i(a)(5)(B), a consumer reporting agency may reinsert previously deleted information only if specific statutory prerequisites are satisfied.
+Under **15 U.S.C. § 1681i(a)(5)(B)**, a consumer reporting agency may reinsert previously deleted information only if specific statutory prerequisites are satisfied, including certification of accuracy and written notice to the consumer within five (5) business days.
 
-Those prerequisites include:
-
-• Certification that the information is complete and accurate
-• Written notice to the consumer within five (5) business days of reinsertion
-• Identification of the furnisher that provided the information
-• Notice of the consumer's right to add a dispute statement
-
-In this case, {canonical_entity} failed to provide:
-
-• Any certification of accuracy
-• Any written notice of reinsertion
-• Any identification of the furnisher or furnisher address
-• Any notice of the consumer's right to add a statement
-
-Absent these mandatory disclosures, a lawful reinsertion could not have occurred.
-
-Reinsertion without certification and notice is procedurally invalid and evidences examiner non-compliance rather than a discretionary reporting action."""
+In this case, {canonical_entity} failed to provide any certification, identification of the furnisher, or notice of the right to add a statement. **Absent these mandatory disclosures, a lawful reinsertion could not have occurred. A reinsertion made without statutory certification and notice is void as a matter of law and the information must be removed or blocked immediately.**"""
     letter_parts.append(basis_section)
 
     # =========================================================================
@@ -1833,9 +1817,7 @@ Reinsertion without certification and notice is procedurally invalid and evidenc
     statutory_framework = f"""STATUTORY FRAMEWORK
 {'=' * 50}
 
-Pursuant to 15 U.S.C. § 1681i(a)(5)(B), reinsertion of previously deleted information is permitted only when statutory certification and notice requirements are satisfied.
-
-Failure to meet these prerequisites renders the reinsertion invalid."""
+Pursuant to **15 U.S.C. § 1681i(a)(5)(B)**, reinsertion of previously deleted information is permitted only when statutory certification and notice requirements are satisfied. Failure to meet these prerequisites renders the reinsertion invalid."""
     letter_parts.append(statutory_framework)
 
     # =========================================================================
@@ -1844,21 +1826,22 @@ Failure to meet these prerequisites renders the reinsertion invalid."""
     violation_section = f"""STATUTORY NON-COMPLIANCE
 {'=' * 50}
 
-Non-Compliance: Reinsertion Without Required Certification and Notice
-Statute: 15 U.S.C. § 1681i(a)(5)(B)
+**Non-Compliance:** Reinsertion Without Required Certification and Notice
 
-By reinserting previously deleted information without satisfying mandatory procedural requirements, {canonical_entity} failed to comply with statutory obligations."""
+**Statute:** 15 U.S.C. § 1681i(a)(5)(B)
+
+**Reinsertion without compliance with 15 U.S.C. § 1681i(a)(5)(B) constitutes a per se violation of the Fair Credit Reporting Act.** By reinserting previously deleted information without satisfying mandatory procedural requirements, {canonical_entity} failed to comply with statutory obligations."""
     letter_parts.append(violation_section)
 
     # =========================================================================
-    # DEMANDED ACTIONS - Simplified, no redundant timeframes
+    # DEMANDED ACTIONS - Unlawfully reinserted = immediate removal
     # =========================================================================
     demands = f"""DEMANDED ACTIONS
-{'=' * 50}
+{'-' * 50}
 
 The following actions are required:
 
-1. Immediate removal or blocking of the reinserted item
+1. **Immediate removal or blocking** of the reinserted item as **unlawfully reinserted**
 
 2. Written certification identifying the source and basis for reinsertion
 
