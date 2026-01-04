@@ -760,6 +760,19 @@ class DisputeService:
 
                 enriched_violations.append(v_copy)
 
+            # Enrich discrepancies_data with logged responses (same as violations)
+            raw_discrepancies = d.discrepancies_data or []
+            enriched_discrepancies = []
+            for idx, disc in enumerate(raw_discrepancies):
+                if not isinstance(disc, dict):
+                    continue
+                d_copy = dict(disc)
+                # Use discrepancy_id to match responses
+                d_id = d_copy.get("discrepancy_id")
+                if d_id and d_id in response_lookup:
+                    d_copy["logged_response"] = response_lookup[d_id]
+                enriched_discrepancies.append(d_copy)
+
             results.append({
                 "id": d.id,
                 "entity_type": d.entity_type.value,
@@ -772,7 +785,7 @@ class DisputeService:
                 "days_to_deadline": (d.deadline_date - today).days if d.deadline_date else None,
                 "created_at": d.created_at.isoformat(),
                 "violation_data": enriched_violations,
-                "discrepancies_data": d.discrepancies_data or [],  # Cross-bureau discrepancies
+                "discrepancies_data": enriched_discrepancies,  # Cross-bureau discrepancies with logged_response
                 # Tier-2/Tier-3 tracking fields
                 "tier_reached": d.tier_reached,
                 "locked": d.locked,
