@@ -1501,14 +1501,26 @@ Improper Frivolous / Irrelevant Determination"""
     letter_parts.append(subject)
 
     # =========================================================================
-    # OPENING PARAGRAPH - Fact-focused, establishes what happened
+    # OPENING PARAGRAPH - Fact-focused, void as a matter of law
     # =========================================================================
-    opening = f"""On {dispute_date.strftime('%B %d, %Y')}, {consumer_name} submitted a written dispute regarding inaccurate information appearing in their consumer file maintained by {canonical_entity}.
+    opening = f"""On {dispute_date.strftime('%B %d, %Y')}, {consumer_name} submitted a written dispute regarding inaccurate information appearing in the consumer file maintained by {canonical_entity}. {canonical_entity} subsequently designated the dispute as "frivolous or irrelevant."
 
-{canonical_entity} subsequently designated the dispute as frivolous or irrelevant.
-
-This correspondence serves as formal notice that the frivolous determination fails to satisfy statutory prerequisites and constitutes a distinct compliance failure."""
+This correspondence serves as formal notice that the frivolous determination fails to satisfy statutory prerequisites under **15 U.S.C. § 1681i(a)(3)(B)** and is therefore **void as a matter of law**."""
     letter_parts.append(opening)
+
+    # =========================================================================
+    # STATUTORY FRAMEWORK - Clean statement of law (moved before facts)
+    # =========================================================================
+    statutory_framework = f"""STATUTORY FRAMEWORK
+{'=' * 50}
+
+Pursuant to **15 U.S.C. § 1681i(a)(3)(B)**, a consumer reporting agency may treat a dispute as frivolous or irrelevant only if it provides a notice to the consumer that:
+
+1. Identifies the specific reasons for the determination; and
+2. Identifies any information required to investigate the disputed item.
+
+Failure to meet these prerequisites renders the determination invalid and **does not toll the agency's duty to reinvestigate**."""
+    letter_parts.append(statutory_framework)
 
     # =========================================================================
     # ESTABLISHED FACTS - Bullet points
@@ -1516,8 +1528,8 @@ This correspondence serves as formal notice that the frivolous determination fai
     established_facts = f"""ESTABLISHED FACTS
 {'=' * 50}
 
-• Written dispute submitted on {dispute_date.strftime('%B %d, %Y')}
-• Dispute designated as frivolous or irrelevant on {rejection_date.strftime('%B %d, %Y')}
+• Written dispute submitted on **{dispute_date.strftime('%B %d, %Y')}**
+• Dispute designated as frivolous or irrelevant on **{rejection_date.strftime('%B %d, %Y')}**
 • No written notice identifying specific deficiencies was provided
 • No identification of information required to investigate was provided"""
     letter_parts.append(established_facts)
@@ -1546,36 +1558,15 @@ This correspondence serves as formal notice that the frivolous determination fai
 
     # =========================================================================
     # BASIS FOR NON-COMPLIANCE - The key Tier-2 addition
-    # Proves frivolous determination was procedurally invalid
+    # Proves frivolous determination was procedurally invalid and clock never stopped
     # =========================================================================
     basis_section = f"""BASIS FOR NON-COMPLIANCE
 {'=' * 50}
 
-A consumer reporting agency may treat a dispute as frivolous or irrelevant only if the statutory prerequisites of 15 U.S.C. § 1681i(a)(3)(B) are satisfied.
+A consumer reporting agency may treat a dispute as frivolous only if the statutory prerequisites of **15 U.S.C. § 1681i(a)(3)(B)** are satisfied.
 
-Specifically, the agency must:
-• Identify the basis for the frivolous or irrelevant determination
-• Specify what information is required to investigate the disputed item
-
-In this case, {canonical_entity} failed to:
-• Identify which portion of the dispute was allegedly frivolous or deficient
-• Identify any specific information required to conduct an investigation
-
-Absent these disclosures, a frivolous or irrelevant determination could not have been lawfully made.
-
-A determination lacking required notice and specificity is procedurally invalid and evidences examiner non-compliance rather than a discretionary judgment."""
+{canonical_entity} failed to identify which portion of the dispute was allegedly deficient or what specific information was required to proceed. Absent these disclosures, a frivolous determination could not have been lawfully made. **An invalid frivolous determination is void as a matter of law and does not toll or extinguish the agency's duty to conduct a reasonable reinvestigation under 15 U.S.C. § 1681i(a)(1)(A).**"""
     letter_parts.append(basis_section)
-
-    # =========================================================================
-    # STATUTORY FRAMEWORK - Clean statement of law
-    # =========================================================================
-    statutory_framework = f"""STATUTORY FRAMEWORK
-{'=' * 50}
-
-Pursuant to 15 U.S.C. § 1681i(a)(3)(B), a consumer reporting agency may reject a dispute as frivolous or irrelevant only if statutory notice and disclosure requirements are satisfied.
-
-Failure to meet these prerequisites renders the determination invalid."""
-    letter_parts.append(statutory_framework)
 
     # =========================================================================
     # STATUTORY NON-COMPLIANCE - Summary
@@ -1583,29 +1574,30 @@ Failure to meet these prerequisites renders the determination invalid."""
     violation_section = f"""STATUTORY NON-COMPLIANCE
 {'=' * 50}
 
-Non-Compliance: Improper Frivolous / Irrelevant Determination
-Statute: 15 U.S.C. § 1681i(a)(3)(B)
+**Non-Compliance:** Improper Frivolous / Irrelevant Determination
 
-By rejecting the dispute without satisfying mandatory procedural requirements, {canonical_entity} failed to comply with statutory obligations."""
+**Statute:** 15 U.S.C. § 1681i(a)(3)(B)
+
+By issuing a frivolous determination without satisfying mandatory statutory prerequisites, {canonical_entity} issued a procedurally invalid rejection and **remains obligated to conduct a reasonable reinvestigation** pursuant to **15 U.S.C. § 1681i(a)(1)(A)**."""
     letter_parts.append(violation_section)
 
     # =========================================================================
-    # DEMANDED ACTIONS - Dynamic based on severity
+    # DEMANDED ACTIONS - Preserves original dispute date
     # =========================================================================
     demands = f"""DEMANDED ACTIONS
-{'=' * 50}
+{'-' * 50}
 
 The following actions are required:
 
-1. Withdrawal of the frivolous / irrelevant determination
+1. **Formal withdrawal** of the frivolous / irrelevant determination as procedurally invalid
 
-2. Immediate investigation of the disputed item in compliance with 15 U.S.C. § 1681i(a)(1)(A)
+2. **Immediate reinvestigation** of the disputed item pursuant to 15 U.S.C. § 1681i(a)(1)(A), with the **original dispute date preserved**
 
-3. Written results of investigation
+3. Written results of reinvestigation as required by 15 U.S.C. § 1681i(a)(6)(A)
 
-4. If maintaining the frivolous determination: written notice identifying specific information required to investigate, as mandated by statute
+4. If the agency continues to assert a frivolous determination, provide written notice identifying the specific information required to investigate, as mandated by 15 U.S.C. § 1681i(a)(3)(B)
 
-Failure to cure this non-compliance or to produce substantiating documentation will be recorded as continued non-compliance and escalated accordingly."""
+Failure to cure this non-compliance will be recorded as continued non-compliance and escalated accordingly."""
     letter_parts.append(demands)
 
     # =========================================================================
