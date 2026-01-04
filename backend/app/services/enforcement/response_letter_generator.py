@@ -1100,60 +1100,53 @@ Via Certified Mail, Return Receipt Requested"""
     # =========================================================================
     subject = """RE: FORMAL NOTICE OF STATUTORY NON-COMPLIANCE
 
-Failure to Provide Results of Reinvestigation"""
+Failure to Provide Results of Reinvestigation & Failure to Delete Unverifiable Information"""
     letter_parts.append(subject)
 
     # =========================================================================
-    # OPENING PARAGRAPH - Fact-focused, no specific deadline dates
+    # OPENING PARAGRAPH - Fact-focused, triggers mandatory deletion
     # =========================================================================
-    opening = f"""On {dispute_date.strftime('%B %d, %Y')}, {consumer_name} submitted a written dispute regarding inaccurate information appearing in their consumer file maintained by {canonical_entity}.
+    opening = f"""On {dispute_date.strftime('%B %d, %Y')}, {consumer_name} submitted a written dispute regarding inaccurate information appearing in the consumer file maintained by {canonical_entity}.
 
-Pursuant to the Fair Credit Reporting Act, {canonical_entity} was required to conduct a reinvestigation and provide written notice of the results within the statutory timeframe.
-
-As of the date of this correspondence, no results of reinvestigation have been provided.
-
-This correspondence serves as formal notice that {canonical_entity} has failed to comply with mandatory procedural requirements governing dispute handling."""
+As of the date of this correspondence, **no results of reinvestigation have been provided**. This correspondence serves as formal notice that {canonical_entity} has failed to comply with mandatory procedural requirements under the Fair Credit Reporting Act, thereby triggering the statutory requirement for **immediate deletion** of the disputed information."""
     letter_parts.append(opening)
 
     # =========================================================================
-    # ESTABLISHED FACTS - No specific dates, safe for test mode
+    # STATUTORY FRAMEWORK - Clean statement of law (moved before facts)
+    # =========================================================================
+    statutory_framework = f"""STATUTORY FRAMEWORK
+{'=' * 50}
+
+Pursuant to **15 U.S.C. § 1681i(a)(1)(A)**, a consumer reporting agency is required to conduct a reasonable reinvestigation upon receipt of a consumer dispute.
+
+Pursuant to **15 U.S.C. § 1681i(a)(6)(A)**, the agency must provide written notice of the results of the reinvestigation within the statutory timeframe.
+
+Additionally, pursuant to **15 U.S.C. § 1681i(a)(5)(A)**, if the accuracy of disputed information **cannot be verified within the statutory period**, the information **must be promptly deleted**."""
+    letter_parts.append(statutory_framework)
+
+    # =========================================================================
+    # ESTABLISHED FACTS - With specific dispute date
     # =========================================================================
     established_facts = f"""ESTABLISHED FACTS
 {'=' * 50}
 
-• Written dispute submitted
-• Statutory reinvestigation period elapsed
+• Written dispute submitted on **{dispute_date.strftime('%B %d, %Y')}**
+• Statutory reinvestigation period has elapsed
 • No results of reinvestigation provided
 • No notice of completion, extension, or findings issued"""
     letter_parts.append(established_facts)
 
     # =========================================================================
     # BASIS FOR NON-COMPLIANCE - The key Tier-2 addition
-    # Proves failure to respond is a completed procedural failure
+    # Proves failure to respond is a completed procedural failure + triggers deletion
     # =========================================================================
     basis_section = f"""BASIS FOR NON-COMPLIANCE
 {'=' * 50}
 
-Under 15 U.S.C. § 1681i(a)(1)(A) and § 1681i(a)(6)(A), a consumer reporting agency must:
+The statutory reinvestigation period expired without any results being provided. Where no results are provided within the statutory timeframe, **no reinvestigation has occurred as a matter of law**.
 
-• Conduct a reasonable reinvestigation
-• Provide written notice of the results within the statutory period
-
-Where the statutory period expires without results, compliance becomes procedurally impossible.
-
-Failure to provide results within the required timeframe constitutes a completed procedural failure rather than a curable delay."""
+Information that has not been verified within the statutory period is deemed **unverifiable** and must be deleted pursuant to **15 U.S.C. § 1681i(a)(5)(A)**. Failure to provide results within the required timeframe constitutes a **completed procedural failure**, not a curable delay."""
     letter_parts.append(basis_section)
-
-    # =========================================================================
-    # STATUTORY FRAMEWORK - Clean statement of law
-    # =========================================================================
-    statutory_framework = f"""STATUTORY FRAMEWORK
-{'=' * 50}
-
-Pursuant to 15 U.S.C. § 1681i(a)(1)(A) and § 1681i(a)(6)(A), consumer reporting agencies are required to complete reinvestigations and provide written notice of results within the statutory timeframe.
-
-Failure to do so constitutes non-compliance."""
-    letter_parts.append(statutory_framework)
 
     # =========================================================================
     # STATUTORY NON-COMPLIANCE - Summary
@@ -1161,27 +1154,28 @@ Failure to do so constitutes non-compliance."""
     violation_section = f"""STATUTORY NON-COMPLIANCE
 {'=' * 50}
 
-Non-Compliance: Failure to Provide Results of Reinvestigation
-Statutes: 15 U.S.C. § 1681i(a)(1)(A); § 1681i(a)(6)(A)
+**Non-Compliance:** Failure to Conduct Reinvestigation and Failure to Delete Unverifiable Information
 
-By failing to provide results of reinvestigation, {canonical_entity} did not comply with mandatory procedural requirements."""
+**Statutes:** 15 U.S.C. §§ **1681i(a)(1)(A)**, **1681i(a)(6)(A)**, **1681i(a)(5)(A)**
+
+By failing to provide results of reinvestigation and by continuing to maintain unverifiable information beyond the statutory window, {canonical_entity} is in direct violation of the Fair Credit Reporting Act."""
     letter_parts.append(violation_section)
 
     # =========================================================================
-    # DEMANDED ACTIONS - Simplified, no redundant timeframes
+    # DEMANDED ACTIONS - Immediate deletion required
     # =========================================================================
     demands = f"""DEMANDED ACTIONS
-{'=' * 50}
+{'-' * 50}
 
-The following actions are required:
+The following actions are required **immediately**:
 
-1. Immediate completion of the reinvestigation
+1. **Immediate deletion** of the disputed information as unverifiable
 
-2. Written results of reinvestigation
+2. Written confirmation of deletion
 
-3. Correction or deletion of any information that cannot be verified
+3. Updated consumer disclosure reflecting the deletion
 
-Failure to cure this non-compliance will be recorded as continued non-compliance and escalated accordingly."""
+Failure to comply will be recorded as continued non-compliance and escalated accordingly."""
     letter_parts.append(demands)
 
     # =========================================================================
@@ -1190,7 +1184,7 @@ Failure to cure this non-compliance will be recorded as continued non-compliance
     rights = f"""RIGHTS PRESERVATION
 {'=' * 50}
 
-Nothing in this correspondence shall be construed as a waiver of any rights or remedies available under 15 U.S.C. §§ 1681n or 1681o."""
+Nothing in this correspondence shall be construed as a waiver of any rights or remedies available under **15 U.S.C. §§ 1681n or 1681o** for negligent or willful non-compliance."""
     letter_parts.append(rights)
 
     # =========================================================================
