@@ -285,6 +285,18 @@ An account cannot simultaneously be open and closed, or current and delinquent. 
 
 Verification of conflicting status information requires investigation, not mere confirmation.""",
 
+    "cross_bureau": """The disputed information contains a provable deficiency that prevents verification.
+
+**A single tradeline cannot possess multiple values for the same field across consumer reporting agencies.** At least one reported value is necessarily inaccurate. Verification of information that is contradicted across bureaus is not a verification of accuracy, but a confirmation of defective data.
+
+Accordingly, the claimed verification evidences a perfunctory investigation rather than a reasonable reinvestigation as required by statute.""",
+
+    "date_opened_mismatch": """The disputed account shows different Date Opened values across credit bureaus.
+
+**A single tradeline cannot possess multiple "Date Opened" values across consumer reporting agencies.** At least one reported value is necessarily inaccurate. Verification of information that is contradicted across bureaus is not a verification of accuracy, but a confirmation of defective data.
+
+Accordingly, the claimed verification evidences a perfunctory investigation rather than a reasonable reinvestigation as required by statute.""",
+
     # -------------------------------------------------------------------------
     # Obsolescence and Re-aging
     # -------------------------------------------------------------------------
@@ -753,7 +765,7 @@ def format_demanded_actions_section(actions: List[str]) -> str:
     section = f"""DEMANDED ACTIONS
 {'-' * 50}
 
-The following actions are demanded within fifteen (15) days of receipt of this notice:
+The following actions are demanded **within fifteen (15) days of receipt of this notice as a good-faith cure period**:
 """
 
     for i, action in enumerate(actions, 1):
@@ -1292,7 +1304,7 @@ Via Certified Mail, Return Receipt Requested"""
     # =========================================================================
     subject = """RE: FORMAL NOTICE OF STATUTORY NON-COMPLIANCE
 
-Verification Without Reasonable Investigation"""
+Verification Without Reasonable Investigation & Failure to Assure Accuracy"""
     letter_parts.append(subject)
 
     # =========================================================================
@@ -1302,7 +1314,7 @@ Verification Without Reasonable Investigation"""
 
 On {response_date.strftime('%B %d, %Y')}, {canonical_entity} responded by claiming the disputed information was "VERIFIED."
 
-This correspondence serves as formal notice that the claimed verification fails to satisfy the statutory requirement of a reasonable reinvestigation and constitutes a distinct compliance violation."""
+This correspondence serves as formal notice that the claimed verification fails to satisfy the statutory requirements of a reasonable reinvestigation and the duty to assure maximum possible accuracy."""
     letter_parts.append(opening)
 
     # =========================================================================
@@ -1311,9 +1323,9 @@ This correspondence serves as formal notice that the claimed verification fails 
     statutory_framework = f"""STATUTORY FRAMEWORK
 {'=' * 50}
 
-Pursuant to 15 U.S.C. § 1681i(a)(1)(A), upon receipt of a consumer dispute, a consumer reporting agency is required to conduct a reasonable reinvestigation to determine whether the disputed information is inaccurate.
+Pursuant to **15 U.S.C. § 1681i(a)(1)(A)**, upon receipt of a consumer dispute, a consumer reporting agency is required to conduct a reasonable reinvestigation to determine whether the disputed information is inaccurate.
 
-A conclusory verification response does not satisfy this obligation where the disputed data cannot be reasonably verified as accurate."""
+Additionally, pursuant to **15 U.S.C. § 1681e(b)**, a consumer reporting agency must follow reasonable procedures to assure **maximum possible accuracy** of the information reported. Information that contains cross-bureau inconsistencies is not capable of maximum possible accuracy and therefore cannot be verified as accurate."""
     letter_parts.append(statutory_framework)
 
     # =========================================================================
@@ -1359,9 +1371,7 @@ A conclusory verification response does not satisfy this obligation where the di
     basis_section = f"""BASIS FOR NON-COMPLIANCE
 {'=' * 50}
 
-{basis_text}
-
-Accordingly, {canonical_entity}'s verification response evidences a perfunctory investigation rather than a reasonable reinvestigation as required by statute."""
+{basis_text}"""
     letter_parts.append(basis_section)
 
     # =========================================================================
@@ -1370,10 +1380,10 @@ Accordingly, {canonical_entity}'s verification response evidences a perfunctory 
     violation_section = f"""STATUTORY VIOLATION
 {'=' * 50}
 
-Violation: Verification Without Reasonable Investigation
-Statute: 15 U.S.C. § 1681i(a)(1)(A)
+**Violation:** Verification Without Reasonable Investigation and Failure to Assure Maximum Possible Accuracy
+**Statutes:** 15 U.S.C. §§ 1681i(a)(1)(A), 1681e(b)
 
-By verifying information that cannot be substantiated due to the deficiencies documented above, {canonical_entity} failed to conduct a reasonable reinvestigation and is in statutory non-compliance."""
+By verifying information that is logically impossible and substantiated as inaccurate by cross-bureau data, {canonical_entity} failed to conduct a reasonable reinvestigation and is in statutory non-compliance."""
     letter_parts.append(violation_section)
 
     # =========================================================================
