@@ -265,6 +265,7 @@ class DisputeDB(Base):
     letter_id = Column(String(36), ForeignKey("letters.id", ondelete="SET NULL"), nullable=True)
     account_fingerprint = Column(String(255), nullable=True)  # For reinsertion detection
     original_violation_data = Column(JSON, nullable=True)  # Snapshot of violation at dispute time
+    discrepancies_data = Column(JSON, nullable=True)  # Cross-bureau discrepancies from letter
 
     # Tier Tracking
     tier_reached = Column(Integer, default=1)  # 1, 2, or 3

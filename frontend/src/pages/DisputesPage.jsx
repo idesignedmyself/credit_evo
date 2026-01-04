@@ -945,6 +945,34 @@ const ExpandedRowContent = ({ dispute, onResponseLogged, onStartTracking, onGene
         </Box>
       )}
 
+      {/* Cross-Bureau Discrepancies */}
+      {dispute.discrepancies_data?.length > 0 && (
+        <Box sx={{ mb: 3 }}>
+          <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1.5, color: '#f57c00' }}>
+            Cross-Bureau Discrepancies ({dispute.discrepancies_data.length})
+          </Typography>
+          <Stack spacing={1}>
+            {dispute.discrepancies_data.map((d, i) => (
+              <Box key={i} sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                <Typography variant="body2" sx={{ fontWeight: 500, minWidth: 140 }}>
+                  {d.creditor_name || 'Unknown'}
+                  {d.account_number_masked && (
+                    <Typography component="span" variant="body2" color="text.secondary" sx={{ ml: 1 }}>
+                      ({d.account_number_masked})
+                    </Typography>
+                  )}
+                </Typography>
+                <Chip
+                  label={`${d.field_name || 'Field'} Mismatch`}
+                  size="small"
+                  sx={{ bgcolor: '#fff3e0', color: '#e65100', border: '1px solid #ffb74d' }}
+                />
+              </Box>
+            ))}
+          </Stack>
+        </Box>
+      )}
+
       <Divider sx={{ mb: 3 }} />
 
       {/* Per-Violation Response Section */}

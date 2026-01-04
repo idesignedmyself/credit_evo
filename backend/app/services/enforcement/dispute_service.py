@@ -116,6 +116,14 @@ class DisputeService:
             )
             tracking_started = True
 
+        # Fetch discrepancies from letter if letter_id provided
+        discrepancies_data = None
+        if letter_id:
+            from app.models.db_models import LetterDB
+            letter = self.db.query(LetterDB).filter(LetterDB.id == letter_id).first()
+            if letter and letter.discrepancies_cited:
+                discrepancies_data = letter.discrepancies_cited
+
         # Create dispute
         dispute = DisputeDB(
             id=str(uuid4()),
@@ -132,6 +140,7 @@ class DisputeService:
             letter_id=letter_id,
             account_fingerprint=account_fingerprint,
             original_violation_data=violation_data,
+            discrepancies_data=discrepancies_data,  # Cross-bureau discrepancies from letter
             has_validation_request=has_validation_request,
             collection_continued=collection_continued,
         )
@@ -763,6 +772,7 @@ class DisputeService:
                 "days_to_deadline": (d.deadline_date - today).days if d.deadline_date else None,
                 "created_at": d.created_at.isoformat(),
                 "violation_data": enriched_violations,
+                "discrepancies_data": d.discrepancies_data or [],  # Cross-bureau discrepancies
                 # Tier-2/Tier-3 tracking fields
                 "tier_reached": d.tier_reached,
                 "locked": d.locked,
