@@ -212,10 +212,12 @@ class LetterDB(Base):
     tone = Column(String(50), default="formal")
     letter_category = Column(String(20), default="dispute")  # "dispute" or "response"
     response_type = Column(String(50), nullable=True)  # For response letters: NO_RESPONSE, VERIFIED, etc.
+    status = Column(String(20), default="ACTIVE", nullable=True)  # ACTIVE, VOIDED, SUPERSEDED
 
     # Metadata
     accounts_disputed = Column(JSON)  # List of creditor names
     violations_cited = Column(JSON)   # List of violation types
+    discrepancies_cited = Column(JSON)  # List of cross-bureau discrepancies [{discrepancy_id, field_name, creditor_name, account_number_masked}]
     account_numbers = Column(JSON)    # List of masked account numbers (parallel to violations_cited)
     word_count = Column(Integer, default=0)
 

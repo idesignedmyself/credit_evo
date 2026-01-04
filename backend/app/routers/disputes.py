@@ -14,7 +14,7 @@ from ..database import get_db
 from ..auth import get_current_user
 from ..models.db_models import (
     EntityType, ResponseType, DisputeSource, DisputeStatus, EscalationState,
-    Tier2ResponseType
+    Tier2ResponseType, ExecutionEventDB
 )
 from ..services.enforcement import DisputeService
 
@@ -804,24 +804,17 @@ async def delete_dispute(
     db: Session = Depends(get_db),
 ):
     """
-    Delete a dispute.
-
-    Only the owner can delete their disputes.
+    Hard delete a dispute and all dependent records.
     """
-    from ..models.db_models import DisputeDB
+    from ..services.hard_delete_service import HardDeleteService
 
-    dispute = db.query(DisputeDB).filter(
-        DisputeDB.id == dispute_id,
-        DisputeDB.user_id == current_user.id
-    ).first()
+    service = HardDeleteService(db)
+    cascade = service.delete_dispute(dispute_id, current_user.id)
 
-    if not dispute:
+    if cascade is None:
         raise HTTPException(status_code=404, detail="Dispute not found")
 
-    db.delete(dispute)
-    db.commit()
-
-    return {"status": "deleted", "dispute_id": dispute_id}
+    return {"status": "deleted", "dispute_id": dispute_id, "cascade": cascade}
 
 
 # =============================================================================

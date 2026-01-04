@@ -7,10 +7,14 @@ Same facts, same contradictions, same severity, same remedies - different audien
 from .cfpb_state_machine import CFPBStateMachine
 from .cfpb_letter_generator import CFPBLetterGenerator
 from .cfpb_service import CFPBService, CFPBServiceError
+from .cfpb_packet_builder import CFPBPacketBuilder, CFPBPacket, TimelineEvent
 
 __all__ = [
     "CFPBStateMachine",
     "CFPBLetterGenerator",
     "CFPBService",
     "CFPBServiceError",
+    "CFPBPacketBuilder",
+    "CFPBPacket",
+    "TimelineEvent",
 ]

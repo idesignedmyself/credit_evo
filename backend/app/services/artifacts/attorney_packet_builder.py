@@ -531,8 +531,15 @@ class AttorneyPacketBuilder:
         dispute: DisputeDB,
     ) -> None:
         """Extract violations from dispute's original violation data."""
-        violation_data = dispute.original_violation_data or {}
-        contradictions = violation_data.get("contradictions", [])
+        # Handle both list and dict formats
+        raw_data = dispute.original_violation_data
+        if isinstance(raw_data, list):
+            # List format - each item is a violation
+            contradictions = raw_data
+        elif isinstance(raw_data, dict):
+            contradictions = raw_data.get("contradictions", [])
+        else:
+            contradictions = []
 
         for contra in contradictions:
             violation = AttorneyPacketViolation(

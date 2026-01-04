@@ -120,9 +120,18 @@ class Tier3PromotionService:
         - date_closed: Timestamp
         """
         # Extract violation details from dispute's original data
-        violation_data = dispute.original_violation_data or {}
-        contradictions = violation_data.get("contradictions", [])
-        primary_violation = contradictions[0] if contradictions else {}
+        # Handle both list and dict formats
+        raw_violation_data = dispute.original_violation_data
+        if isinstance(raw_violation_data, list):
+            # If it's a list, use first item as primary violation
+            primary_violation = raw_violation_data[0] if raw_violation_data else {}
+            contradictions = []
+        elif isinstance(raw_violation_data, dict):
+            contradictions = raw_violation_data.get("contradictions", [])
+            primary_violation = contradictions[0] if contradictions else raw_violation_data
+        else:
+            primary_violation = {}
+            contradictions = []
 
         # Build ledger entry with required fields
         ledger_entry = {

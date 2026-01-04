@@ -15,6 +15,7 @@ from ...models.ssot import (
 )
 from .rules import SingleBureauRules, FurnisherRules, TemporalRules, InquiryRules, IdentityRules, PublicRecordRules
 from .cross_bureau_rules import CrossBureauRules
+from ..metro2 import get_injector
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +94,7 @@ class AuditEngine:
         self.furnisher_rules = FurnisherRules()
         self.temporal_rules = TemporalRules()
         self.cross_bureau_rules = CrossBureauRules()
+        self.citation_injector = get_injector()
 
     def audit(self, report: NormalizedReport, user_profile: Optional[Dict] = None) -> AuditResult:
         """
@@ -234,8 +236,29 @@ class AuditEngine:
         if medical_violations:
             logger.info(f"Medical Debt Compliance check found {len(medical_violations)} violation(s)")
 
+        # Inject CRRG citations into all violations (attach to violation.citations)
+        citations_injected = 0
+        citations_missing = []
+        for violation in all_violations:
+            result = self.citation_injector.inject_into_violation(violation)
+            if result.success:
+                citations_injected += 1
+            else:
+                # Track violations without citations for debugging
+                rule_code = violation.violation_type.value if hasattr(violation.violation_type, 'value') else str(violation.violation_type)
+                citations_missing.append(rule_code)
+
+        logger.info(f"CRRG citations: {citations_injected}/{len(all_violations)} violations have citations")
+        if citations_missing:
+            # Log unique missing rules (not every instance)
+            unique_missing = list(set(citations_missing))
+            logger.warning(f"Missing CRRG anchors for rules: {unique_missing[:10]}{'...' if len(unique_missing) > 10 else ''}")
+
+        # GUARD: Metro 2 V2.0 violations MUST have at least one CRRG citation
+        self._guard_metro2_v2_citations(all_violations)
+
         # Build AuditResult (SSOT #2)
-        result = AuditResult(
+        audit_result = AuditResult(
             report_id=report.report_id,
             bureau=report.bureau,
             violations=all_violations,
@@ -254,7 +277,26 @@ class AuditEngine:
             f"{len(inquiry_violations)} inquiry violations"
         )
 
-        return result
+        return audit_result
+
+    def _guard_metro2_v2_citations(self, violations: List[Violation]) -> None:
+        """
+        Ensure all Metro 2 V2.0 violations have at least one CRRG citation.
+
+        Raises RuntimeError if any Metro 2 V2.0 violation has no citations.
+        This is a hard fail to ensure citation wiring is complete.
+        """
+        for violation in violations:
+            if violation.is_metro2_v2 and not violation.citations:
+                rule_code = (
+                    violation.violation_type.value
+                    if hasattr(violation.violation_type, "value")
+                    else str(violation.violation_type)
+                )
+                raise RuntimeError(
+                    f"Metro 2 V2.0 violation '{rule_code.lower()}' has no CRRG citation. "
+                    f"Add mapping to crrg_anchors.json for rule: {rule_code.lower()}"
+                )
 
     def _audit_cross_bureau(self, accounts: List[Account]) -> List[CrossBureauDiscrepancy]:
         """
@@ -292,6 +334,8 @@ class AuditEngine:
             all_discrepancies.extend(self.cross_bureau_rules.check_authorized_user_derogatory(bureau_accounts))
             # Missing tradelines (account on some bureaus but not others - explains score gaps)
             all_discrepancies.extend(self.cross_bureau_rules.check_missing_tradelines(bureau_accounts))
+            # Metro 2 invalid enum divergence (valid codes on some bureaus, invalid on others)
+            all_discrepancies.extend(self.cross_bureau_rules.check_invalid_enum_divergence(bureau_accounts))
 
         logger.info(f"Cross-bureau analysis found {len(all_discrepancies)} discrepancies")
         return all_discrepancies

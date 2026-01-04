@@ -1,0 +1,52 @@
+{
+  "version": "2.0.0",
+  "timestamp": "2026-01-03T03:43:51Z",
+  "fingerprints": {
+    "rules_py": "0b927b816e4eb19e",
+    "contradiction_engine_py": "2d576e60328ecd98",
+    "cross_bureau_rules_py": "c078e2fdeab539b6",
+    "ssot_py": "945bd5279d7a70ab",
+    "violation_statutes_py": "5625b6c9a7f67d2c"
+  },
+  "rules": {
+    "contradiction_engine": {
+      "T1": {"name": "DOFD Before Open Date", "severity": "CRITICAL", "enabled": true},
+      "T2": {"name": "Payment History Exceeds Account Age", "severity": "CRITICAL", "enabled": true},
+      "T3": {"name": "Chargeoff Before Last Payment", "severity": "CRITICAL", "enabled": true},
+      "T4": {"name": "Delinquency Ladder Inversion", "severity": "CRITICAL", "enabled": true},
+      "D1": {"name": "Missing DOFD with Negative Status", "severity": "HIGH", "enabled": true},
+      "D2": {"name": "DOFD vs Inferred First Late Mismatch", "severity": "HIGH", "enabled": true},
+      "D3": {"name": "Over 7-Year Reporting", "severity": "HIGH", "enabled": true},
+      "M1": {"name": "Balance Exceeds Legal Maximum", "severity": "HIGH", "enabled": true},
+      "M2": {"name": "Balance Increase After Chargeoff", "severity": "HIGH", "enabled": true},
+      "S1": {"name": "Paid Status with Delinquencies", "severity": "MEDIUM", "enabled": true},
+      "S2": {"name": "Closed Account Post Activity", "severity": "MEDIUM", "enabled": true},
+      "X1": {"name": "Stale Data", "severity": "MEDIUM", "enabled": true},
+      "K1": {"name": "Missing Original Creditor Elevated", "severity": "MEDIUM", "enabled": true},
+      "P1": {"name": "Missing Scheduled Payment Contradiction", "severity": "MEDIUM", "enabled": true}
+    },
+    "single_bureau_rules": {
+      "check_missing_dofd": {"severity": "HIGH", "enabled": true},
+      "check_missing_date_opened": {"severity": "MEDIUM", "enabled": true},
+      "check_missing_dla": {"severity": "LOW", "enabled": true},
+      "check_missing_payment_status": {"severity": "MEDIUM", "enabled": true},
+      "check_negative_balance": {"severity": "MEDIUM", "enabled": true},
+      "check_past_due_exceeds_balance": {"severity": "MEDIUM", "enabled": true},
+      "check_future_date": {"severity": "MEDIUM", "enabled": true},
+      "check_dofd_after_date_opened": {"severity": "CRITICAL", "enabled": true},
+      "check_status_payment_history_mismatch": {"severity": "HIGH", "enabled": true},
+      "check_phantom_late_payment": {"severity": "MEDIUM", "enabled": true},
+      "check_paid_status_with_balance": {"severity": "MEDIUM", "enabled": true},
+      "check_delinquency_ladder": {"severity": "HIGH", "enabled": true}
+    },
+    "cross_bureau_rules": {
+      "check_dofd_mismatch": {"severity": "HIGH", "enabled": true},
+      "check_balance_mismatch": {"severity": "MEDIUM", "enabled": true},
+      "check_status_mismatch": {"severity": "HIGH", "enabled": true},
+      "check_payment_history_mismatch": {"severity": "MEDIUM", "enabled": true},
+      "check_double_jeopardy": {"severity": "HIGH", "enabled": true}
+    }
+  },
+  "violation_types_count": 90,
+  "cfpb_states": ["NONE", "INITIAL_SUBMITTED", "RESPONSE_RECEIVED", "ESCALATION_SUBMITTED", "ESCALATION_RESPONSE_RECEIVED", "FINAL_SUBMITTED", "CLOSED"]
+}

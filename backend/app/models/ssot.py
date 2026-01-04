@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from enum import Enum
-from typing import Dict, List, Optional, Any
+from typing import ClassVar, Dict, List, Optional, Any
 from uuid import uuid4
 
 
@@ -82,6 +82,8 @@ class ViolationType(str, Enum):
     DISPUTE_FLAG_MISMATCH = "dispute_flag_mismatch"  # One bureau shows dispute, another doesn't (missing XA/XB/XC)
     ECOA_CODE_MISMATCH = "ecoa_code_mismatch"  # Different liability designation across bureaus (Individual vs Joint)
     AUTHORIZED_USER_DEROGATORY = "authorized_user_derogatory"  # AU (not liable) with negative marks affecting score
+    INVALID_ENUM_DIVERGENCE = "invalid_enum_divergence"  # Metro 2 code valid on some bureaus, invalid on others
+    OBSOLETE_ECOA_DIVERGENCE = "obsolete_ecoa_divergence"  # Valid ECOA on some bureaus, obsolete (3/4/6) on others
 
     # Temporal violations
     STALE_REPORTING = "stale_reporting"
@@ -591,6 +593,39 @@ class Violation:
 
     # Metro-2 field reference
     metro2_field: Optional[str] = None
+
+    # CRRG citations (Metro 2 spec references)
+    citations: List[Dict[str, Any]] = field(default_factory=list)
+
+    # Metro 2 V2.0 violation types that MUST have CRRG citations (all lowercase)
+    METRO2_V2_VIOLATION_TYPES: ClassVar[set] = {
+        # Single-bureau violations
+        "missing_dofd", "missing_date_opened", "missing_dla", "missing_payment_status",
+        "missing_scheduled_payment", "missing_original_creditor", "negative_balance",
+        "negative_credit_limit", "past_due_exceeds_balance", "balance_exceeds_high_credit",
+        "balance_exceeds_credit_limit", "future_date", "dofd_after_date_opened",
+        "invalid_metro2_code", "closed_oc_reporting_balance", "closed_oc_reporting_past_due",
+        "chargeoff_missing_dofd", "status_payment_history_mismatch", "phantom_late_payment",
+        "paid_status_with_balance", "zero_balance_not_paid", "delinquency_jump",
+        "stagnant_delinquency", "double_jeopardy",
+        # Cross-bureau violations
+        "dofd_mismatch", "date_opened_mismatch", "balance_mismatch", "status_mismatch",
+        "payment_history_mismatch", "past_due_mismatch", "closed_vs_open_conflict",
+        "creditor_name_mismatch", "account_number_mismatch", "dispute_flag_mismatch",
+        "ecoa_code_mismatch", "authorized_user_derogatory", "invalid_enum_divergence",
+        "obsolete_ecoa_divergence",
+        # Temporal violations
+        "stale_reporting", "re_aging", "dofd_replaced_with_date_opened",
+        "impossible_timeline", "obsolete_account", "time_barred_debt_risk",
+        # Metro 2 Portfolio Type violations
+        "metro2_portfolio_mismatch",
+    }
+
+    @property
+    def is_metro2_v2(self) -> bool:
+        """Check if this violation is a Metro 2 V2.0 type requiring CRRG citation."""
+        vtype = self.violation_type.value if hasattr(self.violation_type, 'value') else str(self.violation_type)
+        return vtype.lower() in self.METRO2_V2_VIOLATION_TYPES
 
     # Evidence for letter generation
     evidence: Dict[str, Any] = field(default_factory=dict)

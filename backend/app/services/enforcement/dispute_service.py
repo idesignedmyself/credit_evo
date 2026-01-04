@@ -458,7 +458,14 @@ class DisputeService:
         # EXECUTION LEDGER: Emit execution event (AUTHORITY MOMENT)
         # =================================================================
         letter = self.db.query(LetterDB).filter(LetterDB.id == dispute.letter_id).first() if dispute.letter_id else None
-        violation_data = dispute.original_violation_data or {}
+
+        # Handle violation_data which may be a list or a dict
+        raw_violation_data = dispute.original_violation_data
+        if isinstance(raw_violation_data, list):
+            # If it's a list, use the first violation's data
+            violation_data = raw_violation_data[0] if raw_violation_data else {}
+        else:
+            violation_data = raw_violation_data or {}
 
         execution_event = self.ledger.emit_execution_event(
             dispute_session_id=dispute_session_id,

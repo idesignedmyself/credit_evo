@@ -728,6 +728,145 @@ class CrossBureauRules:
         return discrepancies
 
     @staticmethod
+    def check_invalid_enum_divergence(
+        accounts: Dict[Bureau, Account],
+        validator=None
+    ) -> List[CrossBureauDiscrepancy]:
+        """
+        Check for invalid/obsolete Metro 2 enum codes that diverge across bureaus.
+
+        Detects cases where:
+        - Bureau A and B report valid Metro 2 codes
+        - Bureau C reports an invalid or obsolete code
+
+        This proves the data CAN be reported correctly, making the invalid code
+        on Bureau C a correctable accuracy violation.
+
+        Legal Basis: FCRA §623(a)(1) - Duty to Provide Accurate Information
+        """
+        from ..metro2 import Metro2SchemaValidator, ValidationMode
+
+        discrepancies = []
+
+        # Use provided validator or create new one
+        if validator is None:
+            validator = Metro2SchemaValidator(mode=ValidationMode.COERCE)
+
+        if len(accounts) < 2:
+            return discrepancies
+
+        # Collect codes from each bureau
+        account_status_by_bureau: Dict[Bureau, tuple] = {}  # (code, is_valid)
+        ecoa_code_by_bureau: Dict[Bureau, tuple] = {}
+
+        for bureau, account in accounts.items():
+            # Get status code
+            status_code = None
+            ecoa_code = None
+
+            if hasattr(account, 'bureaus') and account.bureaus and bureau in account.bureaus:
+                bureau_data = account.bureaus[bureau]
+                status_code = getattr(bureau_data, 'account_status_raw', None)
+                ecoa_code = getattr(bureau_data, 'ecoa_code', None)
+            else:
+                status_code = getattr(account, 'account_status_raw', None)
+                ecoa_code = getattr(account, 'ecoa_code', None)
+
+            # Validate account status
+            if status_code:
+                result = validator.validate_account_status(str(status_code))
+                account_status_by_bureau[bureau] = (status_code, result.is_valid)
+
+            # Validate ECOA code
+            if ecoa_code:
+                result = validator.validate_ecoa_code(str(ecoa_code))
+                ecoa_code_by_bureau[bureau] = (ecoa_code, result.is_valid, result.is_obsolete)
+
+        # Check for account status divergence
+        if len(account_status_by_bureau) >= 2:
+            valid_bureaus = [b for b, (code, valid) in account_status_by_bureau.items() if valid]
+            invalid_bureaus = [b for b, (code, valid) in account_status_by_bureau.items() if not valid]
+
+            if valid_bureaus and invalid_bureaus:
+                ref_account = list(accounts.values())[0]
+                values = {b: f"{code} ({'VALID' if valid else 'INVALID'})"
+                          for b, (code, valid) in account_status_by_bureau.items()}
+
+                discrepancies.append(CrossBureauDiscrepancy(
+                    violation_type=ViolationType.INVALID_ENUM_DIVERGENCE,
+                    creditor_name=ref_account.creditor_name,
+                    account_number_masked=getattr(ref_account, 'account_number_masked', '') or '',
+                    account_fingerprint=create_account_fingerprint(ref_account),
+                    field_name="Account Status Code (Field 17A)",
+                    values_by_bureau=values,
+                    description=(
+                        f"Account Status code divergence: {', '.join(b.value for b in valid_bureaus)} "
+                        f"report valid Metro 2 codes while {', '.join(b.value for b in invalid_bureaus)} "
+                        f"report invalid codes. Since other bureaus can report this data correctly, "
+                        f"the invalid code is a correctable accuracy violation per FCRA §623(a)(1)."
+                    ),
+                    severity=Severity.HIGH
+                ))
+
+        # Check for ECOA code divergence (especially obsolete codes)
+        if len(ecoa_code_by_bureau) >= 2:
+            valid_bureaus = [b for b, (code, valid, obs) in ecoa_code_by_bureau.items()
+                             if valid and not obs]
+            obsolete_bureaus = [b for b, (code, valid, obs) in ecoa_code_by_bureau.items()
+                                if obs]
+            invalid_bureaus = [b for b, (code, valid, obs) in ecoa_code_by_bureau.items()
+                               if not valid and not obs]
+
+            # Report obsolete code divergence
+            if valid_bureaus and obsolete_bureaus:
+                ref_account = list(accounts.values())[0]
+                values = {}
+                for b, (code, valid, obs) in ecoa_code_by_bureau.items():
+                    status = "VALID" if (valid and not obs) else ("OBSOLETE" if obs else "INVALID")
+                    values[b] = f"{code} ({status})"
+
+                discrepancies.append(CrossBureauDiscrepancy(
+                    violation_type=ViolationType.OBSOLETE_ECOA_DIVERGENCE,
+                    creditor_name=ref_account.creditor_name,
+                    account_number_masked=getattr(ref_account, 'account_number_masked', '') or '',
+                    account_fingerprint=create_account_fingerprint(ref_account),
+                    field_name="ECOA Code (Field 4)",
+                    values_by_bureau=values,
+                    description=(
+                        f"ECOA code divergence: {', '.join(b.value for b in valid_bureaus)} "
+                        f"report valid ECOA codes while {', '.join(b.value for b in obsolete_bureaus)} "
+                        f"report OBSOLETE codes (3, 4, or 6). Obsolete ECOA codes were deprecated "
+                        f"per Metro 2 CRRG and should be updated to current values."
+                    ),
+                    severity=Severity.MEDIUM
+                ))
+
+            # Report invalid (non-obsolete) ECOA divergence
+            if valid_bureaus and invalid_bureaus:
+                ref_account = list(accounts.values())[0]
+                values = {}
+                for b, (code, valid, obs) in ecoa_code_by_bureau.items():
+                    status = "VALID" if (valid and not obs) else ("OBSOLETE" if obs else "INVALID")
+                    values[b] = f"{code} ({status})"
+
+                discrepancies.append(CrossBureauDiscrepancy(
+                    violation_type=ViolationType.INVALID_ENUM_DIVERGENCE,
+                    creditor_name=ref_account.creditor_name,
+                    account_number_masked=getattr(ref_account, 'account_number_masked', '') or '',
+                    account_fingerprint=create_account_fingerprint(ref_account),
+                    field_name="ECOA Code (Field 4)",
+                    values_by_bureau=values,
+                    description=(
+                        f"ECOA code divergence: {', '.join(b.value for b in valid_bureaus)} "
+                        f"report valid ECOA codes while {', '.join(b.value for b in invalid_bureaus)} "
+                        f"report invalid codes. This is a correctable accuracy violation."
+                    ),
+                    severity=Severity.HIGH
+                ))
+
+        return discrepancies
+
+    @staticmethod
     def check_missing_tradelines(accounts: Dict[Bureau, Account]) -> List[CrossBureauDiscrepancy]:
         """
         Detects accounts that are reporting to some bureaus but missing from others.

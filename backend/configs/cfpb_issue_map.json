@@ -1,0 +1,210 @@
+{
+  "version": "CFPB-2024",
+  "description": "Maps violation categories to CFPB complaint product/issue/sub-issue triplets",
+  "default": {
+    "product": "Credit reporting or other personal consumer reports",
+    "issue": "Incorrect information on your report",
+    "sub_issue": "Information belongs to someone else"
+  },
+  "categories": {
+    "single_bureau_data_accuracy": {
+      "product": "Credit reporting or other personal consumer reports",
+      "issue": "Incorrect information on your report",
+      "sub_issue": "Account information incorrect",
+      "violation_types": [
+        "missing_dofd",
+        "missing_date_opened",
+        "missing_dla",
+        "missing_payment_status",
+        "missing_scheduled_payment",
+        "missing_original_creditor",
+        "negative_balance",
+        "negative_credit_limit",
+        "past_due_exceeds_balance",
+        "balance_exceeds_high_credit",
+        "balance_exceeds_credit_limit",
+        "future_date",
+        "dofd_after_date_opened",
+        "invalid_metro2_code",
+        "chargeoff_missing_dofd",
+        "status_payment_history_mismatch",
+        "phantom_late_payment",
+        "paid_status_with_balance",
+        "zero_balance_not_paid",
+        "delinquency_jump",
+        "stagnant_delinquency"
+      ]
+    },
+    "cross_bureau_inconsistency": {
+      "product": "Credit reporting or other personal consumer reports",
+      "issue": "Incorrect information on your report",
+      "sub_issue": "Account status incorrect",
+      "violation_types": [
+        "dofd_mismatch",
+        "date_opened_mismatch",
+        "balance_mismatch",
+        "status_mismatch",
+        "payment_history_mismatch",
+        "past_due_mismatch",
+        "closed_vs_open_conflict",
+        "creditor_name_mismatch",
+        "account_number_mismatch",
+        "dispute_flag_mismatch",
+        "ecoa_code_mismatch",
+        "invalid_enum_divergence",
+        "obsolete_ecoa_divergence"
+      ]
+    },
+    "closed_account_reporting": {
+      "product": "Credit reporting or other personal consumer reports",
+      "issue": "Incorrect information on your report",
+      "sub_issue": "Account status incorrect",
+      "violation_types": [
+        "closed_oc_reporting_balance",
+        "closed_oc_reporting_past_due"
+      ]
+    },
+    "temporal_violations": {
+      "product": "Credit reporting or other personal consumer reports",
+      "issue": "Incorrect information on your report",
+      "sub_issue": "Old information reappears or never goes away",
+      "violation_types": [
+        "stale_reporting",
+        "re_aging",
+        "dofd_replaced_with_date_opened",
+        "impossible_timeline",
+        "obsolete_account",
+        "time_barred_debt_risk"
+      ]
+    },
+    "double_jeopardy": {
+      "product": "Credit reporting or other personal consumer reports",
+      "issue": "Incorrect information on your report",
+      "sub_issue": "Account information incorrect",
+      "violation_types": [
+        "double_jeopardy",
+        "valid_coexistence",
+        "double_balance_violation"
+      ]
+    },
+    "authorized_user": {
+      "product": "Credit reporting or other personal consumer reports",
+      "issue": "Incorrect information on your report",
+      "sub_issue": "Account information incorrect",
+      "violation_types": [
+        "authorized_user_derogatory"
+      ]
+    },
+    "identity_issues": {
+      "product": "Credit reporting or other personal consumer reports",
+      "issue": "Incorrect information on your report",
+      "sub_issue": "Information belongs to someone else",
+      "violation_types": [
+        "identity_suffix_mismatch",
+        "identity_name_mismatch",
+        "identity_ssn_mismatch",
+        "identity_address_mismatch",
+        "mixed_file_indicator",
+        "deceased_indicator_error",
+        "child_identity_theft"
+      ]
+    },
+    "inquiry_violations": {
+      "product": "Credit reporting or other personal consumer reports",
+      "issue": "Improper use of your report",
+      "sub_issue": "Received unsolicited financial product offers after opting out",
+      "violation_types": [
+        "unauthorized_hard_inquiry",
+        "inquiry_misclassification",
+        "collection_fishing_inquiry",
+        "duplicate_inquiry"
+      ]
+    },
+    "public_records": {
+      "product": "Credit reporting or other personal consumer reports",
+      "issue": "Incorrect information on your report",
+      "sub_issue": "Public record information inaccurate",
+      "violation_types": [
+        "judgment_not_updated",
+        "ncap_violation_judgment",
+        "bankruptcy_date_error",
+        "bankruptcy_obsolete"
+      ]
+    },
+    "collection_practices": {
+      "product": "Debt collection",
+      "issue": "Attempts to collect debt not owed",
+      "sub_issue": "Debt was result of identity theft",
+      "violation_types": [
+        "collection_balance_inflation",
+        "false_debt_status",
+        "unverified_debt_reporting",
+        "duplicate_collection"
+      ]
+    },
+    "medical_debt": {
+      "product": "Credit reporting or other personal consumer reports",
+      "issue": "Incorrect information on your report",
+      "sub_issue": "Account information incorrect",
+      "violation_types": [
+        "medical_under_500",
+        "medical_paid_reporting"
+      ]
+    },
+    "metro2_schema_violations": {
+      "product": "Credit reporting or other personal consumer reports",
+      "issue": "Incorrect information on your report",
+      "sub_issue": "Account information incorrect",
+      "violation_types": [
+        "invalid_account_status",
+        "invalid_payment_history",
+        "obsolete_ecoa_code",
+        "invalid_ecoa_code",
+        "invalid_portfolio_type",
+        "invalid_account_type",
+        "invalid_compliance_code",
+        "cb_invalid_enum_divergence",
+        "metro2_portfolio_mismatch"
+      ]
+    },
+    "dofd_state_machine": {
+      "product": "Credit reporting or other personal consumer reports",
+      "issue": "Incorrect information on your report",
+      "sub_issue": "Account information incorrect",
+      "violation_types": [
+        "dofd_reage",
+        "dofd_current_must_zero_fill",
+        "status_regression_reaging",
+        "debt_buyer_dofd_invariant",
+        "k2_prohibited_reporter_has_k2",
+        "debt_buyer_chain_gap_k2_required",
+        "ownership_conflict_doc_demand"
+      ]
+    },
+    "temporal_impossibilities": {
+      "product": "Credit reporting or other personal consumer reports",
+      "issue": "Incorrect information on your report",
+      "sub_issue": "Account information incorrect",
+      "violation_types": [
+        "payment_history_exceeds_account_age",
+        "chargeoff_before_last_payment",
+        "delinquency_ladder_inversion",
+        "dofd_inferred_mismatch"
+      ]
+    },
+    "dispute_process": {
+      "product": "Credit reporting or other personal consumer reports",
+      "issue": "Problem with a company's investigation into an existing problem",
+      "sub_issue": "Their investigation did not fix an error on your report",
+      "violation_types": [
+        "verified_without_change",
+        "reinsertion_without_notice"
+      ]
+    }
+  },
+  "desired_resolutions": {
+    "DELETION": "Delete the inaccurate information from my credit report and provide written confirmation of deletion.",
+    "CORRECTION": "Correct the inaccurate information and provide documentation substantiating the accuracy of the corrected data.",
+    "PROCEDURAL": "Provide written confirmation of verification procedures and source documentation used to substantiate accuracy."
+  }
+}

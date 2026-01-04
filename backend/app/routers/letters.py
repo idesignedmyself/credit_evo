@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models.db_models import ReportDB, AuditResultDB, UserDB, LetterDB
+from ..models.db_models import ReportDB, AuditResultDB, UserDB, LetterDB, ExecutionEventDB, DisputeDB
 from ..services.strategy import create_letter_plan
 from ..services.renderer import render_letter
 from ..models import Tone, Consumer
@@ -101,6 +101,8 @@ class LetterResponse(BaseModel):
     word_count: int
     accounts_disputed_count: int
     violations_cited_count: int
+    discrepancies_cited: Optional[List[dict]] = None  # Cross-bureau discrepancies included
+    discrepancy_count: int = 0
     variation_seed_used: int
     quality_score: Optional[float] = None  # Credit Copilot quality score (0-100)
     structure_type: Optional[str] = None  # narrative, observation, or question
@@ -399,6 +401,12 @@ async def generate_letter(
                 tone=request.tone,
                 accounts_disputed=[v.creditor_name for v in filtered_violations],
                 violations_cited=[v.violation_type.value for v in filtered_violations],
+                discrepancies_cited=[{
+                    "discrepancy_id": d.get("discrepancy_id"),
+                    "field_name": d.get("field_name"),
+                    "creditor_name": d.get("creditor_name"),
+                    "account_number_masked": d.get("account_number_masked"),
+                } for d in filtered_discrepancies],
                 account_numbers=[v.account_number_masked or '' for v in filtered_violations],
                 word_count=civil_result.word_count,
             )
@@ -412,6 +420,13 @@ async def generate_letter(
                 word_count=civil_result.word_count,
                 accounts_disputed_count=len(set(v.creditor_name for v in filtered_violations)),
                 violations_cited_count=len(civil_result.violations_included),
+                discrepancies_cited=[{
+                    "discrepancy_id": d.get("discrepancy_id"),
+                    "field_name": d.get("field_name"),
+                    "creditor_name": d.get("creditor_name"),
+                    "account_number_masked": d.get("account_number_masked"),
+                } for d in filtered_discrepancies],
+                discrepancy_count=len(filtered_discrepancies),
                 variation_seed_used=civil_result.metadata.get("seed", 0),
                 quality_score=civil_result.quality_score,
                 structure_type="civil_v2",
@@ -567,6 +582,12 @@ async def generate_letter(
                 tone=request.tone,
                 accounts_disputed=[v.creditor_name for v in filtered_violations],
                 violations_cited=[v.violation_type.value for v in filtered_violations],
+                discrepancies_cited=[{
+                    "discrepancy_id": d.get("discrepancy_id"),
+                    "field_name": d.get("field_name"),
+                    "creditor_name": d.get("creditor_name"),
+                    "account_number_masked": d.get("account_number_masked"),
+                } for d in filtered_discrepancies],
                 account_numbers=[v.account_number_masked or '' for v in filtered_violations],
                 word_count=word_count,
             )
@@ -580,6 +601,13 @@ async def generate_letter(
                 word_count=word_count,
                 accounts_disputed_count=len(set(v.creditor_name for v in filtered_violations)),
                 violations_cited_count=len(filtered_violations),
+                discrepancies_cited=[{
+                    "discrepancy_id": d.get("discrepancy_id"),
+                    "field_name": d.get("field_name"),
+                    "creditor_name": d.get("creditor_name"),
+                    "account_number_masked": d.get("account_number_masked"),
+                } for d in filtered_discrepancies],
+                discrepancy_count=len(filtered_discrepancies),
                 variation_seed_used=pdf_result["metadata"].get("seed", request.variation_seed or 0),
                 is_legal_format=True,
                 grouping_strategy="by_violation_type",  # PDF format always groups by violation type
@@ -627,6 +655,12 @@ async def generate_letter(
                 tone=request.tone,
                 accounts_disputed=[v.creditor_name for v in filtered_violations],
                 violations_cited=[v.violation_type.value for v in filtered_violations],
+                discrepancies_cited=[{
+                    "discrepancy_id": d.get("discrepancy_id"),
+                    "field_name": d.get("field_name"),
+                    "creditor_name": d.get("creditor_name"),
+                    "account_number_masked": d.get("account_number_masked"),
+                } for d in filtered_discrepancies],
                 account_numbers=[v.account_number_masked or '' for v in filtered_violations],
                 word_count=copilot_letter.word_count,
             )
@@ -640,6 +674,13 @@ async def generate_letter(
                 word_count=copilot_letter.word_count,
                 accounts_disputed_count=len(set(v.creditor_name for v in filtered_violations)),
                 violations_cited_count=len(copilot_letter.violations_included),
+                discrepancies_cited=[{
+                    "discrepancy_id": d.get("discrepancy_id"),
+                    "field_name": d.get("field_name"),
+                    "creditor_name": d.get("creditor_name"),
+                    "account_number_masked": d.get("account_number_masked"),
+                } for d in filtered_discrepancies],
+                discrepancy_count=len(filtered_discrepancies),
                 variation_seed_used=copilot_letter.metadata.get("seed", 0),
                 quality_score=copilot_letter.quality_score,
                 structure_type=copilot_letter.structure_type,
@@ -687,6 +728,12 @@ async def generate_letter(
                 tone=request.tone,
                 accounts_disputed=[acc for acc in letter.accounts_disputed],
                 violations_cited=[v.value if hasattr(v, 'value') else str(v) for v in letter.violations_cited],  # Convert enums to strings
+                discrepancies_cited=[{
+                    "discrepancy_id": d.get("discrepancy_id"),
+                    "field_name": d.get("field_name"),
+                    "creditor_name": d.get("creditor_name"),
+                    "account_number_masked": d.get("account_number_masked"),
+                } for d in filtered_discrepancies],
                 word_count=letter.metadata.word_count,
             )
             db.add(letter_db)
@@ -699,6 +746,13 @@ async def generate_letter(
                 word_count=letter.metadata.word_count,
                 accounts_disputed_count=len(letter.accounts_disputed),
                 violations_cited_count=len(letter.violations_cited),
+                discrepancies_cited=[{
+                    "discrepancy_id": d.get("discrepancy_id"),
+                    "field_name": d.get("field_name"),
+                    "creditor_name": d.get("creditor_name"),
+                    "account_number_masked": d.get("account_number_masked"),
+                } for d in filtered_discrepancies],
+                discrepancy_count=len(filtered_discrepancies),
                 variation_seed_used=letter.metadata.variation_seed_used
             )
 
@@ -967,6 +1021,8 @@ async def list_all_letters(
             "word_count": letter.word_count,
             "violation_count": len(letter.violations_cited or []),
             "violations_cited": letter.violations_cited or [],  # Array of violation type strings
+            "discrepancies_cited": letter.discrepancies_cited or [],  # Array of cross-bureau discrepancies
+            "discrepancy_count": len(letter.discrepancies_cited or []),
             "accounts_disputed": letter.accounts_disputed or [],  # Array of creditor names
             "account_numbers": letter.account_numbers or [],  # Array of masked account numbers
             "accounts": len(letter.accounts_disputed or []),
@@ -1005,6 +1061,8 @@ async def get_letter(
         "word_count": letter.word_count,
         "accounts_disputed": letter.accounts_disputed,
         "violations_cited": letter.violations_cited,
+        "discrepancies_cited": letter.discrepancies_cited or [],  # Cross-bureau discrepancies
+        "discrepancy_count": len(letter.discrepancies_cited or []),
         "account_numbers": letter.account_numbers,  # Masked account numbers parallel to violations_cited
         "violation_count": len(letter.violations_cited or []),
         "created_at": letter.created_at.isoformat() if letter.created_at else None,
@@ -1020,19 +1078,14 @@ async def delete_letter(
     db: Session = Depends(get_db)
 ):
     """
-    Delete a letter by ID.
-    Only works for letters owned by current user.
+    Hard delete a letter and all dependent records.
     """
-    # Get letter from database with ownership check
-    letter = db.query(LetterDB).filter(
-        LetterDB.id == letter_id,
-        LetterDB.user_id == current_user.id
-    ).first()
-    if not letter:
+    from ..services.hard_delete_service import HardDeleteService
+
+    service = HardDeleteService(db)
+    cascade = service.delete_letter(letter_id, current_user.id)
+
+    if cascade is None:
         raise HTTPException(status_code=404, detail="Letter not found")
 
-    # Delete the letter
-    db.delete(letter)
-    db.commit()
-
-    return {"status": "deleted", "letter_id": letter_id}
+    return {"status": "deleted", "letter_id": letter_id, "cascade": cascade}

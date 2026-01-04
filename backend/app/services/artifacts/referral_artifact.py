@@ -257,8 +257,15 @@ class ReferralArtifactBuilder:
         dispute: DisputeDB,
     ) -> None:
         """Extract violation summaries from dispute."""
-        violation_data = dispute.original_violation_data or {}
-        contradictions = violation_data.get("contradictions", [])
+        # Handle both list and dict formats
+        raw_data = dispute.original_violation_data
+        if isinstance(raw_data, list):
+            # List format - each item is a violation
+            contradictions = raw_data
+        elif isinstance(raw_data, dict):
+            contradictions = raw_data.get("contradictions", [])
+        else:
+            contradictions = []
 
         severity_order = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
         highest_severity_rank = 3

@@ -10,9 +10,6 @@ import {
   Button,
   Paper,
   Alert,
-  Stepper,
-  Step,
-  StepLabel,
   Chip,
   Stack,
 } from '@mui/material';
@@ -21,12 +18,9 @@ import HomeIcon from '@mui/icons-material/Home';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import SendIcon from '@mui/icons-material/Send';
 import { ToneSelector, LetterPreview } from '../components';
-import { LetterTrace } from '../components/copilot';
 import { useViolationStore, useUIStore } from '../state';
 import { getViolationLabel } from '../utils';
 import { createDisputeFromLetter } from '../api/disputeApi';
-
-const steps = ['Upload Report', 'Review Violations', 'Generate Letter'];
 
 const LetterPage = () => {
   const { reportId } = useParams();
@@ -164,6 +158,24 @@ const LetterPage = () => {
     accounts: [...new Set(selectedViolations.map(v => v.account_id))].length,
   };
 
+  // Group discrepancies by field name for display
+  const discrepanciesByField = React.useMemo(() => {
+    const discrepancies = currentLetter?.discrepancies_cited || [];
+    if (discrepancies.length === 0) return {};
+
+    return discrepancies.reduce((acc, d) => {
+      const fieldName = d.field_name || 'Unknown Field';
+      if (!acc[fieldName]) {
+        acc[fieldName] = [];
+      }
+      acc[fieldName].push({
+        creditorName: d.creditor_name || 'Unknown Creditor',
+        accountNumber: d.account_number_masked || '',
+      });
+      return acc;
+    }, {});
+  }, [currentLetter]);
+
   // Group violations by type with account details
   // Use selectedViolations if available, otherwise reconstruct from letter data
   const violationsByType = React.useMemo(() => {
@@ -232,18 +244,6 @@ const LetterPage = () => {
         </Typography>
       </Box>
 
-      {/* Stepper - Hide for response letters */}
-      {!isResponseLetter && (
-        <Box sx={{ width: '100%', mb: 4, maxWidth: 600, mx: 'auto' }}>
-          <Stepper activeStep={2} alternativeLabel>
-            {steps.map((label) => (
-              <Step key={label}>
-                <StepLabel>{label}</StepLabel>
-              </Step>
-            ))}
-          </Stepper>
-        </Box>
-      )}
 
       {error && (
         <Alert severity="error" sx={{ mb: 3, borderRadius: 2 }}>
@@ -369,10 +369,6 @@ const LetterPage = () => {
         isResponseLetter={isResponseLetter}
       />
 
-      {/* Copilot Trace - "Why this letter?" */}
-      {currentLetter && !isResponseLetter && (
-        <LetterTrace includedViolationIds={selectedViolationIds} />
-      )}
 
       {currentLetter && (
         <>
@@ -451,6 +447,61 @@ const LetterPage = () => {
                           {type}
                         </Typography>
                         <Chip label={accounts.length} size="small" color="primary" variant="outlined" />
+                      </Stack>
+                      <Box sx={{ pl: 2 }}>
+                        {accounts.map((account, idx) => (
+                          <Typography
+                            key={idx}
+                            variant="body2"
+                            color="text.secondary"
+                            sx={{ fontSize: '0.85rem' }}
+                          >
+                            {account.creditorName}
+                            {account.accountNumber && ` (${account.accountNumber})`}
+                          </Typography>
+                        ))}
+                      </Box>
+                    </Box>
+                  ))}
+              </Stack>
+            </Paper>
+          )}
+
+          {/* Cross-Bureau Discrepancies Summary */}
+          {Object.keys(discrepanciesByField).length > 0 && (
+            <Paper
+              elevation={0}
+              sx={{
+                p: 3,
+                mt: 3,
+                borderRadius: 3,
+                border: '1px solid',
+                borderColor: '#ffc107',
+                backgroundColor: '#fffde7',
+              }}
+            >
+              <Typography
+                variant="subtitle1"
+                sx={{
+                  fontWeight: 'bold',
+                  mb: 2,
+                  pb: 1,
+                  borderBottom: '2px solid',
+                  borderColor: '#ffc107',
+                }}
+              >
+                Cross-Bureau Discrepancies ({currentLetter?.discrepancy_count || Object.values(discrepanciesByField).flat().length})
+              </Typography>
+              <Stack spacing={2}>
+                {Object.entries(discrepanciesByField)
+                  .sort((a, b) => b[1].length - a[1].length)
+                  .map(([fieldName, accounts]) => (
+                    <Box key={fieldName}>
+                      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                          {fieldName} Mismatch
+                        </Typography>
+                        <Chip label={accounts.length} size="small" sx={{ bgcolor: '#ffc107', color: '#000' }} />
                       </Stack>
                       <Box sx={{ pl: 2 }}>
                         {accounts.map((account, idx) => (
