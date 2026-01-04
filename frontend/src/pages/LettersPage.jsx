@@ -457,6 +457,34 @@ const LettersPage = () => {
                               );
                             }
                           })()}
+
+                          {/* Cross-Bureau Discrepancies */}
+                          {letter.discrepancies_cited?.length > 0 && (
+                            <Box sx={{ mt: 3 }}>
+                              <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 2, color: '#f57c00' }}>
+                                Cross-Bureau Discrepancies ({letter.discrepancy_count || letter.discrepancies_cited.length})
+                              </Typography>
+                              <Stack spacing={1.5}>
+                                {letter.discrepancies_cited.map((disc, i) => (
+                                  <Box key={i} sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                                    <Typography variant="body2" sx={{ fontWeight: 500, minWidth: 160 }}>
+                                      {disc.creditor_name || 'Unknown'}
+                                      {disc.account_number_masked && (
+                                        <Typography component="span" variant="body2" color="text.secondary" sx={{ ml: 1 }}>
+                                          ({disc.account_number_masked})
+                                        </Typography>
+                                      )}
+                                    </Typography>
+                                    <Chip
+                                      label={`${disc.field_name || 'Field'} Mismatch`}
+                                      size="small"
+                                      sx={{ bgcolor: '#fff3e0', color: '#e65100', border: '1px solid #ffb74d' }}
+                                    />
+                                  </Box>
+                                ))}
+                              </Stack>
+                            </Box>
+                          )}
                         </Box>
                       </Collapse>
                     </TableCell>
