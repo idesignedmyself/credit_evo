@@ -1808,7 +1808,7 @@ This correspondence serves as formal notice that the reinsertion failed to satis
 
 Under **15 U.S.C. § 1681i(a)(5)(B)**, a consumer reporting agency may reinsert previously deleted information only if specific statutory prerequisites are satisfied, including certification of accuracy and written notice to the consumer within five (5) business days.
 
-In this case, {canonical_entity} failed to provide any certification, identification of the furnisher, or notice of the right to add a statement. **Absent these mandatory disclosures, a lawful reinsertion could not have occurred. A reinsertion made without statutory certification and notice is void as a matter of law and the information must be removed or blocked immediately.**"""
+In this case, {canonical_entity} failed to provide any certification, identification of the furnisher, or notice of the right to add a statement. **Absent these mandatory disclosures, a lawful reinsertion could not have occurred. A reinsertion made without statutory certification and notice is void as a matter of law and the information must be removed or blocked immediately.** Accordingly, the information is required to be blocked from further reporting pursuant to **15 U.S.C. § 1681i(a)(5)(B)(ii)**."""
     letter_parts.append(basis_section)
 
     # =========================================================================
@@ -1843,7 +1843,7 @@ The following actions are required:
 
 1. **Immediate removal or blocking** of the reinserted item as **unlawfully reinserted**
 
-2. Written certification identifying the source and basis for reinsertion
+2. Written certification, **if any exists**, identifying the source, date, and basis for reinsertion
 
 3. Identification of the furnisher, including name and address
 
