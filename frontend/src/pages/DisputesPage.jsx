@@ -1008,12 +1008,13 @@ const ExpandedRowContent = ({ dispute, onResponseLogged, onStartTracking, onGene
         </Alert>
       )}
 
-      {violations.length === 0 ? (
+      {violations.length === 0 && (!dispute.discrepancies_data || dispute.discrepancies_data.length === 0) ? (
         <Alert severity="info" sx={{ mb: 3 }}>
           No violation data available for this dispute. This may be an older dispute created before tracking was enabled.
         </Alert>
       ) : (
         <Box sx={{ mb: 3 }}>
+          {/* DOFD Violations */}
           {violations.map((violation, idx) => (
             <ViolationResponseRow
               key={violation.violation_id || idx}
@@ -1026,6 +1027,33 @@ const ExpandedRowContent = ({ dispute, onResponseLogged, onStartTracking, onGene
               deadlineDate={dispute.deadline_date}
               testMode={testMode}
               // Tier-2 props
+              tier2NoticeSent={dispute.tier2_notice_sent}
+              tier2NoticeSentAt={dispute.tier2_notice_sent_at}
+              disputeLocked={dispute.locked}
+              disputeTierReached={dispute.tier_reached}
+            />
+          ))}
+
+          {/* Cross-Bureau Discrepancies (same row component, adapted shape) */}
+          {dispute.discrepancies_data?.map((d, idx) => (
+            <ViolationResponseRow
+              key={`discrepancy-${d.discrepancy_id || idx}`}
+              violation={{
+                violation_id: d.discrepancy_id,
+                violation_type: 'CROSS_BUREAU',
+                creditor_name: d.creditor_name,
+                account_number_masked: d.account_number_masked,
+                description: `${d.field_name} mismatch across bureaus`,
+                logged_response: d.logged_response,
+                severity: 'MEDIUM',
+              }}
+              disputeId={dispute.id}
+              entityName={dispute.entity_name}
+              onResponseLogged={onResponseLogged}
+              onGenerateLetter={(v, responseType) => onGenerateLetter(dispute, v, responseType)}
+              trackingStarted={dispute.tracking_started}
+              deadlineDate={dispute.deadline_date}
+              testMode={testMode}
               tier2NoticeSent={dispute.tier2_notice_sent}
               tier2NoticeSentAt={dispute.tier2_notice_sent_at}
               disputeLocked={dispute.locked}
