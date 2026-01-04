@@ -451,6 +451,9 @@ async def generate_response_letter(
     # Get violations from dispute
     all_violations = dispute.original_violation_data or []
 
+    # Also get discrepancies (they can be disputed like violations)
+    all_discrepancies = dispute.discrepancies_data or []
+
     # If a specific violation_id is provided, filter to just that violation
     if request.violation_id:
         # Check both 'violation_id' and 'id' fields, convert to string for comparison
@@ -459,9 +462,32 @@ async def generate_response_letter(
             if str(v.get('violation_id', '')) == str(request.violation_id)
             or str(v.get('id', '')) == str(request.violation_id)
         ]
+
+        # If not found in violations, check discrepancies
+        if not violations:
+            matching_discrepancies = [
+                d for d in all_discrepancies
+                if str(d.get('discrepancy_id', '')) == str(request.violation_id)
+            ]
+            if matching_discrepancies:
+                # Adapt discrepancy to violation shape for letter generation
+                d = matching_discrepancies[0]
+                violations = [{
+                    'violation_id': d.get('discrepancy_id'),
+                    'violation_type': 'CROSS_BUREAU',
+                    'creditor_name': d.get('creditor_name'),
+                    'account_number_masked': d.get('account_number_masked'),
+                    'field_name': d.get('field_name'),
+                    'description': f"{d.get('field_name', 'Field')} mismatch across bureaus",
+                    'severity': 'MEDIUM',
+                    'logged_response': d.get('logged_response'),
+                    'is_discrepancy': True,
+                }]
+
         if not violations:
             # Debug: log what we have vs what we're looking for
             available_ids = [v.get('violation_id') or v.get('id') for v in all_violations]
+            available_ids += [d.get('discrepancy_id') for d in all_discrepancies]
             raise HTTPException(
                 status_code=404,
                 detail=f"Violation not found. Looking for: {request.violation_id}. Available: {available_ids}"
