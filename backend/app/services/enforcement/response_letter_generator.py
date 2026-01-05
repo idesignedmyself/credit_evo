@@ -1044,32 +1044,38 @@ def generate_no_response_letter(
     dispute_date: datetime,
     deadline_date: datetime,
     test_context: bool = False,
+    is_tier2: bool = False,
+    tier2_notice_date: Optional[datetime] = None,
 ) -> str:
     """
-    Generate Tier-2 Canonical enforcement letter for NO_RESPONSE scenario.
+    Generate Canonical enforcement letter for NO_RESPONSE/NO_RESPONSE_AFTER_CURE_WINDOW.
 
-    TIER-2 CANONICAL STRUCTURE:
-    - Fact-first, not statute-first
-    - No hardcoded deadline math or "days past deadline"
-    - No specific deadline date assertions (safe for test mode)
-    - Proves failure to respond is a COMPLETED procedural failure
-    - Frames as examiner failure, not consumer disagreement
-    - Single statutory theory: Failure to Provide Results (§1681i(a)(1)(A), §1681i(a)(6)(A))
+    TIER-1 (NO_RESPONSE): Standard no-response letter
+    TIER-2 (NO_RESPONSE_AFTER_CURE_WINDOW): Escalated letter with:
+    - "Procedural Default After Supervisory Notice" in subject
+    - Supervisory notice + cure window timeline
+    - "Systemic failure" language
+    - "Permanent deletion" (not immediate)
+    - "Willful non-compliance" framing
+    - CFPB + State AG escalation notice
+    - "No further reinvestigation" directive
 
     Key sections:
     1. Header
-    2. Subject: "STATUTORY NON-COMPLIANCE" with "Failure to Provide Results of Reinvestigation"
-    3. Opening: Fact-focused (dispute submitted, no results provided)
-    4. ESTABLISHED FACTS: Bullet points without specific dates
-    5. BASIS FOR NON-COMPLIANCE: WHY failure to respond is non-compliant
-    6. STATUTORY FRAMEWORK: Clean statement of law
-    7. STATUTORY NON-COMPLIANCE: Summary with statute citations
-    8. DEMANDED ACTIONS: Simplified, no redundant timeframes
-    9. RIGHTS PRESERVATION
+    2. Subject: "STATUTORY NON-COMPLIANCE" (Tier-2: "Procedural Default")
+    3. Opening: (Tier-2: supervisory notice + systemic failure)
+    4. STATUTORY FRAMEWORK: (Tier-2: unverifiable as a matter of law)
+    5. ESTABLISHED FACTS: (Tier-2: supervisory notice date + cure window)
+    6. BASIS FOR NON-COMPLIANCE: (Tier-2: willful non-compliance warning)
+    7. STATUTORY NON-COMPLIANCE: (Tier-2: ongoing willful violation)
+    8. DEMANDED ACTIONS: (Tier-2: permanent deletion, no reinvestigation)
+    9. RIGHTS PRESERVATION: (Tier-2: CFPB/AG escalation)
     10. RESPONSE REQUIRED + signature
 
     Args:
         test_context: If True, appends test footer.
+        is_tier2: If True, generates hardened Tier-2 letter.
+        tier2_notice_date: Date supervisory notice was sent.
     """
     # Canonicalize entity name
     canonical_entity = canonicalize_entity_name(entity_name)
@@ -1097,24 +1103,52 @@ Via Certified Mail, Return Receipt Requested"""
 
     # =========================================================================
     # SUBJECT LINE - "NON-COMPLIANCE" not "VIOLATION"
+    # Tier-2: Add "Procedural Default After Supervisory Notice"
     # =========================================================================
-    subject = """RE: FORMAL NOTICE OF STATUTORY NON-COMPLIANCE
+    if is_tier2:
+        subject = """RE: FORMAL NOTICE OF STATUTORY NON-COMPLIANCE
+
+Failure to Provide Results of Reinvestigation & Failure to Delete Unverifiable Information – Procedural Default After Supervisory Notice"""
+    else:
+        subject = """RE: FORMAL NOTICE OF STATUTORY NON-COMPLIANCE
 
 Failure to Provide Results of Reinvestigation & Failure to Delete Unverifiable Information"""
     letter_parts.append(subject)
 
     # =========================================================================
     # OPENING PARAGRAPH - Fact-focused, triggers mandatory deletion
+    # Tier-2: Supervisory notice + "systemic failure" + "permanent deletion"
     # =========================================================================
-    opening = f"""On {dispute_date.strftime('%B %d, %Y')}, {consumer_name} submitted a written dispute regarding inaccurate information appearing in the consumer file maintained by {canonical_entity}.
+    if is_tier2:
+        notice_date_str = tier2_notice_date.strftime('%B %d, %Y') if tier2_notice_date else "[SUPERVISORY NOTICE DATE]"
+        opening = f"""On {dispute_date.strftime('%B %d, %Y')}, I submitted a written dispute regarding inaccurate information appearing in my consumer file maintained by {canonical_entity}.
+
+On **{notice_date_str}**, I issued a **Supervisory Notice** providing {canonical_entity} with a **15-day good-faith cure period** to resolve this procedural default. {canonical_entity} has failed to respond to the original dispute dated {dispute_date.strftime('%B %d, %Y')} **and** has further failed to respond to the subsequent Supervisory Notice. This represents a **systemic failure** to maintain reasonable reinvestigation procedures.
+
+As of the date of this correspondence, **no results of reinvestigation have been provided.** This failure, following supervisory notice and a cure opportunity, constitutes a **completed procedural default** under the Fair Credit Reporting Act and triggers the statutory requirement for **permanent deletion** of the disputed information."""
+    else:
+        opening = f"""On {dispute_date.strftime('%B %d, %Y')}, {consumer_name} submitted a written dispute regarding inaccurate information appearing in the consumer file maintained by {canonical_entity}.
 
 As of the date of this correspondence, **no results of reinvestigation have been provided**. This correspondence serves as formal notice that {canonical_entity} has failed to comply with mandatory procedural requirements under the Fair Credit Reporting Act, thereby triggering the statutory requirement for **immediate deletion** of the disputed information."""
     letter_parts.append(opening)
 
     # =========================================================================
-    # STATUTORY FRAMEWORK - Clean statement of law (moved before facts)
+    # STATUTORY FRAMEWORK - Clean statement of law
+    # Tier-2: Add "unverifiable as a matter of law" conclusion
     # =========================================================================
-    statutory_framework = f"""STATUTORY FRAMEWORK
+    if is_tier2:
+        statutory_framework = f"""STATUTORY FRAMEWORK
+{'=' * 50}
+
+Pursuant to **15 U.S.C. § 1681i(a)(1)(A)**, a consumer reporting agency is required to conduct a reasonable reinvestigation upon receipt of a consumer dispute.
+
+Pursuant to **15 U.S.C. § 1681i(a)(6)(A)**, the agency must provide written notice of the results of the reinvestigation within the statutory timeframe.
+
+Pursuant to **15 U.S.C. § 1681i(a)(5)(A)**, if the accuracy of disputed information **cannot be verified within the statutory period**, the information **must be promptly deleted**.
+
+Where a consumer reporting agency fails to provide results within the statutory window **and** further ignores a formal notice of default, the disputed information is **unverifiable as a matter of law**. Under § 1681i(a)(5)(A), the only lawful remedy remaining is **permanent deletion** of the item."""
+    else:
+        statutory_framework = f"""STATUTORY FRAMEWORK
 {'=' * 50}
 
 Pursuant to **15 U.S.C. § 1681i(a)(1)(A)**, a consumer reporting agency is required to conduct a reasonable reinvestigation upon receipt of a consumer dispute.
@@ -1126,8 +1160,21 @@ Additionally, pursuant to **15 U.S.C. § 1681i(a)(5)(A)**, if the accuracy of di
 
     # =========================================================================
     # ESTABLISHED FACTS - With specific dispute date
+    # Tier-2: Add supervisory notice date and cure window
     # =========================================================================
-    established_facts = f"""ESTABLISHED FACTS
+    if is_tier2:
+        notice_date_str = tier2_notice_date.strftime('%B %d, %Y') if tier2_notice_date else "[SUPERVISORY NOTICE DATE]"
+        established_facts = f"""ESTABLISHED FACTS
+{'=' * 50}
+
+• Written dispute submitted on **{dispute_date.strftime('%B %d, %Y')}**
+• Supervisory Notice and 15-day cure window issued on **{notice_date_str}**
+• Statutory reinvestigation period has elapsed
+• Cure period has elapsed with **no response and no results**
+• No notice of completion, extension, or findings has been issued
+• Disputed information remains on file and continues to be reported"""
+    else:
+        established_facts = f"""ESTABLISHED FACTS
 {'=' * 50}
 
 • Written dispute submitted on **{dispute_date.strftime('%B %d, %Y')}**
@@ -1137,10 +1184,22 @@ Additionally, pursuant to **15 U.S.C. § 1681i(a)(5)(A)**, if the accuracy of di
     letter_parts.append(established_facts)
 
     # =========================================================================
-    # BASIS FOR NON-COMPLIANCE - The key Tier-2 addition
-    # Proves failure to respond is a completed procedural failure + triggers deletion
+    # BASIS FOR NON-COMPLIANCE
+    # Tier-2: Add supervisory notice failure = "willful non-compliance"
     # =========================================================================
-    basis_section = f"""BASIS FOR NON-COMPLIANCE
+    if is_tier2:
+        basis_section = f"""BASIS FOR NON-COMPLIANCE
+{'=' * 50}
+
+The statutory reinvestigation period expired without any results being provided. As a matter of law, information that has not been verified within the statutory period is **unverified and therefore unverifiable** under **15 U.S.C. § 1681i(a)(5)(A)**.
+
+{canonical_entity} was then provided a **Supervisory Notice** and a defined **good-faith cure window**, yet still failed to provide any results, documentation, or corrective action. Where a consumer reporting agency fails to respond to both the original statutory deadline **and** a formal Supervisory Notice, the disputed information is **unverifiable as a matter of law**, and the only lawful remedy remaining is **permanent deletion**.
+
+Accordingly, there is **no lawful basis to continue reporting** the disputed information in any form.
+
+Any further reporting of this item following this completed procedural default constitutes **knowing and willful non-compliance** with the FCRA."""
+    else:
+        basis_section = f"""BASIS FOR NON-COMPLIANCE
 {'=' * 50}
 
 The statutory reinvestigation period expired without any results being provided. Where no results are provided within the statutory timeframe, **no reinvestigation has occurred as a matter of law**.
@@ -1150,8 +1209,19 @@ Information that has not been verified within the statutory period is deemed **u
 
     # =========================================================================
     # STATUTORY NON-COMPLIANCE - Summary
+    # Tier-2: "After Supervisory Notice" + "ongoing willful violation"
     # =========================================================================
-    violation_section = f"""STATUTORY NON-COMPLIANCE
+    if is_tier2:
+        violation_section = f"""STATUTORY NON-COMPLIANCE
+{'=' * 50}
+
+**Non-Compliance:** Failure to Conduct Reinvestigation and Failure to Delete Unverifiable Information After Supervisory Notice
+
+**Statutes:** 15 U.S.C. §§ **1681i(a)(1)(A)**, **1681i(a)(6)(A)**, **1681i(a)(5)(A)**
+
+By failing to provide results of reinvestigation within the statutory period, and by continuing to report disputed information after ignoring a formal Supervisory Notice and cure window, {canonical_entity} is in **ongoing willful violation** of the Fair Credit Reporting Act."""
+    else:
+        violation_section = f"""STATUTORY NON-COMPLIANCE
 {'=' * 50}
 
 **Non-Compliance:** Failure to Conduct Reinvestigation and Failure to Delete Unverifiable Information
@@ -1162,9 +1232,26 @@ By failing to provide results of reinvestigation and by continuing to maintain u
     letter_parts.append(violation_section)
 
     # =========================================================================
-    # DEMANDED ACTIONS - Immediate deletion required
+    # DEMANDED ACTIONS - Deletion required
+    # Tier-2: "Permanent deletion" + "no reinvestigation" + "knowing and willful"
     # =========================================================================
-    demands = f"""DEMANDED ACTIONS
+    if is_tier2:
+        demands = f"""DEMANDED ACTIONS
+{'-' * 50}
+
+The following actions are required **immediately**:
+
+1. **Permanent deletion** of the disputed information as **unverifiable as a matter of law** under 15 U.S.C. § 1681i(a)(5)(A)
+
+2. **Written confirmation of deletion**
+
+3. **Updated consumer disclosure** reflecting the deletion
+
+No further reinvestigation is requested or authorized. The statutory window for verification has closed, and any continued reporting of this item will be treated as **knowing and willful non-compliance**.
+
+Failure to comply will be recorded as continued willful non-compliance and escalated accordingly."""
+    else:
+        demands = f"""DEMANDED ACTIONS
 {'-' * 50}
 
 The following actions are required **immediately**:
@@ -1180,8 +1267,17 @@ Failure to comply will be recorded as continued non-compliance and escalated acc
 
     # =========================================================================
     # RIGHTS PRESERVATION
+    # Tier-2: CFPB + State AG escalation + statutory damages
     # =========================================================================
-    rights = f"""RIGHTS PRESERVATION
+    if is_tier2:
+        rights = f"""RIGHTS PRESERVATION
+{'=' * 50}
+
+This matter is now being prepared for formal escalation to the **Consumer Financial Protection Bureau (CFPB)** and the appropriate **State Attorneys General**.
+
+This notice preserves all claims for **statutory damages, actual damages, and attorneys' fees** under **15 U.S.C. § 1681n**, as well as any other remedies available under applicable law, arising from {canonical_entity}'s negligent or willful non-compliance."""
+    else:
+        rights = f"""RIGHTS PRESERVATION
 {'=' * 50}
 
 Nothing in this correspondence shall be construed as a waiver of any rights or remedies available under **15 U.S.C. §§ 1681n or 1681o** for negligent or willful non-compliance."""
@@ -1189,8 +1285,32 @@ Nothing in this correspondence shall be construed as a waiver of any rights or r
 
     # =========================================================================
     # RESPONSE REQUIRED + CLOSING
+    # Tier-2: Add Supervisory Notice to enclosures
     # =========================================================================
-    closing = f"""RESPONSE REQUIRED
+    if is_tier2:
+        closing = f"""RESPONSE REQUIRED
+{'=' * 50}
+
+A written response confirming completion of the demanded actions is required. No delay-based extensions apply, as the statutory window has already expired.
+
+All future correspondence regarding this matter should be directed to the address listed above.
+
+
+
+Respectfully submitted,
+
+
+
+____________________________________
+{consumer_name}
+
+Enclosures:
+- Copy of original dispute
+- Copy of Supervisory Notice / cure-window letter
+- Proof of mailing
+- Supporting documentation"""
+    else:
+        closing = f"""RESPONSE REQUIRED
 {'=' * 50}
 
 A written response addressing each demanded action is required.
@@ -1235,28 +1355,32 @@ def generate_verified_response_letter(
     dispute_date: datetime,
     response_date: datetime,
     contradictions: Optional[List[Any]] = None,
+    is_tier2: bool = False,
+    tier2_notice_date: Optional[datetime] = None,
 ) -> str:
     """
-    Generate Tier-2 Canonical enforcement letter for VERIFIED response scenario.
+    Generate Canonical enforcement letter for VERIFIED/REPEAT_VERIFIED response.
 
-    TIER-2 CANONICAL STRUCTURE:
-    - Fact-first, not statute-first
-    - Proves verification was IMPOSSIBLE, not just inadequate
-    - Frames as examiner failure, not consumer disagreement
-    - Single statutory theory: Verification Without Reasonable Investigation (§611(a)(1)(A))
+    TIER-1 (VERIFIED): Standard verification rebuttal
+    TIER-2 (REPEAT_VERIFIED): Escalated letter with:
+    - Supervisory notice chronology
+    - Explicit §1681i(a)(7) MOV demand
+    - Pattern-of-non-compliance language
+    - Enhanced rights preservation
 
     Key sections:
     1. Header
-    2. Subject: "STATUTORY NON-COMPLIANCE" (not "VIOLATION")
+    2. Subject: "STATUTORY NON-COMPLIANCE" (Tier-2: "Repeat Verification")
     3. Opening: Fact-focused (dispute submitted, verification claimed)
-    4. STATUTORY FRAMEWORK: Clean statement of law
-    5. ESTABLISHED FACTS: Bullet points of what happened
-    6. DISPUTED ITEM: Furnisher, Account, Violation format
-    7. BASIS FOR NON-COMPLIANCE: WHY verification was impossible
-    8. STATUTORY VIOLATION: Summary with statute citation
-    9. DEMANDED ACTIONS: Dynamic based on severity
-    10. RIGHTS PRESERVATION
-    11. RESPONSE REQUIRED + signature
+    4. [TIER-2 ONLY] ESCALATION PARAGRAPH: Supervisory notice timeline
+    5. STATUTORY FRAMEWORK: Clean statement of law + §1681i(a)(7) for Tier-2
+    6. ESTABLISHED FACTS: Bullet points of what happened
+    7. DISPUTED ITEM: Furnisher, Account, Violation format
+    8. BASIS FOR NON-COMPLIANCE: WHY verification was impossible
+    9. STATUTORY VIOLATION: Summary with statute citation
+    10. DEMANDED ACTIONS: Dynamic based on severity + MOV for Tier-2
+    11. RIGHTS PRESERVATION (enhanced for Tier-2)
+    12. RESPONSE REQUIRED + signature
     """
     # Canonicalize entity name
     canonical_entity = canonicalize_entity_name(entity_name)
@@ -1295,8 +1419,14 @@ Via Certified Mail, Return Receipt Requested"""
 
     # =========================================================================
     # SUBJECT LINE - "NON-COMPLIANCE" not "VIOLATION"
+    # Tier-2: "Repeat Verification" to signal escalation
     # =========================================================================
-    subject = """RE: FORMAL NOTICE OF STATUTORY NON-COMPLIANCE
+    if is_tier2:
+        subject = """RE: FORMAL NOTICE OF STATUTORY NON-COMPLIANCE
+
+Repeat Verification Without Reasonable Investigation"""
+    else:
+        subject = """RE: FORMAL NOTICE OF STATUTORY NON-COMPLIANCE
 
 Verification Without Reasonable Investigation & Failure to Assure Accuracy"""
     letter_parts.append(subject)
@@ -1312,20 +1442,48 @@ This correspondence serves as formal notice that the claimed verification fails 
     letter_parts.append(opening)
 
     # =========================================================================
-    # STATUTORY FRAMEWORK - Clean statement of law
+    # TIER-2 ESCALATION PARAGRAPH - Documents supervisory notice timeline
     # =========================================================================
-    statutory_framework = f"""STATUTORY FRAMEWORK
+    if is_tier2:
+        notice_date_str = tier2_notice_date.strftime('%B %d, %Y') if tier2_notice_date else "[SUPERVISORY NOTICE DATE]"
+        escalation_para = f"""On {notice_date_str}, I issued a formal supervisory notice and cure-window request advising {canonical_entity} that the disputed information contained unresolved accuracy and compliance deficiencies. Despite this notice and opportunity to cure, {canonical_entity} again reported the item as "verified" without addressing the missing compliance data or producing the method of verification.
+
+This pattern reflects a breakdown in supervisory controls governing reinvestigations and vendor-furnisher verification, and will be included in any regulatory or legal review of {canonical_entity}'s compliance practices."""
+        letter_parts.append(escalation_para)
+
+    # =========================================================================
+    # STATUTORY FRAMEWORK - Clean statement of law
+    # Tier-2: Add §1681i(a)(7) for MOV demand
+    # =========================================================================
+    statutory_base = f"""STATUTORY FRAMEWORK
 {'=' * 50}
 
 Pursuant to **15 U.S.C. § 1681i(a)(1)(A)**, upon receipt of a consumer dispute, a consumer reporting agency is required to conduct a reasonable reinvestigation to determine whether the disputed information is inaccurate.
 
 Additionally, pursuant to **15 U.S.C. § 1681e(b)**, a consumer reporting agency must follow reasonable procedures to assure **maximum possible accuracy** of the information reported. Information that contains cross-bureau inconsistencies is not capable of maximum possible accuracy and therefore cannot be verified as accurate."""
-    letter_parts.append(statutory_framework)
+
+    if is_tier2:
+        statutory_base += f"""
+
+Pursuant to **15 U.S.C. § 1681i(a)(7)**, a consumer reporting agency must provide a description of the procedure used to determine the accuracy and completeness of the information, including the business name, address, and telephone number of any furnisher contacted."""
+
+    letter_parts.append(statutory_base)
 
     # =========================================================================
     # ESTABLISHED FACTS - Bullet points
+    # Tier-2: Include supervisory notice date
     # =========================================================================
-    established_facts = f"""ESTABLISHED FACTS
+    if is_tier2:
+        notice_date_str = tier2_notice_date.strftime('%B %d, %Y') if tier2_notice_date else "[SUPERVISORY NOTICE DATE]"
+        established_facts = f"""ESTABLISHED FACTS
+{'=' * 50}
+
+• Written dispute submitted on {dispute_date.strftime('%B %d, %Y')}
+• Supervisory cure-window notice issued on {notice_date_str}
+• Response received on {response_date.strftime('%B %d, %Y')} asserting a second verification
+• Mandatory compliance data remains missing or deficient"""
+    else:
+        established_facts = f"""ESTABLISHED FACTS
 {'=' * 50}
 
 • Written dispute submitted on {dispute_date.strftime('%B %d, %Y')}
@@ -1370,8 +1528,18 @@ Additionally, pursuant to **15 U.S.C. § 1681e(b)**, a consumer reporting agency
 
     # =========================================================================
     # STATUTORY VIOLATION - Summary
+    # Tier-2: "Repeat Verification" + §1681i(a)(7)
     # =========================================================================
-    violation_section = f"""STATUTORY VIOLATION
+    if is_tier2:
+        violation_section = f"""STATUTORY VIOLATION
+{'=' * 50}
+
+**Violation:** Repeat Verification Without Reasonable Investigation
+**Statutes:** 15 U.S.C. §§ 1681i(a)(1)(A), 1681e(b), 1681i(a)(7)
+
+Despite a prior supervisory notice identifying unresolved accuracy deficiencies and an opportunity to cure, {canonical_entity} again reported the item as "verified" without addressing the documented compliance deficiencies or producing the method of verification. This pattern of repeat verification without reasonable investigation constitutes statutory non-compliance."""
+    else:
+        violation_section = f"""STATUTORY VIOLATION
 {'=' * 50}
 
 **Violation:** Verification Without Reasonable Investigation and Failure to Assure Maximum Possible Accuracy
@@ -1382,16 +1550,40 @@ By verifying information that is logically impossible and substantiated as inacc
 
     # =========================================================================
     # DEMANDED ACTIONS - Dynamic based on severity
+    # Tier-2: Add explicit MOV demand per §1681i(a)(7)
     # =========================================================================
     primary_remedy = determine_primary_remedy(contradictions)
     actions = generate_demanded_actions(primary_remedy, canonical_entity, "VERIFIED")
+
+    # Tier-2: Insert MOV demand as first action after deletion/correction
+    if is_tier2:
+        mov_demand = (
+            "Disclosure of the Method of Verification (MOV) pursuant to 15 U.S.C. § 1681i(a)(7), "
+            "including the business name, address, and telephone number of any furnisher contacted "
+            "in connection with the reinvestigation"
+        )
+        # Insert MOV demand after the primary remedy action (position 1)
+        if len(actions) > 1:
+            actions.insert(1, mov_demand)
+        else:
+            actions.append(mov_demand)
+
     demands = format_demanded_actions_section(actions)
     letter_parts.append(demands)
 
     # =========================================================================
     # RIGHTS PRESERVATION
+    # Tier-2: Enhanced language for damages preservation
     # =========================================================================
-    rights = f"""RIGHTS PRESERVATION
+    if is_tier2:
+        rights = f"""RIGHTS PRESERVATION
+{'=' * 50}
+
+This notice preserves all claims arising from negligent or willful non-compliance under 15 U.S.C. §§ 1681n and 1681o, including statutory and actual damages, attorneys' fees, and costs.
+
+The pattern of repeat verification following supervisory notice constitutes evidence of willful non-compliance and will be documented for regulatory and legal review."""
+    else:
+        rights = f"""RIGHTS PRESERVATION
 {'=' * 50}
 
 Nothing in this correspondence shall be construed as a waiver of any rights or remedies available under 15 U.S.C. §§ 1681n or 1681o for negligent or willful non-compliance."""
@@ -1438,26 +1630,30 @@ def generate_rejected_response_letter(
     has_5_day_notice: bool = False,
     has_specific_reason: bool = False,
     contradictions: Optional[List[Any]] = None,
+    is_tier2: bool = False,
+    tier2_notice_date: Optional[datetime] = None,
 ) -> str:
     """
-    Generate Tier-2 Canonical enforcement letter for REJECTED (Frivolous/Irrelevant) response.
+    Generate Canonical enforcement letter for REJECTED/DEFLECTION_FRIVOLOUS response.
 
-    TIER-2 CANONICAL STRUCTURE:
-    - Fact-first, not statute-first
-    - Proves frivolous determination was PROCEDURALLY INVALID
-    - Frames as examiner failure, not consumer disagreement
-    - Single statutory theory: Improper Frivolous Determination (§1681i(a)(3)(B))
+    TIER-1 (REJECTED): Standard frivolous rebuttal
+    TIER-2 (DEFLECTION_FRIVOLOUS): Escalated letter with:
+    - "Failure to Comply with § 1681i(a)(3)(B)" in subject
+    - "Procedurally void and without legal effect" language
+    - "Circumvent reinvestigation duties" framing
+    - "Statutory period was never tolled" assertion
+    - "Bad-faith obstruction" warning in demands
 
     Key sections:
     1. Header
-    2. Subject: "STATUTORY NON-COMPLIANCE" with "Improper Frivolous/Irrelevant Determination"
-    3. Opening: Fact-focused (dispute submitted, frivolous designation made)
-    4. ESTABLISHED FACTS: Bullet points of what happened
-    5. DISPUTED ITEM: Furnisher, Account, Violation format
-    6. BASIS FOR NON-COMPLIANCE: WHY frivolous determination was invalid
-    7. STATUTORY FRAMEWORK: Clean statement of law
-    8. STATUTORY NON-COMPLIANCE: Summary with statute citation
-    9. DEMANDED ACTIONS: Dynamic based on severity
+    2. Subject: "STATUTORY NON-COMPLIANCE" (Tier-2: adds statute cite)
+    3. Opening: Fact-focused (Tier-2: stronger void language)
+    4. STATUTORY FRAMEWORK: Clean statement of law
+    5. ESTABLISHED FACTS: Bullet points of what happened
+    6. DISPUTED ITEM: Furnisher, Account, Violation format
+    7. BASIS FOR NON-COMPLIANCE: WHY frivolous was invalid (Tier-2: circumvention framing)
+    8. STATUTORY NON-COMPLIANCE: Summary (Tier-2: clock never tolled)
+    9. DEMANDED ACTIONS: (Tier-2: bad-faith obstruction warning)
     10. RIGHTS PRESERVATION
     11. RESPONSE REQUIRED + signature
     """
@@ -1494,24 +1690,48 @@ Via Certified Mail, Return Receipt Requested"""
 
     # =========================================================================
     # SUBJECT LINE - "NON-COMPLIANCE" not "VIOLATION"
+    # Tier-2: Add statute citation to signal escalation
     # =========================================================================
-    subject = """RE: FORMAL NOTICE OF STATUTORY NON-COMPLIANCE
+    if is_tier2:
+        subject = """RE: FORMAL NOTICE OF STATUTORY NON-COMPLIANCE
+
+Improper Frivolous / Irrelevant Determination — Failure to Comply with § 1681i(a)(3)(B)"""
+    else:
+        subject = """RE: FORMAL NOTICE OF STATUTORY NON-COMPLIANCE
 
 Improper Frivolous / Irrelevant Determination"""
     letter_parts.append(subject)
 
     # =========================================================================
     # OPENING PARAGRAPH - Fact-focused, void as a matter of law
+    # Tier-2: "Procedurally void and without legal effect"
     # =========================================================================
-    opening = f"""On {dispute_date.strftime('%B %d, %Y')}, {consumer_name} submitted a written dispute regarding inaccurate information appearing in the consumer file maintained by {canonical_entity}. {canonical_entity} subsequently designated the dispute as "frivolous or irrelevant."
+    if is_tier2:
+        opening = f"""On {dispute_date.strftime('%B %d, %Y')}, I submitted a written dispute regarding inaccurate information appearing in my {canonical_entity} consumer file. {canonical_entity} subsequently designated the dispute as **"frivolous or irrelevant."**
+
+This correspondence serves as **formal notice** that the frivolous determination fails to satisfy the statutory prerequisites under **15 U.S.C. § 1681i(a)(3)(B)** and is therefore **procedurally void and without legal effect.**"""
+    else:
+        opening = f"""On {dispute_date.strftime('%B %d, %Y')}, {consumer_name} submitted a written dispute regarding inaccurate information appearing in the consumer file maintained by {canonical_entity}. {canonical_entity} subsequently designated the dispute as "frivolous or irrelevant."
 
 This correspondence serves as formal notice that the frivolous determination fails to satisfy statutory prerequisites under **15 U.S.C. § 1681i(a)(3)(B)** and is therefore **void as a matter of law**."""
     letter_parts.append(opening)
 
     # =========================================================================
-    # STATUTORY FRAMEWORK - Clean statement of law (moved before facts)
+    # STATUTORY FRAMEWORK - Clean statement of law
+    # Tier-2: Stronger language about not tolling
     # =========================================================================
-    statutory_framework = f"""STATUTORY FRAMEWORK
+    if is_tier2:
+        statutory_framework = f"""STATUTORY FRAMEWORK
+{'=' * 50}
+
+Under **15 U.S.C. § 1681i(a)(3)(B)**, a consumer reporting agency may treat a dispute as frivolous or irrelevant **only if the notice to the consumer:**
+
+1. **Identifies the specific reasons** for the determination; and
+2. **Identifies the specific information required** to investigate the disputed item.
+
+If these disclosures are not made, the frivolous designation is **invalid** and **does not toll or suspend the agency's duty to reinvestigate** under **§ 1681i(a)(1)(A).**"""
+    else:
+        statutory_framework = f"""STATUTORY FRAMEWORK
 {'=' * 50}
 
 Pursuant to **15 U.S.C. § 1681i(a)(3)(B)**, a consumer reporting agency may treat a dispute as frivolous or irrelevant only if it provides a notice to the consumer that:
@@ -1557,10 +1777,20 @@ Failure to meet these prerequisites renders the determination invalid and **does
     letter_parts.append(disputed_item)
 
     # =========================================================================
-    # BASIS FOR NON-COMPLIANCE - The key Tier-2 addition
-    # Proves frivolous determination was procedurally invalid and clock never stopped
+    # BASIS FOR NON-COMPLIANCE
+    # Tier-2: Add "circumvent reinvestigation duties" framing
     # =========================================================================
-    basis_section = f"""BASIS FOR NON-COMPLIANCE
+    if is_tier2:
+        basis_section = f"""BASIS FOR NON-COMPLIANCE
+{'=' * 50}
+
+A consumer reporting agency may only refuse to reinvestigate when the statutory requirements of **§ 1681i(a)(3)(B)** are fully satisfied. {canonical_entity} did not satisfy those requirements.
+
+The designation of this dispute as "frivolous" is particularly significant given that the dispute identified an **objective, verifiable compliance defect ({primary_desc})** which is mandatory for lawful reporting. Categorizing a documented accuracy failure as "frivolous" constitutes an attempt to **circumvent reinvestigation duties imposed under § 1681i(a)(1)(A).**
+
+Because the statutory prerequisites were not satisfied, **the frivolous determination is void as a matter of law and does not toll the statutory reinvestigation period.**"""
+    else:
+        basis_section = f"""BASIS FOR NON-COMPLIANCE
 {'=' * 50}
 
 A consumer reporting agency may treat a dispute as frivolous only if the statutory prerequisites of **15 U.S.C. § 1681i(a)(3)(B)** are satisfied.
@@ -1570,8 +1800,18 @@ A consumer reporting agency may treat a dispute as frivolous only if the statuto
 
     # =========================================================================
     # STATUTORY NON-COMPLIANCE - Summary
+    # Tier-2: "Clock never tolled" assertion
     # =========================================================================
-    violation_section = f"""STATUTORY NON-COMPLIANCE
+    if is_tier2:
+        violation_section = f"""STATUTORY NON-COMPLIANCE
+{'=' * 50}
+
+**Non-Compliance:** Improper Frivolous / Irrelevant Determination
+**Statute:** **15 U.S.C. § 1681i(a)(3)(B)**
+
+Because the frivolous determination was procedurally invalid, the statutory period for reinvestigation under **15 U.S.C. § 1681i(a)(1)** **was never tolled.** As of the date of this notice, {canonical_entity} remains obligated to complete a lawful reinvestigation using the original dispute date."""
+    else:
+        violation_section = f"""STATUTORY NON-COMPLIANCE
 {'=' * 50}
 
 **Non-Compliance:** Improper Frivolous / Irrelevant Determination
@@ -1583,8 +1823,25 @@ By issuing a frivolous determination without satisfying mandatory statutory prer
 
     # =========================================================================
     # DEMANDED ACTIONS - Preserves original dispute date
+    # Tier-2: "Bad-faith obstruction" warning
     # =========================================================================
-    demands = f"""DEMANDED ACTIONS
+    if is_tier2:
+        demands = f"""DEMANDED ACTIONS
+{'-' * 50}
+
+The following actions are required:
+
+1. **Formal withdrawal** of the frivolous/irrelevant determination as procedurally invalid
+
+2. **Immediate reinvestigation** of the disputed item pursuant to **§ 1681i(a)(1)(A)**, with the **original dispute date preserved**
+
+3. Written results of reinvestigation as required by **§ 1681i(a)(6)(A)**
+
+4. If {canonical_entity} continues to assert a frivolous determination, provide **the specific evidentiary basis for that determination and identify the exact information required to investigate**, as mandated by **§ 1681i(a)(3)(B)**
+
+Failure to provide this information while continuing to refuse reinvestigation will be documented as **bad-faith obstruction** and preserved for regulatory and legal review."""
+    else:
+        demands = f"""DEMANDED ACTIONS
 {'-' * 50}
 
 The following actions are required:

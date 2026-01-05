@@ -633,13 +633,16 @@ async def generate_response_letter(
 
     elif response_type == "REPEAT_VERIFIED":
         # Tier-2: They re-verified after supervisory notice
-        # Route to verified response letter (same canonical structure)
+        # Route to verified response letter with Tier-2 escalation language
         response = db.query(DisputeResponseDB).filter(
             DisputeResponseDB.dispute_id == dispute_id,
             DisputeResponseDB.response_type == ResponseType.VERIFIED
         ).first()
 
         response_date = response.response_date if response else datetime.now().date()
+
+        # Get Tier-2 supervisory notice date from dispute
+        tier2_notice_date = dispute.tier2_notice_sent_at if hasattr(dispute, 'tier2_notice_sent_at') else None
 
         letter_content = generate_verified_response_letter(
             consumer=consumer,
@@ -648,11 +651,13 @@ async def generate_response_letter(
             original_violations=violations,
             dispute_date=datetime.combine(dispute_date, datetime.min.time()) if dispute_date else datetime.now(),
             response_date=datetime.combine(response_date, datetime.min.time()) if response_date else datetime.now(),
+            is_tier2=True,
+            tier2_notice_date=tier2_notice_date,
         )
 
     elif response_type == "DEFLECTION_FRIVOLOUS":
         # Tier-2: They called it frivolous again after supervisory notice
-        # Route to rejected response letter (same canonical structure)
+        # Route to rejected response letter with Tier-2 escalation language
         response = db.query(DisputeResponseDB).filter(
             DisputeResponseDB.dispute_id == dispute_id,
             DisputeResponseDB.response_type == ResponseType.REJECTED
@@ -662,6 +667,9 @@ async def generate_response_letter(
         rejection_reason = response.rejection_reason if response and hasattr(response, 'rejection_reason') else None
         has_5_day_notice = response.has_5_day_notice if response and hasattr(response, 'has_5_day_notice') else False
         has_specific_reason = response.has_specific_reason if response and hasattr(response, 'has_specific_reason') else False
+
+        # Get Tier-2 supervisory notice date from dispute
+        tier2_notice_date = dispute.tier2_notice_sent_at if hasattr(dispute, 'tier2_notice_sent_at') else None
 
         letter_content = generate_rejected_response_letter(
             consumer=consumer,
@@ -673,13 +681,18 @@ async def generate_response_letter(
             rejection_reason=rejection_reason,
             has_5_day_notice=has_5_day_notice,
             has_specific_reason=has_specific_reason,
+            is_tier2=True,
+            tier2_notice_date=tier2_notice_date,
         )
 
     elif response_type == "NO_RESPONSE_AFTER_CURE_WINDOW":
         # Tier-2: They failed to respond within cure window after supervisory notice
-        # Route to no response letter (same canonical structure)
+        # Route to no response letter with Tier-2 escalation language
         test_dispute_date = dispute_date or datetime.now().date()
         test_deadline_date = deadline_date or datetime.now().date()
+
+        # Get Tier-2 supervisory notice date from dispute
+        tier2_notice_date = dispute.tier2_notice_sent_at if hasattr(dispute, 'tier2_notice_sent_at') else None
 
         letter_content = generate_no_response_letter(
             consumer=consumer,
@@ -689,6 +702,8 @@ async def generate_response_letter(
             dispute_date=datetime.combine(test_dispute_date, datetime.min.time()),
             deadline_date=datetime.combine(test_deadline_date, datetime.min.time()),
             test_context=request.test_context,
+            is_tier2=True,
+            tier2_notice_date=tier2_notice_date,
         )
 
     elif response_type == "CURED":
