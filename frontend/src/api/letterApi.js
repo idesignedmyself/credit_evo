@@ -7,10 +7,27 @@ import apiClient from './apiClient';
 export const letterApi = {
   /**
    * Get all letters for the current user
+   * @param {Object} filters - Optional filters
+   * @param {string} filters.channel - Filter by channel: CRA, CFPB, LAWYER
+   * @param {number} filters.tier - Filter by tier: 0=initial, 1=tier-1, 2=tier-2
    * @returns {Promise<Array>} List of letter summaries
    */
-  getAllLetters: async () => {
-    const response = await apiClient.get('/letters/all');
+  getAllLetters: async (filters = {}) => {
+    const params = new URLSearchParams();
+    if (filters.channel) params.append('channel', filters.channel);
+    if (filters.tier !== undefined) params.append('tier', filters.tier);
+    const queryString = params.toString();
+    const url = queryString ? `/letters/all?${queryString}` : '/letters/all';
+    const response = await apiClient.get(url);
+    return response.data;
+  },
+
+  /**
+   * Get letter counts by channel and tier
+   * @returns {Promise<Object>} Counts: {CRA: {total, tier_0, tier_1, tier_2}, CFPB: {...}, LAWYER: {...}}
+   */
+  getLetterCounts: async () => {
+    const response = await apiClient.get('/letters/counts');
     return response.data;
   },
 

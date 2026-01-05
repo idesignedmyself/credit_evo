@@ -1,6 +1,6 @@
 /**
  * Credit Engine 2.0 - Letters Page
- * Displays all saved dispute letters for the user
+ * Displays all saved dispute letters organized by channel and tier
  */
 import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -28,6 +28,8 @@ import {
   DialogContent,
   DialogActions,
   TextField,
+  Tabs,
+  Tab,
 } from '@mui/material';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -40,9 +42,12 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import PrintIcon from '@mui/icons-material/Print';
 import DownloadIcon from '@mui/icons-material/Download';
 import CloseIcon from '@mui/icons-material/Close';
+import MailOutlineIcon from '@mui/icons-material/MailOutline';
+import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import { jsPDF } from 'jspdf';
 import { letterApi } from '../api';
 import { createDisputeFromLetter, RESPONSE_TYPES } from '../api/disputeApi';
+import LetterTierSection from '../components/LetterTierSection';
 
 // Utility to detect if string is a UUID (old data format)
 const isUUID = (str) => {
@@ -72,15 +77,36 @@ const LettersPage = () => {
   const [expandedId, setExpandedId] = useState(null);
   const [expandedResponseId, setExpandedResponseId] = useState(null);
 
+  // Tab state
+  const [activeTab, setActiveTab] = useState(0); // 0=Mailed, 1=CFPB, 2=Litigation
+  const [counts, setCounts] = useState({
+    CRA: { total: 0, tier_0: 0, tier_1: 0, tier_2: 0 },
+    CFPB: { total: 0, tier_0: 0, tier_1: 0, tier_2: 0 },
+    LAWYER: { total: 0, tier_0: 0, tier_1: 0, tier_2: 0 },
+  });
+
   // Response letter dialog state
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [viewingLetter, setViewingLetter] = useState(null);
 
-  // Separate letters by category
-  const disputeLetters = useMemo(() => {
-    return letters.filter(l => !l.letter_category || l.letter_category === 'dispute');
-  }, [letters]);
+  // Filter letters by channel and tier
+  const getLettersByChannelAndTier = useMemo(() => {
+    const channelMap = {
+      0: 'CRA',
+      1: 'CFPB',
+      2: 'LAWYER',
+    };
+    const channel = channelMap[activeTab] || 'CRA';
+    const channelLetters = letters.filter(l => (l.channel || 'CRA') === channel);
 
+    return {
+      tier0: channelLetters.filter(l => (l.tier ?? 0) === 0),
+      tier1: channelLetters.filter(l => (l.tier ?? 0) === 1),
+      tier2: channelLetters.filter(l => (l.tier ?? 0) === 2),
+    };
+  }, [letters, activeTab]);
+
+  // Legacy: Separate response letters (shown in all channels for now)
   const responseLetters = useMemo(() => {
     return letters.filter(l => l.letter_category === 'response');
   }, [letters]);
@@ -89,8 +115,16 @@ const LettersPage = () => {
     setIsLoading(true);
     setError(null);
     try {
-      const data = await letterApi.getAllLetters();
-      setLetters(data || []);
+      const [lettersData, countsData] = await Promise.all([
+        letterApi.getAllLetters(),
+        letterApi.getLetterCounts(),
+      ]);
+      setLetters(lettersData || []);
+      setCounts(countsData || {
+        CRA: { total: 0, tier_0: 0, tier_1: 0, tier_2: 0 },
+        CFPB: { total: 0, tier_0: 0, tier_1: 0, tier_2: 0 },
+        LAWYER: { total: 0, tier_0: 0, tier_1: 0, tier_2: 0 },
+      });
     } catch (err) {
       setError(err.message || 'Failed to load letters');
     } finally {
@@ -289,340 +323,121 @@ const LettersPage = () => {
         </Paper>
       ) : (
         <>
-        {/* Dispute Letters Section */}
-        {disputeLetters.length > 0 && (
-        <TableContainer
-          component={Paper}
-          elevation={0}
-          sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 3 }}
-        >
-          <Table sx={{ minWidth: 650 }}>
-            <TableHead sx={{ bgcolor: '#f9fafb' }}>
-              <TableRow>
-                <TableCell sx={{ fontWeight: 'bold', width: 50 }}></TableCell>
-                <TableCell sx={{ fontWeight: 'bold', width: 80 }}>ID</TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }}>Bureau</TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }}>Type</TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }}>Tone</TableCell>
-                <TableCell align="center" sx={{ fontWeight: 'bold' }}>Violations</TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }}>Created</TableCell>
-                <TableCell align="right" sx={{ fontWeight: 'bold' }}>Actions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {disputeLetters.map((letter, index) => (
-                <React.Fragment key={letter.letter_id}>
-                  {/* Main Row */}
-                  <TableRow
-                    sx={{
-                      cursor: 'pointer',
-                      '&:last-child td, &:last-child th': { border: expandedId === letter.letter_id ? 0 : undefined },
-                      bgcolor: expandedId === letter.letter_id ? '#f0f7ff' : 'inherit',
-                    }}
-                    hover
-                    onClick={() => handleToggleExpand(letter.letter_id)}
-                  >
-                    <TableCell>
-                      <IconButton size="small">
-                        {expandedId === letter.letter_id ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-                      </IconButton>
-                    </TableCell>
-                    <TableCell>
-                      <Chip
-                        label={disputeLetters.length - index}
-                        size="small"
-                        variant="outlined"
-                        sx={{ fontWeight: 600 }}
-                      />
-                    </TableCell>
-                    <TableCell component="th" scope="row" sx={{ fontWeight: 500 }}>
-                      {letter.bureau?.toUpperCase() || 'N/A'}
-                    </TableCell>
-                    <TableCell>{getLetterTypeChip(letter.letter_type)}</TableCell>
-                    <TableCell>{getToneChip(letter.tone)}</TableCell>
-                    <TableCell align="center">
-                      <Tooltip title={`${letter.violation_count || 0} violation(s) disputed`}>
-                        <Chip
-                          label={letter.violation_count || 0}
-                          size="small"
-                          color="error"
-                          variant="filled"
-                          sx={{ minWidth: 40 }}
-                        />
-                      </Tooltip>
-                    </TableCell>
-                    <TableCell color="text.secondary">
-                      {formatDateTime(letter.created_at)}
-                    </TableCell>
-                    <TableCell align="right" onClick={(e) => e.stopPropagation()}>
-                      <IconButton
-                        color="primary"
-                        size="small"
-                        onClick={() => handleView(letter)}
-                        title="View Letter"
-                      >
-                        <VisibilityIcon />
-                      </IconButton>
-                      <IconButton
-                        color="success"
-                        size="small"
-                        onClick={() => handleTrack(letter)}
-                        disabled={trackingId === letter.letter_id}
-                        title="Track Dispute"
-                      >
-                        {trackingId === letter.letter_id ? (
-                          <CircularProgress size={20} />
-                        ) : (
-                          <TrackChangesIcon />
-                        )}
-                      </IconButton>
-                      <IconButton
-                        color="error"
-                        size="small"
-                        onClick={() => handleDelete(letter.letter_id)}
-                        disabled={deletingId === letter.letter_id}
-                        title="Delete Letter"
-                      >
-                        {deletingId === letter.letter_id ? (
-                          <CircularProgress size={20} />
-                        ) : (
-                          <DeleteIcon />
-                        )}
-                      </IconButton>
-                    </TableCell>
-                  </TableRow>
+        {/* Tab Navigation */}
+        <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
+          <Tabs
+            value={activeTab}
+            onChange={(e, v) => setActiveTab(v)}
+            sx={{
+              minHeight: 48,
+              '& .MuiTab-root': {
+                fontWeight: 600,
+                minHeight: 48,
+                textTransform: 'none',
+              },
+            }}
+          >
+            <Tab
+              value={0}
+              icon={<MailOutlineIcon sx={{ fontSize: 18 }} />}
+              iconPosition="start"
+              label={`Mailed Disputes (${counts.CRA?.total || 0})`}
+              sx={{ gap: 0.5 }}
+            />
+            <Tab
+              value={1}
+              icon={<AccountBalanceIcon sx={{ fontSize: 18 }} />}
+              iconPosition="start"
+              label={`CFPB Complaints (${counts.CFPB?.total || 0})`}
+              sx={{ gap: 0.5 }}
+            />
+            <Tab
+              value={2}
+              icon={<GavelIcon sx={{ fontSize: 18 }} />}
+              iconPosition="start"
+              label="Litigation Packets"
+              sx={{ gap: 0.5 }}
+            />
+          </Tabs>
+        </Box>
 
-                  {/* Expanded Content Row */}
-                  <TableRow>
-                    <TableCell colSpan={8} sx={{ p: 0, borderBottom: expandedId === letter.letter_id ? '1px solid' : 0, borderColor: 'divider' }}>
-                      <Collapse in={expandedId === letter.letter_id} timeout="auto" unmountOnExit>
-                        <Box sx={{ p: 3, bgcolor: '#fafafa' }}>
-                          <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 2 }}>
-                            Violations Disputed in Letter {disputeLetters.length - index}
-                          </Typography>
-                          {(() => {
-                            // Filter violation types, excluding UUIDs (old data)
-                            const violationTypes = (letter.violations_cited || []).filter(v => !isUUID(v));
-                            const accounts = letter.accounts_disputed || [];
-                            const accountNumbers = letter.account_numbers || [];
-
-                            if (violationTypes.length > 0 || accounts.length > 0) {
-                              // Combine violations with accounts - use whichever is longer
-                              const maxLen = Math.max(violationTypes.length, accounts.length);
-                              const combined = [];
-                              for (let i = 0; i < maxLen; i++) {
-                                combined.push({
-                                  creditor: accounts[i] || 'Unknown',
-                                  type: violationTypes[i] || null,
-                                  accountNumber: accountNumbers[i] || null,
-                                });
-                              }
-
-                              return (
-                                <Stack spacing={1.5}>
-                                  {combined.map((item, i) => (
-                                    <Box key={i} sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                                      <Typography variant="body2" sx={{ fontWeight: 500, minWidth: 160 }}>
-                                        {item.creditor}
-                                        {item.accountNumber && (
-                                          <Typography component="span" variant="body2" color="text.secondary" sx={{ ml: 1 }}>
-                                            ({item.accountNumber})
-                                          </Typography>
-                                        )}
-                                      </Typography>
-                                      {item.type && (
-                                        <Chip
-                                          label={formatViolationType(item.type)}
-                                          size="small"
-                                          variant="outlined"
-                                          color="error"
-                                        />
-                                      )}
-                                    </Box>
-                                  ))}
-                                </Stack>
-                              );
-                            } else if (letter.violation_count > 0) {
-                              // Old letter with UUIDs - show count instead
-                              return (
-                                <Typography variant="body2" color="text.secondary">
-                                  {letter.violation_count} violation(s) disputed (legacy format - regenerate letter to see details)
-                                </Typography>
-                              );
-                            } else {
-                              return (
-                                <Typography variant="body2" color="text.secondary">
-                                  No specific violation types recorded for this letter.
-                                </Typography>
-                              );
-                            }
-                          })()}
-
-                          {/* Cross-Bureau Discrepancies */}
-                          {letter.discrepancies_cited?.length > 0 && (
-                            <Box sx={{ mt: 3 }}>
-                              <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 2, color: '#f57c00' }}>
-                                Cross-Bureau Discrepancies ({letter.discrepancy_count || letter.discrepancies_cited.length})
-                              </Typography>
-                              <Stack spacing={1.5}>
-                                {letter.discrepancies_cited.map((disc, i) => (
-                                  <Box key={i} sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                                    <Typography variant="body2" sx={{ fontWeight: 500, minWidth: 160 }}>
-                                      {disc.creditor_name || 'Unknown'}
-                                      {disc.account_number_masked && (
-                                        <Typography component="span" variant="body2" color="text.secondary" sx={{ ml: 1 }}>
-                                          ({disc.account_number_masked})
-                                        </Typography>
-                                      )}
-                                    </Typography>
-                                    <Chip
-                                      label={`${disc.field_name || 'Field'} Mismatch`}
-                                      size="small"
-                                      sx={{ bgcolor: '#fff3e0', color: '#e65100', border: '1px solid #ffb74d' }}
-                                    />
-                                  </Box>
-                                ))}
-                              </Stack>
-                            </Box>
-                          )}
-                        </Box>
-                      </Collapse>
-                    </TableCell>
-                  </TableRow>
-                </React.Fragment>
-              ))}
-            </TableBody>
-          </Table>
-        </TableContainer>
+        {/* Tab Content: Mailed Disputes (CRA) */}
+        {activeTab === 0 && (
+          <Box>
+            <LetterTierSection
+              tier={0}
+              letters={getLettersByChannelAndTier.tier0}
+              onView={handleView}
+              onDelete={handleDelete}
+              onTrack={handleTrack}
+              deletingId={deletingId}
+              trackingId={trackingId}
+              formatDateTime={formatDateTime}
+            />
+            <LetterTierSection
+              tier={1}
+              letters={getLettersByChannelAndTier.tier1}
+              onView={handleView}
+              onDelete={handleDelete}
+              onTrack={handleTrack}
+              deletingId={deletingId}
+              trackingId={trackingId}
+              formatDateTime={formatDateTime}
+            />
+            <LetterTierSection
+              tier={2}
+              letters={getLettersByChannelAndTier.tier2}
+              onView={handleView}
+              onDelete={handleDelete}
+              onTrack={handleTrack}
+              deletingId={deletingId}
+              trackingId={trackingId}
+              formatDateTime={formatDateTime}
+            />
+          </Box>
         )}
 
-        {/* Response Letters Section */}
-        {responseLetters.length > 0 && (
-          <>
-            <Divider sx={{ my: 4 }} />
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 3 }}>
-              <GavelIcon color="primary" />
-              <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-                Response Letters
-              </Typography>
-              <Chip label={responseLetters.length} size="small" color="primary" />
-            </Box>
-            <TableContainer
-              component={Paper}
-              elevation={0}
-              sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 3 }}
-            >
-              <Table sx={{ minWidth: 650 }}>
-                <TableHead sx={{ bgcolor: '#f9fafb' }}>
-                  <TableRow>
-                    <TableCell sx={{ fontWeight: 'bold', width: 50 }}></TableCell>
-                    <TableCell sx={{ fontWeight: 'bold', width: 80 }}>ID</TableCell>
-                    <TableCell sx={{ fontWeight: 'bold' }}>Entity</TableCell>
-                    <TableCell sx={{ fontWeight: 'bold' }}>Response Type</TableCell>
-                    <TableCell align="center" sx={{ fontWeight: 'bold' }}>Word Count</TableCell>
-                    <TableCell sx={{ fontWeight: 'bold' }}>Created</TableCell>
-                    <TableCell align="right" sx={{ fontWeight: 'bold' }}>Actions</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {responseLetters.map((letter, index) => (
-                    <React.Fragment key={letter.letter_id}>
-                      {/* Main Row */}
-                      <TableRow
-                        sx={{
-                          cursor: 'pointer',
-                          '&:last-child td, &:last-child th': { border: expandedResponseId === letter.letter_id ? 0 : undefined },
-                          bgcolor: expandedResponseId === letter.letter_id ? '#f0f7ff' : 'inherit',
-                        }}
-                        hover
-                        onClick={() => handleToggleResponseExpand(letter.letter_id)}
-                      >
-                        <TableCell>
-                          <IconButton size="small">
-                            {expandedResponseId === letter.letter_id ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-                          </IconButton>
-                        </TableCell>
-                        <TableCell>
-                          <Chip
-                            label={responseLetters.length - index}
-                            size="small"
-                            variant="outlined"
-                            color="primary"
-                            sx={{ fontWeight: 600 }}
-                          />
-                        </TableCell>
-                        <TableCell component="th" scope="row" sx={{ fontWeight: 500 }}>
-                          {letter.bureau?.toUpperCase() || 'N/A'}
-                        </TableCell>
-                        <TableCell>{getResponseTypeChip(letter.response_type)}</TableCell>
-                        <TableCell align="center">
-                          <Chip
-                            label={letter.word_count || 0}
-                            size="small"
-                            variant="outlined"
-                          />
-                        </TableCell>
-                        <TableCell color="text.secondary">
-                          {formatDateTime(letter.created_at)}
-                        </TableCell>
-                        <TableCell align="right" onClick={(e) => e.stopPropagation()}>
-                          <IconButton
-                            color="primary"
-                            size="small"
-                            onClick={() => handleView(letter)}
-                            title="View Letter"
-                          >
-                            <VisibilityIcon />
-                          </IconButton>
-                          <IconButton
-                            color="error"
-                            size="small"
-                            onClick={() => handleDelete(letter.letter_id)}
-                            disabled={deletingId === letter.letter_id}
-                            title="Delete Letter"
-                          >
-                            {deletingId === letter.letter_id ? (
-                              <CircularProgress size={20} />
-                            ) : (
-                              <DeleteIcon />
-                            )}
-                          </IconButton>
-                        </TableCell>
-                      </TableRow>
+        {/* Tab Content: CFPB Complaints */}
+        {activeTab === 1 && (
+          <Box>
+            <LetterTierSection
+              tier={0}
+              letters={getLettersByChannelAndTier.tier0}
+              onView={handleView}
+              onDelete={handleDelete}
+              deletingId={deletingId}
+              formatDateTime={formatDateTime}
+            />
+            <LetterTierSection
+              tier={1}
+              letters={getLettersByChannelAndTier.tier1}
+              onView={handleView}
+              onDelete={handleDelete}
+              deletingId={deletingId}
+              formatDateTime={formatDateTime}
+            />
+            <LetterTierSection
+              tier={2}
+              letters={getLettersByChannelAndTier.tier2}
+              onView={handleView}
+              onDelete={handleDelete}
+              deletingId={deletingId}
+              formatDateTime={formatDateTime}
+            />
+          </Box>
+        )}
 
-                      {/* Expanded Content Row */}
-                      <TableRow>
-                        <TableCell colSpan={7} sx={{ p: 0, borderBottom: expandedResponseId === letter.letter_id ? '1px solid' : 0, borderColor: 'divider' }}>
-                          <Collapse in={expandedResponseId === letter.letter_id} timeout="auto" unmountOnExit>
-                            <Box sx={{ p: 3, bgcolor: '#fafafa' }}>
-                              <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 2 }}>
-                                Letter Preview
-                              </Typography>
-                              <Paper
-                                variant="outlined"
-                                sx={{
-                                  p: 2,
-                                  maxHeight: 200,
-                                  overflow: 'auto',
-                                  bgcolor: 'white',
-                                  fontFamily: 'monospace',
-                                  fontSize: '0.85rem',
-                                  whiteSpace: 'pre-wrap',
-                                }}
-                              >
-                                {letter.content?.substring(0, 500) || 'No content available'}
-                                {letter.content?.length > 500 && '...'}
-                              </Paper>
-                            </Box>
-                          </Collapse>
-                        </TableCell>
-                      </TableRow>
-                    </React.Fragment>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          </>
+        {/* Tab Content: Litigation Packets (Placeholder) */}
+        {activeTab === 2 && (
+          <Paper sx={{ p: 6, textAlign: 'center', borderRadius: 3, bgcolor: '#fafafa' }}>
+            <GavelIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 2 }} />
+            <Typography variant="h6" color="text.secondary" sx={{ mb: 1 }}>
+              Litigation Packets
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Attorney case file generation coming soon.
+            </Typography>
+          </Paper>
         )}
         </>
       )}

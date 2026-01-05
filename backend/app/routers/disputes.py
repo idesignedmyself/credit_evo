@@ -829,6 +829,11 @@ async def save_response_letter(
     # Calculate word count
     word_count = len(request.content.split()) if request.content else 0
 
+    # Determine tier based on tier2_notice_sent status
+    # tier=1: Response letter before supervisory notice deadline
+    # tier=2: Response letter after supervisory notice deadline
+    response_tier = 2 if getattr(dispute, 'tier2_notice_sent', False) else 1
+
     # Create letter record
     letter_id = str(uuid.uuid4())
     letter_db = LetterDB(
@@ -844,6 +849,8 @@ async def save_response_letter(
         violations_cited=violations_cited,
         account_numbers=account_numbers,
         word_count=word_count,
+        tier=response_tier,  # Auto-assigned based on tier2_notice_sent
+        channel="CRA",  # Response letters are CRA channel
     )
     db.add(letter_db)
     db.commit()

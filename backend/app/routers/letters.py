@@ -986,20 +986,26 @@ async def save_letter(
 
 @router.get("/all")
 async def list_all_letters(
+    channel: Optional[str] = Query(None, description="Filter by channel: CRA, CFPB, LAWYER"),
+    tier: Optional[int] = Query(None, description="Filter by tier: 0=initial, 1=tier-1, 2=tier-2"),
     current_user: UserDB = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
     Get all letters for the current user.
     Letters are retrieved directly by user_id (includes orphaned letters).
+    Optional filtering by channel and/or tier.
     """
     # Query directly by user_id to include orphaned letters (report_id = NULL)
-    letters = (
-        db.query(LetterDB)
-        .filter(LetterDB.user_id == current_user.id)
-        .order_by(LetterDB.created_at.desc())
-        .all()
-    )
+    query = db.query(LetterDB).filter(LetterDB.user_id == current_user.id)
+
+    # Apply optional filters
+    if channel:
+        query = query.filter(LetterDB.channel == channel)
+    if tier is not None:
+        query = query.filter(LetterDB.tier == tier)
+
+    letters = query.order_by(LetterDB.created_at.desc()).all()
 
     def get_letter_type(tone: str) -> str:
         """Infer letter type from tone."""
@@ -1028,9 +1034,52 @@ async def list_all_letters(
             "accounts": len(letter.accounts_disputed or []),
             "has_edits": letter.edited_content is not None,
             "content": letter.edited_content or letter.content,  # For previews - returns edited version if exists
+            "tier": getattr(letter, 'tier', 0) or 0,  # 0=initial, 1=tier-1, 2=tier-2
+            "channel": getattr(letter, 'channel', 'CRA') or 'CRA',  # CRA, CFPB, LAWYER
         }
         for letter in letters
     ]
+
+
+@router.get("/counts")
+async def get_letter_counts(
+    current_user: UserDB = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get letter counts by channel and tier for tab display.
+    Returns counts for each channel (CRA, CFPB, LAWYER) and tier (0, 1, 2).
+    """
+    from sqlalchemy import func
+
+    # Query counts grouped by channel and tier
+    counts = db.query(
+        LetterDB.channel,
+        LetterDB.tier,
+        func.count(LetterDB.id).label('count')
+    ).filter(
+        LetterDB.user_id == current_user.id
+    ).group_by(
+        LetterDB.channel,
+        LetterDB.tier
+    ).all()
+
+    # Initialize result structure
+    result = {
+        "CRA": {"total": 0, "tier_0": 0, "tier_1": 0, "tier_2": 0},
+        "CFPB": {"total": 0, "tier_0": 0, "tier_1": 0, "tier_2": 0},
+        "LAWYER": {"total": 0, "tier_0": 0, "tier_1": 0, "tier_2": 0},
+    }
+
+    # Populate counts
+    for channel, tier, count in counts:
+        channel_key = channel or "CRA"
+        tier_key = tier if tier is not None else 0
+        if channel_key in result:
+            result[channel_key][f"tier_{tier_key}"] = count
+            result[channel_key]["total"] += count
+
+    return result
 
 
 @router.get("/{letter_id}")

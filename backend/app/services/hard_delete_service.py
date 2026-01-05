@@ -30,7 +30,7 @@ class HardDeleteService:
         Returns cascade counts for confirmation.
         """
         from ..models.db_models import (
-            LetterDB, DisputeDB, ExecutionEventDB,
+            LetterDB, DisputeDB, ExecutionEventDB, ExecutionResponseDB,
             DisputeResponseDB, Tier2ResponseDB, ReinsertionWatchDB,
             EscalationLogDB, PaperTrailDB, SchedulerTaskDB
         )
@@ -45,6 +45,7 @@ class HardDeleteService:
 
         cascade = {
             "disputes": 0,
+            "execution_responses": 0,
             "execution_events": 0,
             "dispute_responses": 0,
             "tier2_responses": 0,
@@ -62,7 +63,20 @@ class HardDeleteService:
         ]
 
         if dispute_ids:
-            # Step 2: Delete all child records of disputes
+            # Step 2: Delete all child records of disputes (order matters for FK constraints)
+            # First: execution_responses (child of execution_events)
+            execution_event_ids = [
+                e.id for e in
+                self.db.query(ExecutionEventDB.id).filter(
+                    ExecutionEventDB.dispute_id.in_(dispute_ids)
+                ).all()
+            ]
+            if execution_event_ids:
+                cascade["execution_responses"] += self.db.query(ExecutionResponseDB).filter(
+                    ExecutionResponseDB.execution_id.in_(execution_event_ids)
+                ).delete(synchronize_session=False)
+
+            # Then: execution_events
             cascade["execution_events"] += self.db.query(ExecutionEventDB).filter(
                 ExecutionEventDB.dispute_id.in_(dispute_ids)
             ).delete(synchronize_session=False)
@@ -102,7 +116,18 @@ class HardDeleteService:
                 DisputeDB.id.in_(dispute_ids)
             ).delete(synchronize_session=False)
 
-        # Step 4: Delete execution_events by letter_id
+        # Step 4: Delete execution_events by letter_id (with child execution_responses first)
+        letter_execution_event_ids = [
+            e.id for e in
+            self.db.query(ExecutionEventDB.id).filter(
+                ExecutionEventDB.letter_id == letter_id
+            ).all()
+        ]
+        if letter_execution_event_ids:
+            cascade["execution_responses"] += self.db.query(ExecutionResponseDB).filter(
+                ExecutionResponseDB.execution_id.in_(letter_execution_event_ids)
+            ).delete(synchronize_session=False)
+
         cascade["execution_events"] += self.db.query(ExecutionEventDB).filter(
             ExecutionEventDB.letter_id == letter_id
         ).delete(synchronize_session=False)
@@ -125,7 +150,7 @@ class HardDeleteService:
         Returns cascade counts for confirmation.
         """
         from ..models.db_models import (
-            LetterDB, DisputeDB, ExecutionEventDB,
+            LetterDB, DisputeDB, ExecutionEventDB, ExecutionResponseDB,
             DisputeResponseDB, Tier2ResponseDB, ReinsertionWatchDB,
             EscalationLogDB, PaperTrailDB, SchedulerTaskDB
         )
@@ -139,6 +164,7 @@ class HardDeleteService:
             return None
 
         cascade = {
+            "execution_responses": 0,
             "execution_events": 0,
             "dispute_responses": 0,
             "tier2_responses": 0,
@@ -149,7 +175,20 @@ class HardDeleteService:
             "related_letters": 0,
         }
 
-        # Step 1: Delete all child records
+        # Step 1: Delete all child records (order matters for FK constraints)
+        # First: execution_responses (child of execution_events)
+        execution_event_ids = [
+            e.id for e in
+            self.db.query(ExecutionEventDB.id).filter(
+                ExecutionEventDB.dispute_id == dispute_id
+            ).all()
+        ]
+        if execution_event_ids:
+            cascade["execution_responses"] = self.db.query(ExecutionResponseDB).filter(
+                ExecutionResponseDB.execution_id.in_(execution_event_ids)
+            ).delete(synchronize_session=False)
+
+        # Then: execution_events
         cascade["execution_events"] = self.db.query(ExecutionEventDB).filter(
             ExecutionEventDB.dispute_id == dispute_id
         ).delete(synchronize_session=False)

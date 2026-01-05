@@ -214,6 +214,10 @@ class LetterDB(Base):
     response_type = Column(String(50), nullable=True)  # For response letters: NO_RESPONSE, VERIFIED, etc.
     status = Column(String(20), default="ACTIVE", nullable=True)  # ACTIVE, VOIDED, SUPERSEDED
 
+    # Tier/Channel for multi-tab organization
+    tier = Column(Integer, default=0, nullable=False)  # 0=initial, 1=tier-1, 2=tier-2
+    channel = Column(String(20), default="CRA", nullable=False)  # CRA, CFPB, LAWYER
+
     # Metadata
     accounts_disputed = Column(JSON)  # List of creditor names
     violations_cited = Column(JSON)   # List of violation types
