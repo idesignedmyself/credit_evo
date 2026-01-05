@@ -1455,12 +1455,24 @@ This pattern reflects a breakdown in supervisory controls governing reinvestigat
     # STATUTORY FRAMEWORK - Clean statement of law
     # Tier-2: Add §1681i(a)(7) for MOV demand
     # =========================================================================
+    # Check if any violations are cross-bureau types
+    cross_bureau_types = {'cross_bureau', 'dofd_mismatch', 'balance_mismatch', 'status_mismatch', 'date_opened_mismatch'}
+    has_cross_bureau = any(
+        v.get('violation_type', v.get('type', '')).lower() in cross_bureau_types
+        or v.get('is_discrepancy', False)
+        for v in original_violations
+    )
+
     statutory_base = f"""STATUTORY FRAMEWORK
 {'=' * 50}
 
 Pursuant to **15 U.S.C. § 1681i(a)(1)(A)**, upon receipt of a consumer dispute, a consumer reporting agency is required to conduct a reasonable reinvestigation to determine whether the disputed information is inaccurate.
 
-Additionally, pursuant to **15 U.S.C. § 1681e(b)**, a consumer reporting agency must follow reasonable procedures to assure **maximum possible accuracy** of the information reported. Information that contains cross-bureau inconsistencies is not capable of maximum possible accuracy and therefore cannot be verified as accurate."""
+Additionally, pursuant to **15 U.S.C. § 1681e(b)**, a consumer reporting agency must follow reasonable procedures to assure **maximum possible accuracy** of the information reported."""
+
+    # Only add cross-bureau language if there are actual cross-bureau discrepancies
+    if has_cross_bureau:
+        statutory_base += """ Information that contains cross-bureau inconsistencies is not capable of maximum possible accuracy and therefore cannot be verified as accurate."""
 
     if is_tier2:
         statutory_base += f"""
@@ -1539,13 +1551,19 @@ Pursuant to **15 U.S.C. § 1681i(a)(7)**, a consumer reporting agency must provi
 
 Despite a prior supervisory notice identifying unresolved accuracy deficiencies and an opportunity to cure, {canonical_entity} again reported the item as "verified" without addressing the documented compliance deficiencies or producing the method of verification. This pattern of repeat verification without reasonable investigation constitutes statutory non-compliance."""
     else:
+        # Use appropriate language based on whether cross-bureau discrepancies exist
+        if has_cross_bureau:
+            inaccuracy_basis = "substantiated as inaccurate by cross-bureau data"
+        else:
+            inaccuracy_basis = "unsupported due to the absence of mandatory compliance data"
+
         violation_section = f"""STATUTORY VIOLATION
 {'=' * 50}
 
 **Violation:** Verification Without Reasonable Investigation and Failure to Assure Maximum Possible Accuracy
 **Statutes:** 15 U.S.C. §§ 1681i(a)(1)(A), 1681e(b)
 
-By verifying information that is logically impossible and substantiated as inaccurate by cross-bureau data, {canonical_entity} failed to conduct a reasonable reinvestigation and is in statutory non-compliance."""
+By verifying information that is logically impossible and {inaccuracy_basis}, {canonical_entity} failed to conduct a reasonable reinvestigation and is in statutory non-compliance."""
     letter_parts.append(violation_section)
 
     # =========================================================================
