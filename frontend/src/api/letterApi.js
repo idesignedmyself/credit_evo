@@ -42,6 +42,7 @@ export const letterApi = {
    * @param {string} params.bureau - Target bureau (transunion|experian|equifax)
    * @param {boolean} params.use_legal - Use Legal/Metro-2 structured letter generator
    * @param {boolean} params.use_copilot - Use Credit Copilot human-language generator
+   * @param {string} params.channel - Document channel: MAILED, CFPB, or LITIGATION
    * @returns {Promise<DisputeLetter>}
    */
   generate: async ({
@@ -53,6 +54,7 @@ export const letterApi = {
     bureau = 'transunion',
     use_legal = false,
     use_copilot = true,
+    channel = 'MAILED',
   }) => {
     const payload = {
       report_id,
@@ -61,6 +63,7 @@ export const letterApi = {
       bureau,
       use_legal,
       use_copilot,
+      channel,
     };
 
     if (selected_violations && selected_violations.length > 0) {

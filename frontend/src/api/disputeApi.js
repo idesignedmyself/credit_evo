@@ -47,12 +47,26 @@ export const startTracking = async (disputeId, sendDate, trackingNumber = null) 
 };
 
 /**
+ * Get dispute counts by tier
+ * @returns {Object} { tier_0, tier_1, tier_2, total }
+ */
+export const getDisputeCounts = async () => {
+  const response = await apiClient.get('/disputes/counts');
+  return response.data;
+};
+
+/**
  * Get all disputes for current user
+ * @param {Object} filters - Optional filters
+ * @param {string} filters.status - Filter by status
+ * @param {string} filters.state - Filter by escalation state
+ * @param {number} filters.tier - Filter by tier (0=initial, 1=response, 2=final)
  */
 export const getDisputes = async (filters = {}) => {
   const params = new URLSearchParams();
   if (filters.status) params.append('status', filters.status);
   if (filters.state) params.append('state', filters.state);
+  if (filters.tier !== undefined && filters.tier !== null) params.append('tier', filters.tier);
 
   const response = await apiClient.get(`/disputes?${params.toString()}`);
   return response.data;

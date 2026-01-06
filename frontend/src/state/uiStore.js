@@ -7,12 +7,9 @@ import { letterApi } from '../api';
 
 const useUIStore = create((set, get) => ({
   // State
-  letterType: 'civilian', // 'civilian' or 'legal'
-  selectedTone: 'formal',
+  documentChannel: 'MAILED', // 'MAILED' | 'CFPB' | 'LITIGATION'
   groupingStrategy: 'by_violation_type',
   selectedBureau: 'transunion',
-  availableTones: ['formal', 'assertive', 'conversational', 'narrative'],
-  legalTones: ['professional', 'strict_legal', 'soft_legal', 'aggressive'],
   availableBureaus: [
     { id: 'transunion', name: 'TransUnion' },
     { id: 'experian', name: 'Experian' },
@@ -29,14 +26,12 @@ const useUIStore = create((set, get) => ({
   error: null,
 
   // Actions
-  setLetterType: (type) => {
+  setDocumentChannel: (channel) => {
     const state = get();
-    // Clear existing letter when letter type changes
+    // Clear existing letter when channel changes
     if (state.currentLetter) {
       set({
-        letterType: type,
-        // Reset tone to appropriate default when switching types
-        selectedTone: type === 'legal' ? 'professional' : 'formal',
+        documentChannel: channel,
         currentLetter: null,
         currentLetterId: null,
         editableLetter: null,
@@ -44,28 +39,7 @@ const useUIStore = create((set, get) => ({
         lastSaved: null,
       });
     } else {
-      set({
-        letterType: type,
-        // Reset tone to appropriate default when switching types
-        selectedTone: type === 'legal' ? 'professional' : 'formal',
-      });
-    }
-  },
-
-  setTone: (tone) => {
-    const state = get();
-    // Clear existing letter when tone changes so user must regenerate
-    if (state.currentLetter) {
-      set({
-        selectedTone: tone,
-        currentLetter: null,
-        currentLetterId: null,
-        editableLetter: null,
-        hasUnsavedChanges: false,
-        lastSaved: null,
-      });
-    } else {
-      set({ selectedTone: tone });
+      set({ documentChannel: channel });
     }
   },
 
@@ -114,18 +88,7 @@ const useUIStore = create((set, get) => ({
     }
   },
 
-  fetchTones: async () => {
-    try {
-      const result = await letterApi.getTones();
-      // API returns [{id, name, description}], extract just the IDs
-      const toneIds = result.tones.map(t => typeof t === 'string' ? t : t.id);
-      set({ availableTones: toneIds });
-      return toneIds;
-    } catch (error) {
-      console.error('Failed to fetch tones:', error);
-      // Keep defaults on error
-    }
-  },
+  // fetchTones removed - no longer using tone selection
 
   loadSavedLetter: async (letterId) => {
     set({ isGeneratingLetter: true, error: null });
@@ -135,7 +98,7 @@ const useUIStore = create((set, get) => ({
         currentLetter: letter,
         currentLetterId: letter.letter_id || letterId,
         editableLetter: letter.edited_content || letter.content,
-        selectedTone: letter.tone || 'formal',
+        documentChannel: letter.channel || 'MAILED',
         groupingStrategy: letter.grouping_strategy || 'by_violation_type',
         isGeneratingLetter: false,
         hasUnsavedChanges: false,
@@ -152,16 +115,19 @@ const useUIStore = create((set, get) => ({
     set({ isGeneratingLetter: true, error: null });
     try {
       const state = get();
-      const isLegal = state.letterType === 'legal';
+
+      // All channels now route through the same API endpoint
+      // Backend handles routing based on channel parameter
       const letter = await letterApi.generate({
         report_id: reportId,
         selected_violations: selectedViolationIds,
         selected_discrepancies: selectedDiscrepancyIds,
-        tone: state.selectedTone,
+        tone: 'professional',
         grouping_strategy: state.groupingStrategy,
         bureau: state.selectedBureau,
-        use_legal: isLegal,
-        use_copilot: !isLegal,
+        use_legal: true,
+        use_copilot: false,
+        channel: state.documentChannel, // MAILED, CFPB, or LITIGATION
       });
       set({
         currentLetter: letter,
@@ -234,12 +200,9 @@ const useUIStore = create((set, get) => ({
 
   resetState: () => {
     set({
-      letterType: 'civilian',
-      selectedTone: 'formal',
+      documentChannel: 'MAILED',
       groupingStrategy: 'by_violation_type',
       selectedBureau: 'transunion',
-      availableTones: ['formal', 'assertive', 'conversational', 'narrative'],
-      legalTones: ['professional', 'strict_legal', 'soft_legal', 'aggressive'],
       availableBureaus: [
         { id: 'transunion', name: 'TransUnion' },
         { id: 'experian', name: 'Experian' },

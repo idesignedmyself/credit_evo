@@ -7,6 +7,7 @@ All endpoints require authentication.
 """
 from __future__ import annotations
 import logging
+from datetime import date
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -87,11 +88,13 @@ class LetterRequest(BaseModel):
     selected_discrepancies: Optional[List[str]] = None  # List of discrepancy IDs to include
     bureau: str = "transunion"  # Target bureau for the letter
     use_copilot: bool = True  # Use Credit Copilot human-language generator
-    use_legal: bool = False  # Use Legal/Metro-2 structured letter generator
-    # Legal generator options (only used when use_legal=True)
+    use_legal: bool = False  # Use Mailed Dispute structured letter generator
+    # Mailed Dispute generator options (only used when use_legal=True)
     include_case_law: bool = True
     include_metro2: bool = True
     include_mov: bool = True
+    # Document channel: MAILED (default), CFPB, LITIGATION
+    channel: str = "MAILED"
 
 
 class LetterResponse(BaseModel):
@@ -332,6 +335,143 @@ async def generate_letter(
     consumer = reconstruct_consumer(report, current_user)
 
     try:
+        # =================================================================
+        # CHANNEL ROUTING: CFPB and LITIGATION have separate generators
+        # =================================================================
+        logger.info(f"[CHANNEL DEBUG] Received channel: '{request.channel}' (type: {type(request.channel).__name__})")
+
+        if request.channel == "CFPB":
+            # Generate CFPB complaint using CFPB letter generator
+            from ..services.cfpb.cfpb_letter_generator import CFPBLetterGenerator, TimelineEvent
+
+            cfpb_generator = CFPBLetterGenerator()
+
+            # Build timeline from violations
+            timeline_events = []
+            for v in filtered_violations:
+                # Use evidence date if available, otherwise leave as dispute creation
+                event_date_val = date.today()
+                if v.evidence and v.evidence.get("date_reported"):
+                    try:
+                        event_date_val = date.fromisoformat(v.evidence["date_reported"])
+                    except (ValueError, TypeError):
+                        pass
+
+                timeline_events.append(
+                    TimelineEvent(
+                        event_date=event_date_val,
+                        event_description=f"Disputed {v.violation_type.value}: {v.creditor_name}",
+                        outcome="Pending"
+                    )
+                )
+
+            cfpb_letter = cfpb_generator.generate(
+                cfpb_stage="initial",
+                consumer=consumer,
+                contradictions=filtered_violations,
+                timeline_events=timeline_events,
+                entity_name=request.bureau.title(),
+                account_info=filtered_violations[0].account_number_masked if filtered_violations else "N/A",
+            )
+
+            # Save to database with CFPB channel
+            letter_db = LetterDB(
+                id=str(uuid.uuid4()),
+                user_id=current_user.id,
+                report_id=report_id,
+                content=cfpb_letter.content,
+                bureau=request.bureau,
+                tone="regulatory",
+                channel="CFPB",
+                tier=0,
+                accounts_disputed=[v.creditor_name for v in filtered_violations],
+                violations_cited=[v.violation_type.value for v in filtered_violations],
+                account_numbers=[v.account_number_masked or '' for v in filtered_violations],
+                word_count=len(cfpb_letter.content.split()),
+            )
+            db.add(letter_db)
+            db.commit()
+
+            return LetterResponse(
+                letter_id=letter_db.id,
+                content=cfpb_letter.content,
+                bureau=request.bureau,
+                word_count=len(cfpb_letter.content.split()),
+                accounts_disputed_count=len(set(v.creditor_name for v in filtered_violations)),
+                violations_cited_count=len(filtered_violations),
+                discrepancies_cited=[],
+                discrepancy_count=0,
+                variation_seed_used=0,
+                quality_score=0.9,
+                structure_type="cfpb_complaint",
+                is_legal_format=True,
+                grouping_strategy=request.grouping_strategy,
+            )
+
+        elif request.channel == "LITIGATION":
+            # Generate litigation packet using attorney packet builder
+            from ..services.artifacts.attorney_packet_builder import AttorneyPacketBuilder
+
+            packet_builder = AttorneyPacketBuilder()
+
+            # Build violation data for packet
+            violation_data = [
+                {
+                    "violation_id": v.violation_id,
+                    "violation_type": v.violation_type.value,
+                    "creditor_name": v.creditor_name,
+                    "account_number_masked": v.account_number_masked,
+                    "severity": v.severity.value,
+                    "description": v.description,
+                }
+                for v in filtered_violations
+            ]
+
+            packet = packet_builder.build(
+                consumer=consumer,
+                violations=violation_data,
+                entity_name=request.bureau.title(),
+                dispute_timeline=[],
+            )
+
+            # Save to database with LITIGATION channel
+            letter_db = LetterDB(
+                id=str(uuid.uuid4()),
+                user_id=current_user.id,
+                report_id=report_id,
+                content=packet.get("demand_letter", ""),
+                bureau=request.bureau,
+                tone="demand",
+                channel="LITIGATION",
+                tier=0,
+                accounts_disputed=[v.creditor_name for v in filtered_violations],
+                violations_cited=[v.violation_type.value for v in filtered_violations],
+                account_numbers=[v.account_number_masked or '' for v in filtered_violations],
+                word_count=len(packet.get("demand_letter", "").split()),
+            )
+            db.add(letter_db)
+            db.commit()
+
+            return LetterResponse(
+                letter_id=letter_db.id,
+                content=packet.get("demand_letter", ""),
+                bureau=request.bureau,
+                word_count=len(packet.get("demand_letter", "").split()),
+                accounts_disputed_count=len(set(v.creditor_name for v in filtered_violations)),
+                violations_cited_count=len(filtered_violations),
+                discrepancies_cited=[],
+                discrepancy_count=0,
+                variation_seed_used=0,
+                quality_score=0.95,
+                structure_type="litigation_packet",
+                is_legal_format=True,
+                grouping_strategy=request.grouping_strategy,
+            )
+
+        # =================================================================
+        # MAILED CHANNEL: Standard dispute letter (default fallthrough)
+        # =================================================================
+
         # Normalize tone for routing
         tone_normalized = normalize_tone(request.tone)
 

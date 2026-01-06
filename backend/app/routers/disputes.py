@@ -247,25 +247,102 @@ async def request_artifact(
 # READ-ONLY ENDPOINTS
 # =============================================================================
 
+@router.get("/counts", response_model=dict)
+async def get_dispute_counts(
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user),
+):
+    """
+    Get dispute counts by tier for the current user.
+
+    Returns counts for:
+    - tier_0: Initial disputes (no response logged or tracking not started)
+    - tier_1: Tier-1 Response disputes (has response, not tier2_notice_sent)
+    - tier_2: Tier-2 Final disputes (tier2_notice_sent=true)
+    """
+    from ..models.db_models import DisputeDB, DisputeResponseDB
+    from sqlalchemy import func
+
+    # Get all user disputes
+    disputes = db.query(DisputeDB).filter(
+        DisputeDB.user_id == current_user.id
+    ).all()
+
+    tier_0 = 0  # Initial - no response or not tracking
+    tier_1 = 0  # Tier-1 - has response, not tier2_notice_sent
+    tier_2 = 0  # Tier-2 - tier2_notice_sent=true
+
+    for dispute in disputes:
+        # Check if tier2_notice_sent (Tier-2)
+        if getattr(dispute, 'tier2_notice_sent', False):
+            tier_2 += 1
+        else:
+            # Check if dispute has any responses logged
+            has_response = db.query(DisputeResponseDB).filter(
+                DisputeResponseDB.dispute_id == dispute.id
+            ).first() is not None
+
+            if has_response:
+                tier_1 += 1
+            else:
+                tier_0 += 1
+
+    return {
+        "tier_0": tier_0,
+        "tier_1": tier_1,
+        "tier_2": tier_2,
+        "total": tier_0 + tier_1 + tier_2,
+    }
+
+
 @router.get("", response_model=List[dict])
 async def get_user_disputes(
     status: Optional[DisputeStatus] = None,
     state: Optional[EscalationState] = None,
+    tier: Optional[int] = Query(None, description="Filter by tier: 0=initial, 1=response, 2=final"),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user),
 ):
     """
     Get all disputes for the current user.
 
-    Optional filters by status and state.
+    Optional filters by status, state, and tier.
     """
+    from ..models.db_models import DisputeDB, DisputeResponseDB
+
     service = DisputeService(db)
 
-    return service.get_user_disputes(
+    # Get base disputes
+    disputes = service.get_user_disputes(
         user_id=current_user.id,
         status=status,
         state=state,
     )
+
+    # If tier filter specified, filter in-memory (could optimize with subquery later)
+    if tier is not None:
+        filtered = []
+        for d in disputes:
+            dispute_id = d.get('dispute_id') or d.get('id')
+            dispute_obj = db.query(DisputeDB).filter(DisputeDB.id == dispute_id).first()
+
+            if dispute_obj:
+                is_tier2 = getattr(dispute_obj, 'tier2_notice_sent', False)
+                has_response = db.query(DisputeResponseDB).filter(
+                    DisputeResponseDB.dispute_id == dispute_id
+                ).first() is not None
+
+                # Determine tier
+                if is_tier2 and tier == 2:
+                    filtered.append(d)
+                elif not is_tier2 and has_response and tier == 1:
+                    filtered.append(d)
+                elif not is_tier2 and not has_response and tier == 0:
+                    filtered.append(d)
+
+        return filtered
+
+    return disputes
 
 
 @router.get("/{dispute_id}", response_model=dict)

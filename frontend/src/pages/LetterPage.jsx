@@ -39,14 +39,11 @@ const LetterPage = () => {
     error,
     generateLetter,
     clearLetter,
-    fetchTones,
     loadSavedLetter,
     setBureau,
   } = useUIStore();
 
   useEffect(() => {
-    fetchTones();
-
     // If we have a letterId, load the saved letter
     if (letterId) {
       loadSavedLetter(letterId);
@@ -61,7 +58,7 @@ const LetterPage = () => {
     if (selectedViolationIds.length === 0) {
       fetchAuditResults(reportId);
     }
-  }, [reportId, letterId, selectedViolationIds.length, fetchAuditResults, fetchTones, loadSavedLetter, clearLetter]);
+  }, [reportId, letterId, selectedViolationIds.length, fetchAuditResults, loadSavedLetter, clearLetter]);
 
   // Auto-set bureau from audit result when loaded
   useEffect(() => {

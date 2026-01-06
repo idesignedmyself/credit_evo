@@ -33,9 +33,15 @@ import {
   TextField,
   Switch,
   FormControlLabel,
+  Tabs,
+  Tab,
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import MailOutlineIcon from '@mui/icons-material/MailOutline';
+import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
+import GavelIcon from '@mui/icons-material/Gavel';
+// Note: Table components kept for ExpandedRowContent's internal components
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
@@ -43,6 +49,7 @@ import dayjs from 'dayjs';
 
 import {
   getDisputes,
+  getDisputeCounts,
   getDisputeTimeline,
   logResponse,
   deleteDispute,
@@ -56,6 +63,7 @@ import {
   markTier2NoticeSent,
   logTier2Response,
 } from '../api/disputeApi';
+import DisputeTierSection from '../components/DisputeTierSection';
 import DeleteIcon from '@mui/icons-material/Delete';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import DescriptionIcon from '@mui/icons-material/Description';
@@ -1124,6 +1132,14 @@ const DisputesPage = () => {
   const [refreshKey, setRefreshKey] = useState(0);
   const [deletingId, setDeletingId] = useState(null);
 
+  // Tab state - matches LettersPage: 0=Mailed, 1=CFPB, 2=Litigation
+  const [activeTab, setActiveTab] = useState(0);
+  const [counts, setCounts] = useState({
+    mailed: { total: 0, tier_0: 0, tier_1: 0, tier_2: 0 },
+    cfpb: { total: 0 },
+    litigation: { total: 0 },
+  });
+
   // Start Tracking Dialog State
   const [trackingDialogOpen, setTrackingDialogOpen] = useState(false);
   const [trackingDispute, setTrackingDispute] = useState(null);
@@ -1147,12 +1163,87 @@ const DisputesPage = () => {
   const [letterWordCount, setLetterWordCount] = useState(0);
   const [testMode, setTestMode] = useState(false);  // Test mode - bypasses deadline, blocks save
 
+  // Categorize disputes by tier based on response/tier2 status
+  const categorizeDisputesByTier = (disputeList) => {
+    const tiers = { 0: [], 1: [], 2: [] };
+
+    for (const dispute of disputeList) {
+      // Tier 2: tier2_notice_sent is true
+      if (dispute.tier2_notice_sent) {
+        tiers[2].push(dispute);
+      }
+      // Tier 1: Has response logged (check violation_data for logged_response)
+      else if (
+        dispute.violation_data?.some(v => v.logged_response) ||
+        dispute.discrepancies_data?.some(d => d.logged_response) ||
+        dispute.current_state === 'RESPONDED' ||
+        dispute.current_state === 'EVALUATED' ||
+        dispute.current_state === 'NON_COMPLIANT' ||
+        dispute.current_state === 'NO_RESPONSE' ||
+        dispute.current_state === 'PROCEDURAL_ENFORCEMENT' ||
+        dispute.current_state === 'SUBSTANTIVE_ENFORCEMENT'
+      ) {
+        tiers[1].push(dispute);
+      }
+      // Tier 0: Initial disputes (no response logged)
+      else {
+        tiers[0].push(dispute);
+      }
+    }
+
+    return tiers;
+  };
+
+  // Get disputes filtered by current tab and organized by tier
+  const getDisputesByTabAndTier = () => {
+    // Mailed Disputes tab: CRA disputes (not Tier-3+)
+    if (activeTab === 0) {
+      const mailedDisputes = disputes.filter(d =>
+        d.entity_type === 'CRA' && (d.tier_reached || 0) < 3
+      );
+      return categorizeDisputesByTier(mailedDisputes);
+    }
+    // CFPB Complaints tab: placeholder for now (CFPB cases are separate)
+    else if (activeTab === 1) {
+      return { 0: [], 1: [], 2: [] };
+    }
+    // Litigation Packets tab: Tier-3+ disputes
+    else if (activeTab === 2) {
+      const litigationDisputes = disputes.filter(d => (d.tier_reached || 0) >= 3);
+      // All litigation disputes are shown in a single "Litigation Ready" section
+      return { 0: litigationDisputes, 1: [], 2: [] };
+    }
+    return { 0: [], 1: [], 2: [] };
+  };
+
+  const disputesByTier = getDisputesByTabAndTier();
+
   useEffect(() => {
     const fetchDisputes = async () => {
       setLoading(true);
       try {
         const data = await getDisputes();
-        setDisputes(data || []);
+        const allDisputes = data || [];
+        setDisputes(allDisputes);
+
+        // Calculate counts for tabs
+        const mailedDisputes = allDisputes.filter(d =>
+          d.entity_type === 'CRA' && (d.tier_reached || 0) < 3
+        );
+        const mailedTiers = categorizeDisputesByTier(mailedDisputes);
+        const litigationDisputes = allDisputes.filter(d => (d.tier_reached || 0) >= 3);
+
+        setCounts({
+          mailed: {
+            total: mailedDisputes.length,
+            tier_0: mailedTiers[0].length,
+            tier_1: mailedTiers[1].length,
+            tier_2: mailedTiers[2].length,
+          },
+          cfpb: { total: 0 }, // CFPB cases are separate
+          litigation: { total: litigationDisputes.length },
+        });
+
         setError(null);
       } catch (err) {
         const status = err.response?.status;
@@ -1388,54 +1479,6 @@ const DisputesPage = () => {
     setLetterWordCount(newContent.split(/\s+/).filter(w => w).length);
   };
 
-  const getStateChip = (state) => {
-    const config = ESCALATION_STATES[state] || {};
-    return (
-      <Chip
-        label={config.label || state}
-        size="small"
-        color={config.color || 'default'}
-        variant="outlined"
-      />
-    );
-  };
-
-  const getDeadlineChip = (days, trackingStarted, deadlineDate) => {
-    if (!trackingStarted || deadlineDate === null) {
-      return <Chip label="Clock not started" size="small" color="info" variant="outlined" />;
-    }
-    if (days === null) return <Chip label="Clock not started" size="small" color="info" variant="outlined" />;
-
-    let color = 'default';
-    let variant = 'outlined';
-    if (days < 0) {
-      color = 'error';
-      variant = 'filled';
-    } else if (days < 7) {
-      color = 'warning';
-    }
-
-    return (
-      <Chip
-        label={formatDeadlineDate(deadlineDate)}
-        size="small"
-        color={color}
-        variant={variant}
-      />
-    );
-  };
-
-  const getStatusChip = (status) => {
-    return (
-      <Chip
-        label={status}
-        size="small"
-        color={status === 'CLOSED' ? 'success' : 'default'}
-        variant="outlined"
-      />
-    );
-  };
-
   const formatDateTime = (dateString) => {
     try {
       // Backend stores UTC timestamps without 'Z' suffix - add it for proper timezone conversion
@@ -1489,127 +1532,153 @@ const DisputesPage = () => {
           </Typography>
         </Paper>
       ) : (
-        /* Disputes Table - matches LettersPage style exactly */
-        <TableContainer
-          component={Paper}
-          elevation={0}
-          sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 3 }}
-        >
-          <Table sx={{ minWidth: 650 }}>
-            <TableHead sx={{ bgcolor: '#f9fafb' }}>
-              <TableRow>
-                <TableCell sx={{ fontWeight: 'bold', width: 50 }}></TableCell>
-                <TableCell sx={{ fontWeight: 'bold', width: 80 }}>ID</TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }}>Entity</TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }}>Type</TableCell>
-                <TableCell align="center" sx={{ fontWeight: 'bold' }}>Violations</TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }}>State</TableCell>
-                <TableCell align="center" sx={{ fontWeight: 'bold' }}>Deadline</TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }}>Status</TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }}>Created</TableCell>
-                <TableCell align="right" sx={{ fontWeight: 'bold' }}>Actions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {disputes.map((dispute, index) => (
-                <React.Fragment key={dispute.id}>
-                  {/* Main Row */}
-                  <TableRow
-                    hover
-                    sx={{
-                      cursor: 'pointer',
-                      '&:last-child td, &:last-child th': { border: expandedId === dispute.id ? 0 : undefined },
-                      bgcolor: expandedId === dispute.id ? '#f0f7ff' : 'inherit',
-                    }}
-                    onClick={() => handleToggleExpand(dispute.id)}
-                  >
-                    <TableCell>
-                      <IconButton size="small">
-                        {expandedId === dispute.id ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-                      </IconButton>
-                    </TableCell>
-                    <TableCell>
-                      <Chip
-                        label={disputes.length - index}
-                        size="small"
-                        variant="outlined"
-                        sx={{ fontWeight: 600 }}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                        {dispute.entity_name?.toUpperCase()}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {dispute.entity_type}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Chip label={dispute.entity_type} size="small" color="primary" variant="filled" />
-                    </TableCell>
-                    <TableCell align="center">
-                      <Chip
-                        label={dispute.violation_data?.length || 0}
-                        size="small"
-                        color="error"
-                        variant="filled"
-                        sx={{ minWidth: 40 }}
-                      />
-                    </TableCell>
-                    <TableCell>{getStateChip(dispute.current_state)}</TableCell>
-                    <TableCell align="center">{getDeadlineChip(dispute.days_to_deadline, dispute.tracking_started, dispute.deadline_date)}</TableCell>
-                    <TableCell>{getStatusChip(dispute.status)}</TableCell>
-                    <TableCell>
-                      {formatDateTime(dispute.created_at)}
-                    </TableCell>
-                    <TableCell align="right" onClick={(e) => e.stopPropagation()}>
-                      {!dispute.tracking_started && (
-                        <Tooltip title="Start Tracking">
-                          <IconButton
-                            color="primary"
-                            size="small"
-                            onClick={() => handleOpenTrackingDialog(dispute)}
-                          >
-                            <PlayArrowIcon />
-                          </IconButton>
-                        </Tooltip>
-                      )}
-                      <IconButton
-                        color="error"
-                        size="small"
-                        onClick={() => handleDelete(dispute.id)}
-                        disabled={deletingId === dispute.id}
-                        title="Delete Dispute"
-                      >
-                        {deletingId === dispute.id ? (
-                          <CircularProgress size={20} />
-                        ) : (
-                          <DeleteIcon />
-                        )}
-                      </IconButton>
-                    </TableCell>
-                  </TableRow>
+        <>
+          {/* Tab Navigation - matches LettersPage */}
+          <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
+            <Tabs
+              value={activeTab}
+              onChange={(e, v) => setActiveTab(v)}
+              sx={{
+                minHeight: 48,
+                '& .MuiTab-root': {
+                  fontWeight: 600,
+                  minHeight: 48,
+                  textTransform: 'none',
+                },
+              }}
+            >
+              <Tab
+                value={0}
+                icon={<MailOutlineIcon sx={{ fontSize: 18 }} />}
+                iconPosition="start"
+                label={`Mailed Disputes (${counts.mailed?.total || 0})`}
+                sx={{ gap: 0.5 }}
+              />
+              <Tab
+                value={1}
+                icon={<AccountBalanceIcon sx={{ fontSize: 18 }} />}
+                iconPosition="start"
+                label={`CFPB Complaints (${counts.cfpb?.total || 0})`}
+                sx={{ gap: 0.5 }}
+              />
+              <Tab
+                value={2}
+                icon={<GavelIcon sx={{ fontSize: 18 }} />}
+                iconPosition="start"
+                label={`Litigation Packets (${counts.litigation?.total || 0})`}
+                sx={{ gap: 0.5 }}
+              />
+            </Tabs>
+          </Box>
 
-                  {/* Expanded Content Row */}
-                  <TableRow>
-                    <TableCell colSpan={10} sx={{ p: 0, borderBottom: expandedId === dispute.id ? '1px solid' : 0, borderColor: 'divider' }}>
-                      <Collapse in={expandedId === dispute.id} timeout="auto" unmountOnExit>
-                        <ExpandedRowContent
-                          dispute={dispute}
-                          onResponseLogged={handleResponseLogged}
-                          onStartTracking={handleOpenTrackingDialog}
-                          onGenerateLetter={handleOpenLetterDialog}
-                          testMode={testMode}
-                          onTestModeChange={setTestMode}
-                        />
-                      </Collapse>
-                    </TableCell>
-                  </TableRow>
-                </React.Fragment>
-              ))}
-            </TableBody>
-          </Table>
-        </TableContainer>
+          {/* Tab Content: Mailed Disputes (CRA) */}
+          {activeTab === 0 && (
+            <Box>
+              <DisputeTierSection
+                tier={0}
+                disputes={disputesByTier[0]}
+                onExpand={handleToggleExpand}
+                expandedId={expandedId}
+                onDelete={handleDelete}
+                onStartTracking={handleOpenTrackingDialog}
+                deletingId={deletingId}
+                formatDateTime={formatDateTime}
+                ExpandedRowContent={ExpandedRowContent}
+                expandedRowProps={{
+                  onResponseLogged: handleResponseLogged,
+                  onStartTracking: handleOpenTrackingDialog,
+                  onGenerateLetter: handleOpenLetterDialog,
+                  testMode: testMode,
+                  onTestModeChange: setTestMode,
+                }}
+              />
+              <DisputeTierSection
+                tier={1}
+                disputes={disputesByTier[1]}
+                onExpand={handleToggleExpand}
+                expandedId={expandedId}
+                onDelete={handleDelete}
+                onStartTracking={handleOpenTrackingDialog}
+                deletingId={deletingId}
+                formatDateTime={formatDateTime}
+                ExpandedRowContent={ExpandedRowContent}
+                expandedRowProps={{
+                  onResponseLogged: handleResponseLogged,
+                  onStartTracking: handleOpenTrackingDialog,
+                  onGenerateLetter: handleOpenLetterDialog,
+                  testMode: testMode,
+                  onTestModeChange: setTestMode,
+                }}
+              />
+              <DisputeTierSection
+                tier={2}
+                disputes={disputesByTier[2]}
+                onExpand={handleToggleExpand}
+                expandedId={expandedId}
+                onDelete={handleDelete}
+                onStartTracking={handleOpenTrackingDialog}
+                deletingId={deletingId}
+                formatDateTime={formatDateTime}
+                ExpandedRowContent={ExpandedRowContent}
+                expandedRowProps={{
+                  onResponseLogged: handleResponseLogged,
+                  onStartTracking: handleOpenTrackingDialog,
+                  onGenerateLetter: handleOpenLetterDialog,
+                  testMode: testMode,
+                  onTestModeChange: setTestMode,
+                }}
+              />
+            </Box>
+          )}
+
+          {/* Tab Content: CFPB Complaints */}
+          {activeTab === 1 && (
+            <Paper sx={{ p: 6, textAlign: 'center', borderRadius: 3, bgcolor: '#fafafa' }}>
+              <AccountBalanceIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 2 }} />
+              <Typography variant="h6" color="text.secondary" sx={{ mb: 1 }}>
+                CFPB Complaints
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                CFPB complaint tracking coming soon. File complaints via the CFPB portal.
+              </Typography>
+            </Paper>
+          )}
+
+          {/* Tab Content: Litigation Packets */}
+          {activeTab === 2 && (
+            counts.litigation?.total > 0 ? (
+              <Box>
+                <DisputeTierSection
+                  tier={0}
+                  disputes={disputesByTier[0]}
+                  onExpand={handleToggleExpand}
+                  expandedId={expandedId}
+                  onDelete={handleDelete}
+                  deletingId={deletingId}
+                  formatDateTime={formatDateTime}
+                  ExpandedRowContent={ExpandedRowContent}
+                  expandedRowProps={{
+                    onResponseLogged: handleResponseLogged,
+                    onStartTracking: handleOpenTrackingDialog,
+                    onGenerateLetter: handleOpenLetterDialog,
+                    testMode: testMode,
+                    onTestModeChange: setTestMode,
+                  }}
+                />
+              </Box>
+            ) : (
+              <Paper sx={{ p: 6, textAlign: 'center', borderRadius: 3, bgcolor: '#fafafa' }}>
+                <GavelIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 2 }} />
+                <Typography variant="h6" color="text.secondary" sx={{ mb: 1 }}>
+                  Litigation Packets
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  No disputes have reached litigation stage yet. Disputes promoted to Tier-3 will appear here.
+                </Typography>
+              </Paper>
+            )
+          )}
+        </>
       )}
 
       {/* Start Tracking Dialog */}
