@@ -29,6 +29,10 @@ This document tracks bugs, issues, and obstacles encountered during development 
 21. [B16: Letter Generation Failing for Cross-Bureau Discrepancies](#b16-letter-generation-failing-for-cross-bureau-discrepancies)
 22. [B16: VERIFIED Letter Missing Statutory Double-Tap](#b16-verified-letter-missing-statutory-double-tap)
 23. [B6: Tier-2 UI Reset Bug + Missing Generate Letter Button](#b6-tier-2-ui-reset-bug--missing-generate-letter-button)
+24. [B17: letterApi.js Not Passing Channel Parameter](#b17-letterapijs-not-passing-channel-parameter)
+25. [B17: LetterDB Invalid `letter_type` Keyword](#b17-letterdb-invalid-letter_type-keyword)
+26. [B17: Account Number Extraction vs Passthrough](#b17-account-number-extraction-vs-passthrough)
+27. [B17: Missing `date` Import in letters.py](#b17-missing-date-import-in-letterspy)
 
 ---
 
@@ -921,6 +925,129 @@ elif response_type == "CURED":
 **Files Modified:**
 - `frontend/src/pages/DisputesPage.jsx` - Fixed UI reset, added Generate Letter button
 - `backend/app/routers/disputes.py` - Added Tier-2 response type routing
+
+---
+
+## B17: letterApi.js Not Passing Channel Parameter
+
+**Date:** January 2025
+
+**Symptom:**
+Selecting "CFPB Complaint" in the 3-channel document selector had no effect - letters were always generated as standard mailed disputes regardless of selection.
+
+**Root Cause:**
+The `channel` parameter was being passed to the `generate()` function but was silently dropped because:
+1. It wasn't destructured from the incoming params object
+2. It wasn't included in the payload sent to the API
+
+**Solution:**
+Add `channel` to destructured params and include in payload:
+```javascript
+generate: async ({
+  reportId,
+  violationIds,
+  discrepancyIds = [],
+  channel = 'MAILED',  // Added
+}) => {
+  const payload = {
+    report_id: reportId,
+    violation_ids: violationIds,
+    discrepancy_ids: discrepancyIds,
+    channel,  // Added
+  };
+  // ...
+}
+```
+
+**Files Modified:**
+- `frontend/src/api/letterApi.js`
+
+---
+
+## B17: LetterDB Invalid `letter_type` Keyword
+
+**Date:** January 2025
+
+**Symptom:**
+```
+TypeError: __init__() got an unexpected keyword argument 'letter_type'
+```
+When generating CFPB or Litigation letters.
+
+**Root Cause:**
+The letters router was passing `letter_type="cfpb"` and `letter_type="litigation"` to `LetterDB()` constructor, but the model only has: `tone`, `channel`, `tier`.
+
+**Solution:**
+Remove `letter_type` keyword arguments and use `channel` instead:
+```python
+# Before
+letter_db = LetterDB(letter_type="cfpb", ...)
+
+# After
+letter_db = LetterDB(channel="CFPB", ...)
+```
+
+**Files Modified:**
+- `backend/app/routers/letters.py`
+
+---
+
+## B17: Account Number Extraction vs Passthrough
+
+**Date:** January 2025
+
+**Symptom:**
+CFPB complaint showed "Account ending ****" with asterisks instead of the actual masked account number like "440066301380****".
+
+**Root Cause:**
+Initial implementation created `_extract_account_suffix()` helper that tried to extract the last 4 visible digits. But user feedback clarified: show numbers exactly as they appear in the credit report, including the asterisks.
+
+**Solution:**
+Changed from extraction to passthrough - display `account_number_masked` exactly as stored:
+```python
+# Before (extraction)
+def _extract_account_suffix(self, masked: str) -> str:
+    digits = ''.join(c for c in masked if c.isdigit())
+    return digits[-4:] if len(digits) >= 4 else digits or '****'
+
+# After (passthrough)
+lines.append("Affected accounts:")
+for v in violations:
+    acct = getattr(v, "account_number_masked", None)
+    if acct and acct.strip():
+        lines.append(f"  • {v.creditor_name} — Account: {acct}")
+    else:
+        lines.append(f"  • {v.creditor_name} — Account: (masked)")
+```
+
+**Lesson:** Credit report data should be displayed exactly as received. Don't assume masked formats.
+
+**Files Modified:**
+- `backend/app/services/cfpb/cfpb_letter_generator.py`
+
+---
+
+## B17: Missing `date` Import in letters.py
+
+**Date:** January 2025
+
+**Symptom:**
+```
+NameError: name 'date' is not defined
+```
+When generating letters with deadline calculations.
+
+**Root Cause:**
+`date.today()` was used but only `datetime` was imported, not `date`.
+
+**Solution:**
+Add explicit import:
+```python
+from datetime import date, datetime
+```
+
+**Files Modified:**
+- `backend/app/routers/letters.py`
 
 ---
 

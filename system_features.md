@@ -624,10 +624,162 @@ This strips any leading "Field " from the source string before adding the prefix
 
 ---
 
+## 3-Channel Document Selector
+
+**Added:** January 2025
+
+### Overview
+Replaces the old "Tone Selector" with a 3-channel document type selector, allowing users to generate different document types based on their dispute strategy.
+
+### Channels
+
+| Channel | Icon | Use Case |
+|---------|------|----------|
+| **MAILED** | Mail Icon | Standard FCRA dispute letter to CRA or Furnisher |
+| **CFPB** | Balance Icon | CFPB regulatory complaint with structured allegations |
+| **LITIGATION** | Gavel Icon | Attorney-ready evidence packet with demand letter |
+
+### Location
+- **Frontend:** `frontend/src/components/ToneSelector.jsx`
+- **State:** `frontend/src/state/uiStore.js` (`documentChannel`)
+- **Backend:** `backend/app/routers/letters.py` (channel routing)
+
+### Implementation
+
+#### Frontend State
+```javascript
+// uiStore.js
+documentChannel: 'MAILED',  // 'MAILED' | 'CFPB' | 'LITIGATION'
+setDocumentChannel: (channel) => set({ documentChannel: channel }),
+```
+
+#### UI Component
+Three card buttons with icons, labels, and feature badges:
+- **Mailed Dispute:** FCRA Citations, Metro-2, MOV Demands
+- **CFPB Complaint:** Structured Allegations, Relief Requested
+- **Litigation Packet:** Demand Letter, Evidence Index, Timeline
+
+#### Backend Routing
+```python
+# letters.py
+if channel == "CFPB":
+    letter_content = cfpb_generator.generate_initial(violations, ...)
+elif channel == "LITIGATION":
+    letter_content = litigation_generator.generate(violations, ...)
+else:
+    letter_content = pdf_assembler.assemble(violations, ...)
+```
+
+---
+
+## CFPB Complaint Generator
+
+**Added:** January 2025
+
+### Overview
+Regulatory-grade CFPB complaint generator with statutory framework, structured allegations, and precision legal language designed for CFPB portal submission.
+
+### Location
+`backend/app/services/cfpb/cfpb_letter_generator.py`
+
+### Letter Structure
+
+```
+============================================================
+FORMAL COMPLAINT TO CFPB
+Re: [Bureau] - Failure to Follow Reasonable Procedures
+============================================================
+
+STATUTORY BASIS
+15 U.S.C. § 1681i(a)(1)(A) - Duty to conduct reasonable reinvestigation
+15 U.S.C. § 1681e(b) - Duty to assure maximum possible accuracy
+
+DISPUTED ITEMS BY CATEGORY
+• [Category]: [Creditor] — Account: [masked number]
+
+REINVESTIGATION DEFICIENCY
+The CRA has failed to:
+• [Specific failure description]
+• Explain how the accounts could be "verified as accurate" when the
+  Date of First Delinquency — the sole trigger for the seven-year purge
+  under 15 U.S.C. § 1681c(c) — is absent, rendering any assertion of
+  reporting accuracy a factual impossibility.
+
+Therefore, the dispute was not reasonably investigated as required by law.
+
+============================================================
+
+CONSUMER IMPACT AND PREJUDICE
+
+Without the DOFD, I cannot determine whether these accounts are reporting
+beyond the seven-year statutory limit. This missing mandatory field effectively
+grants the furnisher an unlimited reporting period in violation of
+15 U.S.C. § 1681c(a), suppressing my creditworthiness and access to credit.
+
+============================================================
+
+REQUESTED RESOLUTION
+
+I respectfully request the Bureau:
+1. Direct [Bureau] to conduct a genuinely reasonable reinvestigation...
+2. Require [Bureau] to produce the precise Method of Verification (MOV)...
+3. Direct permanent suppression of the disputed tradelines unless and until
+   the CRA can document that furnisher-level source records substantiate
+   every disputed data field.
+
+============================================================
+
+TIMELINE OF DISPUTE ACTIVITY
+[Date] - Initial dispute submitted
+[Date] - Deadline for response (30 days)
+```
+
+### Key Features
+
+1. **Statutory Framework:** Opens with specific FCRA citations (§ 1681i, § 1681e(b))
+
+2. **Grouped Violations:** Violations organized by category with account details
+
+3. **Factual Impossibility Argument:** New bullet citing § 1681c(c) that challenges "verified as accurate" claims when DOFD is missing
+
+4. **Consumer Impact Section:** Describes prejudice from missing mandatory fields under § 1681c(a)
+
+5. **Precision Legal Language:** 3-point trap in REQUESTED RESOLUTION:
+   - Reasonable reinvestigation under § 1681i(a)(5)(A)
+   - Method of Verification (MOV) production demand
+   - Permanent suppression unless furnisher documentation provided
+
+6. **Account Number Passthrough:** Shows account numbers exactly as they appear in credit reports (e.g., "440066301380****")
+
+### Configuration
+
+```python
+CFPB_VIOLATION_CATEGORIES = {
+    "missing_dofd": "Missing Date of First Delinquency (DOFD)",
+    "obsolete_account": "Obsolete Account Beyond Statutory Period",
+    "stale_reporting": "Stale or Outdated Information",
+    # ... more categories
+}
+```
+
+### API Integration
+
+```python
+# POST /api/letters/generate
+{
+  "report_id": "uuid",
+  "violation_ids": ["uuid1", "uuid2"],
+  "channel": "CFPB"  # Triggers CFPB generator
+}
+```
+
+---
+
 ## Recent Commits
 
 | Commit | Description |
 |--------|-------------|
+| `d8ca1fb` | Add CFPB Channel Adapter for regulatory escalation |
 | `TBD` | Metro 2 Field citation normalization |
 | `TBD` | UI Semantic Layer - Violations vs Advisories |
 | `TBD` | B6: Bureau Ghost Guard - prevent cross-bureau data bleed |
