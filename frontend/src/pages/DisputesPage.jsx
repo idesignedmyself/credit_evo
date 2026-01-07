@@ -125,7 +125,9 @@ const ViolationResponseRow = ({
   disputeTierReached,
 }) => {
   const [responseType, setResponseType] = useState(violation.logged_response || '');
-  const [responseDate, setResponseDate] = useState(null);
+  const [responseDate, setResponseDate] = useState(
+    violation.response_date ? dayjs(violation.response_date) : null
+  );
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState(null);
@@ -144,7 +146,10 @@ const ViolationResponseRow = ({
     if (violation.logged_response && violation.logged_response !== responseType) {
       setResponseType(violation.logged_response);
     }
-  }, [violation.logged_response]);
+    if (violation.response_date) {
+      setResponseDate(dayjs(violation.response_date));
+    }
+  }, [violation.logged_response, violation.response_date]);
 
   // Sync tier2 state with props
   useEffect(() => {
@@ -325,7 +330,7 @@ const ViolationResponseRow = ({
             value={responseType}
             label="Response *"
             onChange={(e) => setResponseType(e.target.value)}
-            disabled={submitting}
+            disabled={submitting || !!violation.logged_response}
           >
             <MenuItem value="">
               <em>Select outcome...</em>
@@ -366,6 +371,7 @@ const ViolationResponseRow = ({
             value={responseDate}
             onChange={setResponseDate}
             maxDate={dayjs()}
+            disabled={!!violation.logged_response}
             slotProps={{
               textField: {
                 size: 'small',
@@ -375,21 +381,34 @@ const ViolationResponseRow = ({
           />
         </LocalizationProvider>
 
-        <Button
-          variant="contained"
-          size="medium"
-          onClick={handleLogResponse}
-          disabled={submitting || !responseType}
-          disableElevation
-          sx={{ minWidth: 90, height: 40 }}
-        >
-          {submitting ? <CircularProgress size={18} /> : 'Save'}
-        </Button>
+        {/* Hide Save button if response already logged */}
+        {!violation.logged_response && (
+          <Button
+            variant="contained"
+            size="medium"
+            onClick={handleLogResponse}
+            disabled={submitting || !responseType}
+            disableElevation
+            sx={{ minWidth: 90, height: 40 }}
+          >
+            {submitting ? <CircularProgress size={18} /> : 'Save'}
+          </Button>
+        )}
 
         {success && (
           <Chip label="Saved!" size="small" color="success" variant="filled" sx={{ height: 28 }} />
         )}
       </Stack>
+
+      {/* Response Locked indicator when already logged */}
+      {violation.logged_response && (
+        <Alert severity="info" sx={{ mt: 1.5, py: 0.5 }} icon={<LockIcon />}>
+          <Typography variant="caption">
+            Response logged as <strong>{RESPONSE_TYPES[violation.logged_response]?.label || violation.logged_response}</strong>.
+            This cannot be changed.
+          </Typography>
+        </Alert>
+      )}
 
       {/* Strategic framing for response types */}
       {responseType === 'DELETED' && (
@@ -435,19 +454,19 @@ const ViolationResponseRow = ({
       {hasEnforcementResponse && !isLocked && (
         <Box sx={{ mt: 2, pt: 2, borderTop: '1px dashed', borderColor: 'divider' }}>
           <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', display: 'block', mb: 1 }}>
-            Tier-2 Supervisory Escalation
+            Tier-1 Supervisory Escalation
           </Typography>
 
           {tier2Result ? (
-            // Show result after Tier-2 response submitted
+            // Show result after Tier-1 response submitted
             <Alert
               severity={tier2Result.status === 'CURED_AT_TIER_2' ? 'success' : 'error'}
               icon={tier2Result.status === 'CURED_AT_TIER_2' ? <CheckCircleIcon /> : <LockIcon />}
             >
               <Typography variant="body2">
                 {tier2Result.status === 'CURED_AT_TIER_2'
-                  ? 'Violation cured at Tier-2. Dispute closed.'
-                  : `Promoted to Tier-3 (Locked). Classification: ${tier2Result.ledger_entry?.examiner_classification || 'N/A'}`}
+                  ? 'Violation cured at Tier-1. Dispute closed.'
+                  : `Promoted to Tier-2 (Locked). Classification: ${tier2Result.ledger_entry?.examiner_classification || 'N/A'}`}
               </Typography>
             </Alert>
           ) : !tier2NoticeSent ? (
@@ -461,31 +480,31 @@ const ViolationResponseRow = ({
                 onClick={handleMarkTier2Sent}
                 disabled={markingSent}
               >
-                {markingSent ? 'Marking...' : 'Mark Tier-2 Notice Sent'}
+                {markingSent ? 'Marking...' : 'Mark Tier-1 Notice Sent'}
               </Button>
               <Typography variant="caption" color="text.secondary">
-                Click after sending your Tier-2 supervisory letter
+                Click after sending your Tier-1 supervisory letter
               </Typography>
             </Stack>
           ) : (
-            // Tier-2 adjudication form
+            // Tier-1 adjudication form
             <Box>
               <Alert severity="success" sx={{ mb: 1.5, py: 0 }}>
                 <Typography variant="caption">
-                  Tier-2 notice sent on {new Date(tier2NoticeSentAt).toLocaleDateString()}
+                  Tier-1 notice sent on {new Date(tier2NoticeSentAt).toLocaleDateString()}
                 </Typography>
               </Alert>
               <Alert severity="warning" sx={{ mb: 1.5, py: 0 }}>
                 <Typography variant="caption">
-                  <strong>Warning:</strong> ONE response only. Non-CURED → Tier-3 (locked).
+                  <strong>Warning:</strong> ONE response only. Non-CURED → Tier-2 (locked).
                 </Typography>
               </Alert>
               <Stack direction="row" spacing={1.5} alignItems="center">
                 <FormControl size="small" sx={{ minWidth: 200 }}>
-                  <InputLabel>Tier-2 Response *</InputLabel>
+                  <InputLabel>Tier-1 Response *</InputLabel>
                   <Select
                     value={tier2ResponseType}
-                    label="Tier-2 Response *"
+                    label="Tier-1 Response *"
                     onChange={(e) => setTier2ResponseType(e.target.value)}
                     disabled={submittingTier2}
                   >
@@ -530,12 +549,12 @@ const ViolationResponseRow = ({
         </Box>
       )}
 
-      {/* Show locked state if at Tier-3 */}
+      {/* Show locked state if at Tier-2 (locked) */}
       {hasEnforcementResponse && isLocked && (
         <Box sx={{ mt: 2, pt: 2, borderTop: '1px dashed', borderColor: 'divider' }}>
           <Alert severity="error" icon={<LockIcon />}>
             <Typography variant="body2">
-              <strong>Tier-3 Locked</strong> — This violation has been promoted to Tier-3. Record is immutable.
+              <strong>Tier-2 Locked</strong> — This violation has been promoted to Tier-2. Record is immutable.
             </Typography>
           </Alert>
         </Box>
@@ -621,7 +640,7 @@ const Tier2ResponseSection = ({ dispute, onResponseLogged }) => {
             <>
               <CheckCircleIcon sx={{ fontSize: 48, color: 'success.main', mb: 1 }} />
               <Typography variant="h6" color="success.main" gutterBottom>
-                Violation Cured at Tier-2
+                Violation Cured at Tier-1
               </Typography>
               <Typography variant="body2" color="text.secondary">
                 The entity has corrected the violation. This dispute is now closed.
@@ -632,7 +651,7 @@ const Tier2ResponseSection = ({ dispute, onResponseLogged }) => {
             <>
               <LockIcon sx={{ fontSize: 48, color: 'error.main', mb: 1 }} />
               <Typography variant="h6" color="error.main" gutterBottom>
-                Promoted to Tier-3
+                Promoted to Tier-2
               </Typography>
               <Typography variant="body2" color="text.secondary">
                 The violation has been locked and classified. Ledger entry created.
@@ -645,7 +664,7 @@ const Tier2ResponseSection = ({ dispute, onResponseLogged }) => {
     );
   }
 
-  // Show locked state if already at Tier-3
+  // Show locked state if already at Tier-2 (locked)
   if (isLocked) {
     return (
       <Box sx={{ mb: 3 }}>
@@ -654,11 +673,11 @@ const Tier2ResponseSection = ({ dispute, onResponseLogged }) => {
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <LockIcon color="error" />
             <Typography variant="subtitle2" color="error.main" sx={{ fontWeight: 600 }}>
-              Tier-3 — Violation Locked
+              Tier-2 — Violation Locked
             </Typography>
           </Box>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-            This violation has been promoted to Tier-3. The record is locked and no further modifications are allowed.
+            This violation has been promoted to Tier-2. The record is locked and no further modifications are allowed.
           </Typography>
         </Paper>
       </Box>
@@ -674,7 +693,7 @@ const Tier2ResponseSection = ({ dispute, onResponseLogged }) => {
     <Box sx={{ mb: 3 }}>
       <Divider sx={{ mb: 3 }} />
       <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 2 }}>
-        Tier-2 Supervisory Response
+        Tier-1 Supervisory Response
       </Typography>
 
       {/* Show which violations are being escalated */}
@@ -718,7 +737,7 @@ const Tier2ResponseSection = ({ dispute, onResponseLogged }) => {
       {!tier2NoticeSent ? (
         <Paper sx={{ p: 3, bgcolor: '#f0f9ff', border: '1px solid', borderColor: 'info.light' }}>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            After sending your Tier-2 supervisory notice letter, mark it as sent to begin the cure window.
+            After sending your Tier-1 supervisory notice letter, mark it as sent to begin the cure window.
           </Typography>
           <Alert severity="info" variant="outlined" sx={{ mb: 2 }}>
             <Typography variant="body2">
@@ -734,7 +753,7 @@ const Tier2ResponseSection = ({ dispute, onResponseLogged }) => {
             disabled={markingSent}
             size="large"
           >
-            {markingSent ? 'Marking as Sent...' : 'Mark Tier-2 Supervisory Notice as Sent'}
+            {markingSent ? 'Marking as Sent...' : 'Mark Tier-1 Supervisory Notice as Sent'}
           </Button>
         </Paper>
       ) : (
@@ -742,28 +761,28 @@ const Tier2ResponseSection = ({ dispute, onResponseLogged }) => {
         <Paper sx={{ p: 3, bgcolor: '#f0fdf4', border: '1px solid', borderColor: 'success.light' }}>
           <Alert severity="success" variant="outlined" sx={{ mb: 2 }}>
             <Typography variant="body2">
-              Tier-2 notice marked as sent
+              Tier-1 notice marked as sent
               {tier2NoticeSentAt && ` on ${new Date(tier2NoticeSentAt).toLocaleDateString()}`}
             </Typography>
           </Alert>
 
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            Log the final response to your Tier-2 supervisory notice.
+            Log the final response to your Tier-1 supervisory notice.
           </Typography>
 
           <Alert severity="warning" variant="outlined" sx={{ mb: 2 }}>
             <Typography variant="body2">
-              <strong>Warning:</strong> Tier-2 is exhausted after ONE response.
-              Non-CURED responses auto-promote to Tier-3 (locked record).
+              <strong>Warning:</strong> Tier-1 is exhausted after ONE response.
+              Non-CURED responses auto-promote to Tier-2 (locked record).
             </Typography>
           </Alert>
 
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems="flex-start">
             <FormControl size="small" sx={{ minWidth: 280 }}>
-              <InputLabel>Tier-2 Response *</InputLabel>
+              <InputLabel>Tier-1 Response *</InputLabel>
               <Select
                 value={tier2ResponseType}
-                label="Tier-2 Response *"
+                label="Tier-1 Response *"
                 onChange={(e) => setTier2ResponseType(e.target.value)}
                 disabled={submittingResponse}
               >
@@ -781,7 +800,7 @@ const Tier2ResponseSection = ({ dispute, onResponseLogged }) => {
                       </Box>
                       <Chip
                         size="small"
-                        label={outcome === 'close' ? 'Closes' : 'Tier-3'}
+                        label={outcome === 'close' ? 'Closes' : 'Tier-2'}
                         color={outcome === 'close' ? 'success' : 'error'}
                         variant="outlined"
                       />
@@ -816,7 +835,7 @@ const Tier2ResponseSection = ({ dispute, onResponseLogged }) => {
               {submittingResponse ? (
                 <CircularProgress size={20} />
               ) : selectedType?.outcome === 'tier3' ? (
-                'Promote to Tier-3'
+                'Promote to Tier-2'
               ) : (
                 'Log Response'
               )}
@@ -832,11 +851,11 @@ const Tier2ResponseSection = ({ dispute, onResponseLogged }) => {
             >
               {selectedType.outcome === 'close' ? (
                 <Typography variant="body2">
-                  This will close the dispute as <strong>CURED_AT_TIER_2</strong>.
+                  This will close the dispute as <strong>Cured at Tier-1</strong>.
                 </Typography>
               ) : (
                 <Typography variant="body2">
-                  This will <strong>promote to Tier-3</strong>: lock the violation record,
+                  This will <strong>promote to Tier-2</strong>: lock the violation record,
                   classify the examiner failure, and write an immutable ledger entry.
                 </Typography>
               )}
@@ -902,6 +921,53 @@ const ExpandedRowContent = ({ dispute, onResponseLogged, onStartTracking, onGene
         </Alert>
       )}
 
+      {/* Tier Progress Indicator */}
+      <Box sx={{ mb: 3 }}>
+        <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+          Dispute Progress
+        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+          {/* Tier 0 - Initial */}
+          <Chip
+            label="Initial"
+            size="small"
+            color="primary"
+            variant="filled"
+            icon={<CheckCircleIcon />}
+          />
+          <Box sx={{ width: 24, height: 2, bgcolor: (dispute.tier_reached || 0) >= 1 ? 'primary.main' : 'divider' }} />
+
+          {/* Tier 1 - Response */}
+          <Chip
+            label="Response"
+            size="small"
+            color={(dispute.tier_reached || 0) >= 1 ? 'primary' : 'default'}
+            variant={(dispute.tier_reached || 0) >= 1 ? 'filled' : 'outlined'}
+            icon={(dispute.tier_reached || 0) >= 1 ? <CheckCircleIcon /> : undefined}
+          />
+          <Box sx={{ width: 24, height: 2, bgcolor: (dispute.tier_reached || 0) >= 2 ? 'warning.main' : 'divider' }} />
+
+          {/* Tier 2 - Supervisory */}
+          <Chip
+            label="Supervisory"
+            size="small"
+            color={(dispute.tier_reached || 0) >= 2 ? 'warning' : 'default'}
+            variant={(dispute.tier_reached || 0) >= 2 ? 'filled' : 'outlined'}
+            icon={(dispute.tier_reached || 0) >= 2 ? <CheckCircleIcon /> : undefined}
+          />
+          <Box sx={{ width: 24, height: 2, bgcolor: (dispute.tier_reached || 0) >= 3 ? 'error.main' : 'divider' }} />
+
+          {/* Tier 3 - Litigation */}
+          <Chip
+            label="Litigation"
+            size="small"
+            color={(dispute.tier_reached || 0) >= 3 ? 'error' : 'default'}
+            variant={(dispute.tier_reached || 0) >= 3 ? 'filled' : 'outlined'}
+            icon={(dispute.tier_reached || 0) >= 3 ? <LockIcon /> : undefined}
+          />
+        </Box>
+      </Box>
+
       {/* Dispute Details - only show if tracking started */}
       {dispute.tracking_started && (
         <Box sx={{ display: 'flex', gap: 4, mb: 3, flexWrap: 'wrap' }}>
@@ -934,66 +1000,6 @@ const ExpandedRowContent = ({ dispute, onResponseLogged, onStartTracking, onGene
 
       <Divider sx={{ mb: 3 }} />
 
-      {/* Violations Summary */}
-      {violations.length > 0 && (
-        <Box sx={{ mb: 3 }}>
-          <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1.5 }}>
-            Violations Being Disputed ({violations.length})
-          </Typography>
-          <Stack spacing={1}>
-            {violations.map((v, i) => (
-              <Box key={i} sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                <Typography variant="body2" sx={{ fontWeight: 500, minWidth: 140 }}>
-                  {v.creditor_name || 'Unknown'}
-                  {v.account_number_masked && (
-                    <Typography component="span" variant="body2" color="text.secondary" sx={{ ml: 1 }}>
-                      ({v.account_number_masked})
-                    </Typography>
-                  )}
-                </Typography>
-                <Chip
-                  label={v.violation_type?.replace(/_/g, ' ') || 'Unknown'}
-                  size="small"
-                  color="error"
-                  variant="outlined"
-                  sx={{ textTransform: 'capitalize' }}
-                />
-              </Box>
-            ))}
-          </Stack>
-        </Box>
-      )}
-
-      {/* Cross-Bureau Discrepancies */}
-      {dispute.discrepancies_data?.length > 0 && (
-        <Box sx={{ mb: 3 }}>
-          <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1.5, color: '#f57c00' }}>
-            Cross-Bureau Discrepancies ({dispute.discrepancies_data.length})
-          </Typography>
-          <Stack spacing={1}>
-            {dispute.discrepancies_data.map((d, i) => (
-              <Box key={i} sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                <Typography variant="body2" sx={{ fontWeight: 500, minWidth: 140 }}>
-                  {d.creditor_name || 'Unknown'}
-                  {d.account_number_masked && (
-                    <Typography component="span" variant="body2" color="text.secondary" sx={{ ml: 1 }}>
-                      ({d.account_number_masked})
-                    </Typography>
-                  )}
-                </Typography>
-                <Chip
-                  label={`${d.field_name || 'Field'} Mismatch`}
-                  size="small"
-                  sx={{ bgcolor: '#fff3e0', color: '#e65100', border: '1px solid #ffb74d' }}
-                />
-              </Box>
-            ))}
-          </Stack>
-        </Box>
-      )}
-
-      <Divider sx={{ mb: 3 }} />
-
       {/* Per-Violation Response Section */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
         <Box>
@@ -1004,21 +1010,6 @@ const ExpandedRowContent = ({ dispute, onResponseLogged, onStartTracking, onGene
             Select how the bureau responded to each violation in your dispute letter
           </Typography>
         </Box>
-        <Tooltip title="Test mode: Bypass deadline checks to preview NO_RESPONSE letters before deadline passes">
-          <FormControlLabel
-            control={
-              <Switch
-                size="small"
-                checked={testMode}
-                onChange={(e) => onTestModeChange?.(e.target.checked)}
-                color="warning"
-              />
-            }
-            label={<Typography variant="caption" color={testMode ? 'warning.main' : 'text.secondary'}>Test Mode</Typography>}
-            labelPlacement="start"
-            sx={{ m: 0 }}
-          />
-        </Tooltip>
       </Box>
 
       {error && (
@@ -1163,31 +1154,27 @@ const DisputesPage = () => {
   const [letterWordCount, setLetterWordCount] = useState(0);
   const [testMode, setTestMode] = useState(false);  // Test mode - bypasses deadline, blocks save
 
-  // Categorize disputes by tier based on response/tier2 status
+  // Categorize disputes by tier - disputes appear in all COMPLETED stages
+  // This preserves history: a Tier-2 dispute also shows in Initial and Tier-1 sections
   const categorizeDisputesByTier = (disputeList) => {
     const tiers = { 0: [], 1: [], 2: [] };
 
     for (const dispute of disputeList) {
-      // Tier 2: tier2_notice_sent is true
-      if (dispute.tier2_notice_sent) {
-        tiers[2].push(dispute);
-      }
-      // Tier 1: Has response logged (check violation_data for logged_response)
-      else if (
+      // Tier 0 (Initial): Every dispute has completed the initial stage
+      tiers[0].push(dispute);
+
+      // Tier 1 (Response): Only if they've actually logged a response to their initial dispute
+      const hasLoggedResponse =
         dispute.violation_data?.some(v => v.logged_response) ||
-        dispute.discrepancies_data?.some(d => d.logged_response) ||
-        dispute.current_state === 'RESPONDED' ||
-        dispute.current_state === 'EVALUATED' ||
-        dispute.current_state === 'NON_COMPLIANT' ||
-        dispute.current_state === 'NO_RESPONSE' ||
-        dispute.current_state === 'PROCEDURAL_ENFORCEMENT' ||
-        dispute.current_state === 'SUBSTANTIVE_ENFORCEMENT'
-      ) {
+        dispute.discrepancies_data?.some(d => d.logged_response);
+
+      if (hasLoggedResponse || dispute.tier2_notice_sent) {
         tiers[1].push(dispute);
       }
-      // Tier 0: Initial disputes (no response logged)
-      else {
-        tiers[0].push(dispute);
+
+      // Tier 2 (Final): Only if tier2_notice_sent is true
+      if (dispute.tier2_notice_sent) {
+        tiers[2].push(dispute);
       }
     }
 
@@ -1196,18 +1183,16 @@ const DisputesPage = () => {
 
   // Get disputes filtered by current tab and organized by tier
   const getDisputesByTabAndTier = () => {
-    // Mailed Disputes tab: CRA disputes (not Tier-3+)
+    // Mailed Disputes tab: ALL CRA disputes (including litigation - for history)
     if (activeTab === 0) {
-      const mailedDisputes = disputes.filter(d =>
-        d.entity_type === 'CRA' && (d.tier_reached || 0) < 3
-      );
+      const mailedDisputes = disputes.filter(d => d.entity_type === 'CRA');
       return categorizeDisputesByTier(mailedDisputes);
     }
     // CFPB Complaints tab: placeholder for now (CFPB cases are separate)
     else if (activeTab === 1) {
       return { 0: [], 1: [], 2: [] };
     }
-    // Litigation Packets tab: Tier-3+ disputes
+    // Litigation Packets tab: Tier-3+ disputes (tier_reached >= 3 in backend)
     else if (activeTab === 2) {
       const litigationDisputes = disputes.filter(d => (d.tier_reached || 0) >= 3);
       // All litigation disputes are shown in a single "Litigation Ready" section
@@ -1227,9 +1212,7 @@ const DisputesPage = () => {
         setDisputes(allDisputes);
 
         // Calculate counts for tabs
-        const mailedDisputes = allDisputes.filter(d =>
-          d.entity_type === 'CRA' && (d.tier_reached || 0) < 3
-        );
+        const mailedDisputes = allDisputes.filter(d => d.entity_type === 'CRA');
         const mailedTiers = categorizeDisputesByTier(mailedDisputes);
         const litigationDisputes = allDisputes.filter(d => (d.tier_reached || 0) >= 3);
 
@@ -1275,7 +1258,24 @@ const DisputesPage = () => {
     setDeletingId(disputeId);
     try {
       await deleteDispute(disputeId);
-      setDisputes(disputes.filter((d) => d.id !== disputeId));
+      // Remove from local state immediately for responsive UI
+      const updatedDisputes = disputes.filter((d) => d.id !== disputeId);
+      setDisputes(updatedDisputes);
+
+      // Also update counts to keep UI in sync
+      const mailedDisputes = updatedDisputes.filter(d => d.entity_type === 'CRA');
+      const mailedTiers = categorizeDisputesByTier(mailedDisputes);
+      const litigationDisputes = updatedDisputes.filter(d => (d.tier_reached || 0) >= 3);
+      setCounts({
+        mailed: {
+          total: mailedDisputes.length,
+          tier_0: mailedTiers[0].length,
+          tier_1: mailedTiers[1].length,
+          tier_2: mailedTiers[2].length,
+        },
+        cfpb: { total: 0 },
+        litigation: { total: litigationDisputes.length },
+      });
     } catch (err) {
       setError(err.message || 'Failed to delete dispute');
     } finally {
@@ -1673,7 +1673,7 @@ const DisputesPage = () => {
                   Litigation Packets
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
-                  No disputes have reached litigation stage yet. Disputes promoted to Tier-3 will appear here.
+                  No disputes have reached litigation stage yet. Disputes promoted to Tier-2 (locked) will appear here.
                 </Typography>
               </Paper>
             )
@@ -1810,37 +1810,6 @@ const DisputesPage = () => {
                 </ul>
               </Alert>
 
-              {/* Test Mode Toggle */}
-              <Paper
-                variant="outlined"
-                sx={{
-                  p: 2,
-                  mt: 2,
-                  bgcolor: testMode ? '#fff3e0' : '#f9fafb',
-                  borderColor: testMode ? 'warning.main' : 'divider',
-                }}
-              >
-                <FormControlLabel
-                  control={
-                    <Switch
-                      checked={testMode}
-                      onChange={(e) => setTestMode(e.target.checked)}
-                      color="warning"
-                    />
-                  }
-                  label={
-                    <Box>
-                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                        Test Mode
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        Bypasses deadline validation for preview. Letter cannot be saved or mailed.
-                      </Typography>
-                    </Box>
-                  }
-                />
-              </Paper>
-
               <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 3, gap: 1 }}>
                 <Button onClick={handleCloseLetterDialog}>
                   Cancel
@@ -1850,33 +1819,15 @@ const DisputesPage = () => {
                   onClick={handleGenerateLetter}
                   disabled={letterLoading}
                   disableElevation
-                  color={testMode ? 'warning' : 'primary'}
+                  color="primary"
                   startIcon={letterLoading ? <CircularProgress size={16} /> : <DescriptionIcon />}
                 >
-                  {letterLoading ? 'Generating...' : testMode ? 'Generate Test Letter' : 'Generate Letter'}
+                  {letterLoading ? 'Generating...' : 'Generate Letter'}
                 </Button>
               </Box>
             </Box>
           ) : (
             <Box>
-              {/* Test Mode Banner */}
-              {testMode && (
-                <Alert
-                  severity="warning"
-                  sx={{
-                    borderRadius: 0,
-                    '& .MuiAlert-message': { width: '100%' },
-                  }}
-                >
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                      TEST DOCUMENT – NOT FOR MAILING
-                    </Typography>
-                    <Chip label="Test Mode" size="small" color="warning" />
-                  </Box>
-                </Alert>
-              )}
-
               {/* Post-generation view with full toolbar */}
               <Paper
                 elevation={0}
@@ -1889,7 +1840,7 @@ const DisputesPage = () => {
                 {/* Header with title and action buttons */}
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, flexWrap: 'wrap', gap: 1 }}>
                   <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                    {testMode ? 'Test Letter Preview' : 'Generated Letter'}
+                    Generated Letter
                   </Typography>
                   <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                     <Button
@@ -1937,23 +1888,16 @@ const DisputesPage = () => {
                     >
                       Download
                     </Button>
-                    <Tooltip
-                      title={testMode ? 'Test letters cannot be saved. Disable test mode first.' : ''}
-                      arrow
+                    <Button
+                      size="small"
+                      startIcon={isSaving ? <CircularProgress size={16} /> : <SaveIcon />}
+                      onClick={handleSaveLetter}
+                      variant="contained"
+                      color="success"
+                      disabled={isSaving || !editableContent}
                     >
-                      <span>
-                        <Button
-                          size="small"
-                          startIcon={isSaving ? <CircularProgress size={16} /> : <SaveIcon />}
-                          onClick={handleSaveLetter}
-                          variant="contained"
-                          color="success"
-                          disabled={isSaving || !editableContent || testMode}
-                        >
-                          {isSaving ? 'Saving...' : 'Save'}
-                        </Button>
-                      </span>
-                    </Tooltip>
+                      {isSaving ? 'Saving...' : 'Save'}
+                    </Button>
                   </Box>
                 </Box>
 

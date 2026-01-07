@@ -109,6 +109,17 @@ const DisputeTierSection = ({
   const [sectionExpanded, setSectionExpanded] = useState(true);
 
   const config = TIER_CONFIG[tier] || TIER_CONFIG[0];
+
+  // Determine the "active" tier for a dispute (where it currently lives)
+  // Delete button only shows when viewing dispute in its active tier
+  const getActiveTier = (dispute) => {
+    if (dispute.tier2_notice_sent) return 2;
+    const hasLoggedResponse =
+      dispute.violation_data?.some(v => v.logged_response) ||
+      dispute.discrepancies_data?.some(d => d.logged_response);
+    if (hasLoggedResponse) return 1;
+    return 0;
+  };
   const disputeCount = disputes?.length || 0;
 
   const getDeadlineChip = (days, trackingStarted, deadlineDate) => {
@@ -231,12 +242,30 @@ const DisputeTierSection = ({
                         />
                       </TableCell>
                       <TableCell>
-                        <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                          {dispute.entity_name?.toUpperCase()}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {dispute.entity_type}
-                        </Typography>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Box>
+                            <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                              {dispute.entity_name?.toUpperCase()}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {dispute.entity_type}
+                            </Typography>
+                          </Box>
+                          {/* Show "History" badge when viewing in non-active tier */}
+                          {tier !== getActiveTier(dispute) && (
+                            <Chip
+                              label="History"
+                              size="small"
+                              variant="outlined"
+                              sx={{
+                                fontSize: '0.65rem',
+                                height: 20,
+                                color: 'text.secondary',
+                                borderColor: 'divider'
+                              }}
+                            />
+                          )}
+                        </Box>
                       </TableCell>
                       <TableCell>
                         <Chip
@@ -289,19 +318,22 @@ const DisputeTierSection = ({
                             </IconButton>
                           </Tooltip>
                         )}
-                        <IconButton
-                          color="error"
-                          size="small"
-                          onClick={() => onDelete(dispute.id)}
-                          disabled={deletingId === dispute.id}
-                          title="Delete Dispute"
-                        >
-                          {deletingId === dispute.id ? (
-                            <CircularProgress size={20} />
-                          ) : (
-                            <DeleteIcon />
-                          )}
-                        </IconButton>
+                        {/* Only show delete in the dispute's active tier (not in history view) */}
+                        {tier === getActiveTier(dispute) && (
+                          <IconButton
+                            color="error"
+                            size="small"
+                            onClick={() => onDelete(dispute.id)}
+                            disabled={deletingId === dispute.id}
+                            title="Delete Dispute"
+                          >
+                            {deletingId === dispute.id ? (
+                              <CircularProgress size={20} />
+                            ) : (
+                              <DeleteIcon />
+                            )}
+                          </IconButton>
+                        )}
                       </TableCell>
                     </TableRow>
 
