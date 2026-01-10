@@ -13,6 +13,8 @@ import {
   Typography,
 } from '@mui/material';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
+import MailOutlineIcon from '@mui/icons-material/MailOutline';
+import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import ScoreDashboard from '../components/ScoreDashboard';
 import AuditSkeleton from '../components/AuditSkeleton';
 import CompactFilterBar from '../components/CompactFilterBar';
@@ -114,8 +116,12 @@ const AuditPage = () => {
     };
   }, [currentReport, violations]);
 
-  const handleContinue = () => {
-    navigate(`/letter/${reportId}`);
+  const handleGenerateLetter = () => {
+    navigate(`/letter/${reportId}?channel=MAILED`);
+  };
+
+  const handleGenerateCFPB = () => {
+    navigate(`/letter/${reportId}?channel=CFPB`);
   };
 
   // Show skeleton on first load (no cached data), show real content instantly if cached
@@ -178,16 +184,29 @@ const AuditPage = () => {
               {selectedViolationIds.length} violations selected
             </Typography>
           </Box>
-          <Button
-            variant="contained"
-            size="large"
-            endIcon={<ArrowForwardIcon />}
-            onClick={handleContinue}
-            disabled={selectedViolationIds.length === 0}
-            disableElevation
-          >
-            Generate Letter
-          </Button>
+          <Box sx={{ display: 'flex', gap: 1.5 }}>
+            <Button
+              variant="contained"
+              size="large"
+              startIcon={<MailOutlineIcon />}
+              onClick={handleGenerateLetter}
+              disabled={selectedViolationIds.length === 0}
+              disableElevation
+            >
+              Generate Letter
+            </Button>
+            <Button
+              variant="contained"
+              size="large"
+              startIcon={<AccountBalanceIcon />}
+              onClick={handleGenerateCFPB}
+              disabled={selectedViolationIds.length === 0}
+              disableElevation
+              sx={{ bgcolor: '#ed6c02', color: 'white', '&:hover': { bgcolor: '#d45a00' } }}
+            >
+              Generate CFPB
+            </Button>
+          </Box>
         </Paper>
       )}
 

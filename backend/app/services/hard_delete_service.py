@@ -4,7 +4,10 @@ Hard Delete Service
 Canonical, transactional deletion of letters and disputes with full dependency teardown.
 No soft-delete, no status flags, no archival.
 """
+import logging
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 
 class HardDeleteService:
@@ -29,18 +32,50 @@ class HardDeleteService:
 
         Returns cascade counts for confirmation.
         """
+        from sqlalchemy import or_
         from ..models.db_models import (
             LetterDB, DisputeDB, ExecutionEventDB, ExecutionResponseDB,
             DisputeResponseDB, Tier2ResponseDB, ReinsertionWatchDB,
-            EscalationLogDB, PaperTrailDB, SchedulerTaskDB
+            EscalationLogDB, PaperTrailDB, SchedulerTaskDB, ReportDB
         )
 
+        # First try direct user_id match
         letter = self.db.query(LetterDB).filter(
             LetterDB.id == letter_id,
             LetterDB.user_id == user_id
         ).first()
 
+        # If not found, check for legacy letters with NULL user_id owned via report
         if not letter:
+            letter = self.db.query(LetterDB).join(
+                ReportDB, LetterDB.report_id == ReportDB.id
+            ).filter(
+                LetterDB.id == letter_id,
+                LetterDB.user_id.is_(None),
+                ReportDB.user_id == user_id
+            ).first()
+
+        # If still not found, check for response letters with NULL user_id owned via dispute
+        if not letter:
+            letter = self.db.query(LetterDB).join(
+                DisputeDB, LetterDB.dispute_id == DisputeDB.id
+            ).filter(
+                LetterDB.id == letter_id,
+                LetterDB.user_id.is_(None),
+                DisputeDB.user_id == user_id
+            ).first()
+
+        if not letter:
+            # Debug: Check if letter exists at all
+            any_letter = self.db.query(LetterDB).filter(LetterDB.id == letter_id).first()
+            if any_letter:
+                logger.warning(
+                    f"Letter {letter_id} exists but ownership check failed. "
+                    f"letter.user_id={any_letter.user_id}, request.user_id={user_id}, "
+                    f"report_id={any_letter.report_id}, dispute_id={any_letter.dispute_id}"
+                )
+            else:
+                logger.info(f"Letter {letter_id} does not exist in database")
             return None
 
         cascade = {

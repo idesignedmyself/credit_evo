@@ -15,7 +15,6 @@ import DashboardIcon from '@mui/icons-material/Dashboard';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import HistoryIcon from '@mui/icons-material/History';
 import DescriptionIcon from '@mui/icons-material/Description';
-import GavelIcon from '@mui/icons-material/Gavel';
 import PersonIcon from '@mui/icons-material/Person';
 import LogoutIcon from '@mui/icons-material/Logout';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
@@ -34,7 +33,6 @@ const menuItems = [
   { text: 'Upload Report', icon: <UploadFileIcon />, path: '/upload' },
   { text: 'Report History', icon: <HistoryIcon />, path: '/reports' },
   { text: 'My Letters', icon: <DescriptionIcon />, path: '/letters' },
-  { text: 'Dispute Tracking', icon: <GavelIcon />, path: '/disputes' },
 ];
 
 export default function DashboardLayout() {

@@ -46,7 +46,7 @@ import MailOutlineIcon from '@mui/icons-material/MailOutline';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import { jsPDF } from 'jspdf';
 import { letterApi } from '../api';
-import { createDisputeFromLetter, RESPONSE_TYPES } from '../api/disputeApi';
+import { RESPONSE_TYPES } from '../api/disputeApi';
 import LetterTierSection from '../components/LetterTierSection';
 
 // Utility to detect if string is a UUID (old data format)
@@ -73,7 +73,6 @@ const LettersPage = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
-  const [trackingId, setTrackingId] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
   const [expandedResponseId, setExpandedResponseId] = useState(null);
 
@@ -163,49 +162,9 @@ const LettersPage = () => {
     }
   };
 
-  const handleTrack = async (letter) => {
-    setTrackingId(letter.letter_id);
-    setError(null);
-    try {
-      // Build violation_data from available letter info
-      // Filter out UUIDs (old data) - only use valid violation type names
-      const validViolations = (letter.violations_cited || []).filter(v => !isUUID(v));
-      const accountNumbers = letter.account_numbers || [];
-
-      const violationData = validViolations.map((violationType, idx) => ({
-        violation_id: `${letter.letter_id}-v${idx}`, // Generate ID from letter + index
-        violation_type: violationType,
-        creditor_name: letter.accounts_disputed?.[idx] || 'Unknown',
-        account_number_masked: accountNumbers[idx] || null,
-        severity: 'MEDIUM',
-      }));
-
-      // If no valid violations, create at least one entry from accounts
-      if (violationData.length === 0 && letter.accounts_disputed?.length > 0) {
-        letter.accounts_disputed.forEach((account, idx) => {
-          violationData.push({
-            violation_id: `${letter.letter_id}-v${idx}`,
-            violation_type: 'dispute_filed',
-            creditor_name: account,
-            account_number_masked: accountNumbers[idx] || null,
-            severity: 'MEDIUM',
-          });
-        });
-      }
-
-      await createDisputeFromLetter(letter.letter_id, {
-        entity_type: 'CRA',
-        entity_name: letter.bureau,
-        violation_ids: violationData.map(v => v.violation_id),
-        violation_data: violationData,
-      });
-      navigate('/disputes');
-    } catch (err) {
-      console.error('Failed to create dispute:', err);
-      setError(err.response?.data?.detail || err.message || 'Failed to create dispute tracking');
-    } finally {
-      setTrackingId(null);
-    }
+  const handleTrack = (letter) => {
+    // Navigate to LetterPage with the letter loaded - tracking UI is there
+    navigate(`/letter/${letter.report_id}?letterId=${letter.letter_id}`);
   };
 
   const formatDateTime = (dateString) => {
@@ -371,7 +330,6 @@ const LettersPage = () => {
               onDelete={handleDelete}
               onTrack={handleTrack}
               deletingId={deletingId}
-              trackingId={trackingId}
               formatDateTime={formatDateTime}
             />
             <LetterTierSection
@@ -381,7 +339,6 @@ const LettersPage = () => {
               onDelete={handleDelete}
               onTrack={handleTrack}
               deletingId={deletingId}
-              trackingId={trackingId}
               formatDateTime={formatDateTime}
             />
             <LetterTierSection
@@ -391,7 +348,6 @@ const LettersPage = () => {
               onDelete={handleDelete}
               onTrack={handleTrack}
               deletingId={deletingId}
-              trackingId={trackingId}
               formatDateTime={formatDateTime}
             />
           </Box>

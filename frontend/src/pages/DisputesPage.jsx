@@ -109,100 +109,25 @@ const formatDeadlineDate = (dateStr) => {
 // SINGLE VIOLATION RESPONSE ROW
 // =============================================================================
 
-const ViolationResponseRow = ({
+/**
+ * ViolationResponseCard - Simplified card for each violation
+ * Only shows violation info and response type dropdown
+ * Date picker and save button moved to consolidated section
+ */
+const ViolationResponseCard = ({
   violation,
-  disputeId,
-  entityName,
-  onResponseLogged,
-  onGenerateLetter,
+  responseType,
+  onResponseTypeChange,
   trackingStarted,
   deadlineDate,
   testMode,
-  // Tier-2 props (passed from dispute level)
-  tier2NoticeSent: initialTier2Sent,
-  tier2NoticeSentAt: initialTier2SentAt,
-  disputeLocked,
-  disputeTierReached,
+  isLocked,
 }) => {
-  const [responseType, setResponseType] = useState(violation.logged_response || '');
-  const [responseDate, setResponseDate] = useState(
-    violation.response_date ? dayjs(violation.response_date) : null
-  );
-  const [submitting, setSubmitting] = useState(false);
-  const [success, setSuccess] = useState(false);
-  const [error, setError] = useState(null);
-
-  // Tier-2 state (local for UI updates)
-  const [tier2NoticeSent, setTier2NoticeSent] = useState(initialTier2Sent || false);
-  const [tier2NoticeSentAt, setTier2NoticeSentAt] = useState(initialTier2SentAt || null);
-  const [markingSent, setMarkingSent] = useState(false);
-  const [tier2ResponseType, setTier2ResponseType] = useState('');
-  const [tier2ResponseDate, setTier2ResponseDate] = useState(null);
-  const [submittingTier2, setSubmittingTier2] = useState(false);
-  const [tier2Result, setTier2Result] = useState(null);
-
-  // Sync state with props when violation data changes (after data refresh)
-  useEffect(() => {
-    if (violation.logged_response && violation.logged_response !== responseType) {
-      setResponseType(violation.logged_response);
-    }
-    if (violation.response_date) {
-      setResponseDate(dayjs(violation.response_date));
-    }
-  }, [violation.logged_response, violation.response_date]);
-
-  // Sync tier2 state with props
-  useEffect(() => {
-    setTier2NoticeSent(initialTier2Sent || false);
-    setTier2NoticeSentAt(initialTier2SentAt || null);
-  }, [initialTier2Sent, initialTier2SentAt]);
-
-  // Check if this violation has an enforcement response
-  const hasEnforcementResponse = ['VERIFIED', 'NO_RESPONSE', 'REJECTED', 'REINSERTION'].includes(responseType);
-  const isLocked = disputeLocked || disputeTierReached >= 3;
-
-  // Tier-2 handlers
-  const handleMarkTier2Sent = async () => {
-    setMarkingSent(true);
-    setError(null);
-    try {
-      const response = await markTier2NoticeSent(disputeId);
-      setTier2NoticeSent(true);
-      setTier2NoticeSentAt(response.tier2_notice_sent_at);
-      // Local state update only - don't trigger refresh which resets UI
-    } catch (err) {
-      setError(err.response?.data?.detail || err.message || 'Failed to mark Tier-2 notice as sent');
-    } finally {
-      setMarkingSent(false);
-    }
-  };
-
-  const handleSubmitTier2Response = async () => {
-    if (!tier2ResponseType) {
-      setError('Please select a Tier-2 response type');
-      return;
-    }
-    setSubmittingTier2(true);
-    setError(null);
-    try {
-      const response = await logTier2Response(disputeId, {
-        response_type: tier2ResponseType,
-        response_date: tier2ResponseDate ? tier2ResponseDate.format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD'),
-      });
-      setTier2Result(response);
-      onResponseLogged?.();
-    } catch (err) {
-      setError(err.response?.data?.detail || err.message || 'Failed to log Tier-2 response');
-    } finally {
-      setSubmittingTier2(false);
-    }
-  };
-
   // NO_RESPONSE is only available if:
   // 1. testMode is enabled (bypass deadline check), OR
   // 2. tracking started AND deadline has passed
   const isNoResponseAvailable = () => {
-    if (testMode) return true; // Bypass in test mode
+    if (testMode) return true;
     if (!trackingStarted || !deadlineDate) return false;
     const deadline = new Date(deadlineDate);
     const today = new Date();
@@ -210,33 +135,6 @@ const ViolationResponseRow = ({
     deadline.setHours(0, 0, 0, 0);
     return today > deadline;
   };
-
-  const handleLogResponse = async () => {
-    if (!responseType) {
-      setError('Please select a response type');
-      return;
-    }
-    setSubmitting(true);
-    setError(null);
-    try {
-      await logResponse(disputeId, {
-        violation_id: violation.violation_id,
-        response_type: responseType,
-        response_date: responseDate ? responseDate.format('YYYY-MM-DD') : new Date().toISOString().split('T')[0],
-      });
-      setSuccess(true);
-      onResponseLogged?.();
-      setTimeout(() => setSuccess(false), 2000);
-    } catch (err) {
-      console.error('Failed to log response:', err);
-      setError('Failed to save response');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  // Determine if this response type warrants enforcement letter
-  const canGenerateLetter = responseType && ['NO_RESPONSE', 'VERIFIED', 'REJECTED', 'REINSERTION'].includes(responseType);
 
   const getResponseChipColor = (type) => {
     switch (type) {
@@ -256,12 +154,12 @@ const ViolationResponseRow = ({
         bgcolor: 'white',
         borderRadius: 2,
         border: '1px solid',
-        borderColor: success ? 'success.light' : 'divider',
+        borderColor: 'divider',
         mb: 2,
       }}
     >
-      {/* Violation Info - Creditor name prominent */}
-      <Box sx={{ mb: 2.5, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+      {/* Violation Info */}
+      <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <Box>
           <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.5 }}>
             {violation.creditor_name || 'Unknown Creditor'}
@@ -299,106 +197,45 @@ const ViolationResponseRow = ({
             )}
           </Stack>
         </Box>
-
-        {/* Generate Letter Button - only for actionable responses */}
-        {canGenerateLetter && (
-          <Tooltip title={`Generate ${RESPONSE_TYPES[responseType]?.label} letter for this violation`}>
-            <Button
-              variant="outlined"
-              size="small"
-              startIcon={<DescriptionIcon />}
-              onClick={() => onGenerateLetter(violation, responseType)}
-              sx={{ ml: 2, whiteSpace: 'nowrap' }}
-            >
-              Generate Letter
-            </Button>
-          </Tooltip>
-        )}
       </Box>
 
-      {error && (
-        <Alert severity="error" sx={{ mb: 2, py: 0.5 }} onClose={() => setError(null)}>
-          {error}
-        </Alert>
-      )}
+      {/* Response Type Dropdown */}
+      <FormControl size="small" sx={{ minWidth: 220 }}>
+        <InputLabel>Response *</InputLabel>
+        <Select
+          value={responseType}
+          label="Response *"
+          onChange={(e) => onResponseTypeChange(violation.violation_id, e.target.value)}
+          disabled={isLocked || !!violation.logged_response}
+        >
+          <MenuItem value="">
+            <em>Select outcome...</em>
+          </MenuItem>
+          {Object.entries(RESPONSE_TYPES).map(([key, config]) => {
+            const isNoResponseBlocked = key === 'NO_RESPONSE' && !isNoResponseAvailable();
 
-      {/* Response Form */}
-      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems="flex-start">
-        <FormControl size="small" sx={{ minWidth: 220 }}>
-          <InputLabel>Response *</InputLabel>
-          <Select
-            value={responseType}
-            label="Response *"
-            onChange={(e) => setResponseType(e.target.value)}
-            disabled={submitting || !!violation.logged_response}
-          >
-            <MenuItem value="">
-              <em>Select outcome...</em>
-            </MenuItem>
-            {Object.entries(RESPONSE_TYPES).map(([key, config]) => {
-              const isNoResponseBlocked = key === 'NO_RESPONSE' && !isNoResponseAvailable();
-
-              // Disabled items: Use Tooltip + span wrapper (needed for tooltip on disabled element)
-              // Selection doesn't matter since the item is disabled anyway
-              if (isNoResponseBlocked) {
-                const disabledReason = !trackingStarted ? 'Start tracking first' : 'Deadline has not passed';
-                return (
-                  <Tooltip key={key} title={disabledReason} placement="right" arrow>
-                    <span>
-                      <MenuItem value={key} disabled>
-                        {config.label}
-                      </MenuItem>
-                    </span>
-                  </Tooltip>
-                );
-              }
-
-              // Enabled items: Plain MenuItem with native title attribute
-              // NO wrapper elements - this is critical for Select click handling to work
+            if (isNoResponseBlocked) {
+              const disabledReason = !trackingStarted ? 'Start tracking first' : 'Deadline has not passed';
               return (
-                <MenuItem key={key} value={key} title={config.description}>
-                  {config.label}
-                  {!config.enforcement && ' (resolution)'}
-                </MenuItem>
+                <Tooltip key={key} title={disabledReason} placement="right" arrow>
+                  <span>
+                    <MenuItem value={key} disabled>
+                      {config.label}
+                    </MenuItem>
+                  </span>
+                </Tooltip>
               );
-            })}
-          </Select>
-        </FormControl>
+            }
 
-        <LocalizationProvider dateAdapter={AdapterDayjs}>
-          <DatePicker
-            label="Response Date"
-            value={responseDate}
-            onChange={setResponseDate}
-            maxDate={dayjs()}
-            disabled={!!violation.logged_response}
-            slotProps={{
-              textField: {
-                size: 'small',
-                sx: { minWidth: 170 },
-              },
-            }}
-          />
-        </LocalizationProvider>
-
-        {/* Hide Save button if response already logged */}
-        {!violation.logged_response && (
-          <Button
-            variant="contained"
-            size="medium"
-            onClick={handleLogResponse}
-            disabled={submitting || !responseType}
-            disableElevation
-            sx={{ minWidth: 90, height: 40 }}
-          >
-            {submitting ? <CircularProgress size={18} /> : 'Save'}
-          </Button>
-        )}
-
-        {success && (
-          <Chip label="Saved!" size="small" color="success" variant="filled" sx={{ height: 28 }} />
-        )}
-      </Stack>
+            return (
+              <MenuItem key={key} value={key} title={config.description}>
+                {config.label}
+                {!config.enforcement && ' (resolution)'}
+              </MenuItem>
+            );
+          })}
+        </Select>
+      </FormControl>
 
       {/* Response Locked indicator when already logged */}
       {violation.logged_response && (
@@ -411,12 +248,12 @@ const ViolationResponseRow = ({
       )}
 
       {/* Strategic framing for response types */}
-      {responseType === 'DELETED' && (
+      {responseType === 'DELETED' && !violation.logged_response && (
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>
           Item deleted - no enforcement letter needed. A 90-day reinsertion watch will be created.
         </Typography>
       )}
-      {responseType === 'VERIFIED' && (
+      {responseType === 'VERIFIED' && !violation.logged_response && (
         <Alert severity="info" sx={{ mt: 1.5, py: 0.5 }} icon={false}>
           <Typography variant="caption">
             <strong>Strategic note:</strong> "Verified" means the bureau claims the furnisher confirmed the data.
@@ -425,7 +262,7 @@ const ViolationResponseRow = ({
           </Typography>
         </Alert>
       )}
-      {responseType === 'NO_RESPONSE' && (
+      {responseType === 'NO_RESPONSE' && !violation.logged_response && (
         <Alert severity="warning" sx={{ mt: 1.5, py: 0.5 }} icon={false}>
           <Typography variant="caption">
             <strong>Strategic note:</strong> No response within the statutory deadline is a procedural violation.
@@ -433,7 +270,7 @@ const ViolationResponseRow = ({
           </Typography>
         </Alert>
       )}
-      {responseType === 'REJECTED' && (
+      {responseType === 'REJECTED' && !violation.logged_response && (
         <Alert severity="error" sx={{ mt: 1.5, py: 0.5 }} icon={false}>
           <Typography variant="caption">
             <strong>Strategic note:</strong> "Frivolous/Rejected" disputes trigger specific FCRA rights.
@@ -441,123 +278,13 @@ const ViolationResponseRow = ({
           </Typography>
         </Alert>
       )}
-      {responseType === 'REINSERTION' && (
+      {responseType === 'REINSERTION' && !violation.logged_response && (
         <Alert severity="error" sx={{ mt: 1.5, py: 0.5 }} icon={false}>
           <Typography variant="caption">
             <strong>Strategic note:</strong> Reinsertion without proper notice is a separate FCRA violation.
             Under §1681i(a)(5), they must certify accuracy and provide 5-day written notice.
           </Typography>
         </Alert>
-      )}
-
-      {/* Tier-2 Section - only show for violations with enforcement responses */}
-      {hasEnforcementResponse && !isLocked && (
-        <Box sx={{ mt: 2, pt: 2, borderTop: '1px dashed', borderColor: 'divider' }}>
-          <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', display: 'block', mb: 1 }}>
-            Tier-1 Supervisory Escalation
-          </Typography>
-
-          {tier2Result ? (
-            // Show result after Tier-1 response submitted
-            <Alert
-              severity={tier2Result.status === 'CURED_AT_TIER_2' ? 'success' : 'error'}
-              icon={tier2Result.status === 'CURED_AT_TIER_2' ? <CheckCircleIcon /> : <LockIcon />}
-            >
-              <Typography variant="body2">
-                {tier2Result.status === 'CURED_AT_TIER_2'
-                  ? 'Violation cured at Tier-1. Dispute closed.'
-                  : `Promoted to Tier-2 (Locked). Classification: ${tier2Result.ledger_entry?.examiner_classification || 'N/A'}`}
-              </Typography>
-            </Alert>
-          ) : !tier2NoticeSent ? (
-            // Mark as Sent button
-            <Stack direction="row" spacing={2} alignItems="center">
-              <Button
-                variant="outlined"
-                size="small"
-                color="warning"
-                startIcon={markingSent ? <CircularProgress size={16} color="inherit" /> : <SendIcon />}
-                onClick={handleMarkTier2Sent}
-                disabled={markingSent}
-              >
-                {markingSent ? 'Marking...' : 'Mark Tier-1 Notice Sent'}
-              </Button>
-              <Typography variant="caption" color="text.secondary">
-                Click after sending your Tier-1 supervisory letter
-              </Typography>
-            </Stack>
-          ) : (
-            // Tier-1 adjudication form
-            <Box>
-              <Alert severity="success" sx={{ mb: 1.5, py: 0 }}>
-                <Typography variant="caption">
-                  Tier-1 notice sent on {new Date(tier2NoticeSentAt).toLocaleDateString()}
-                </Typography>
-              </Alert>
-              <Alert severity="warning" sx={{ mb: 1.5, py: 0 }}>
-                <Typography variant="caption">
-                  <strong>Warning:</strong> ONE response only. Non-CURED → Tier-2 (locked).
-                </Typography>
-              </Alert>
-              <Stack direction="row" spacing={1.5} alignItems="center">
-                <FormControl size="small" sx={{ minWidth: 200 }}>
-                  <InputLabel>Tier-1 Response *</InputLabel>
-                  <Select
-                    value={tier2ResponseType}
-                    label="Tier-1 Response *"
-                    onChange={(e) => setTier2ResponseType(e.target.value)}
-                    disabled={submittingTier2}
-                  >
-                    <MenuItem value=""><em>Select...</em></MenuItem>
-                    {Object.entries(TIER2_RESPONSE_TYPES).map(([key, { value, label }]) => (
-                      <MenuItem key={key} value={value}>{label}</MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-                <LocalizationProvider dateAdapter={AdapterDayjs}>
-                  <DatePicker
-                    label="Response Date"
-                    value={tier2ResponseDate}
-                    onChange={setTier2ResponseDate}
-                    maxDate={dayjs()}
-                    slotProps={{ textField: { size: 'small', sx: { minWidth: 170 } } }}
-                  />
-                </LocalizationProvider>
-                {/* Generate Letter button - only show when response type selected and not CURED */}
-                {tier2ResponseType && tier2ResponseType !== 'CURED' && (
-                  <Button
-                    variant="outlined"
-                    size="small"
-                    startIcon={<DescriptionIcon />}
-                    onClick={() => onGenerateLetter(violation, tier2ResponseType)}
-                  >
-                    Generate Letter
-                  </Button>
-                )}
-                <Button
-                  variant="contained"
-                  size="small"
-                  color={tier2ResponseType && TIER2_RESPONSE_TYPES[tier2ResponseType]?.outcome === 'tier3' ? 'error' : 'primary'}
-                  onClick={handleSubmitTier2Response}
-                  disabled={submittingTier2 || !tier2ResponseType}
-                >
-                  {submittingTier2 ? <CircularProgress size={18} /> : 'Log Response'}
-                </Button>
-              </Stack>
-            </Box>
-          )}
-        </Box>
-      )}
-
-      {/* Show locked state if at Tier-2 (locked) */}
-      {hasEnforcementResponse && isLocked && (
-        <Box sx={{ mt: 2, pt: 2, borderTop: '1px dashed', borderColor: 'divider' }}>
-          <Alert severity="error" icon={<LockIcon />}>
-            <Typography variant="body2">
-              <strong>Tier-2 Locked</strong> — This violation has been promoted to Tier-2. Record is immutable.
-            </Typography>
-          </Alert>
-        </Box>
       )}
     </Box>
   );
@@ -874,6 +601,53 @@ const ExpandedRowContent = ({ dispute, onResponseLogged, onStartTracking, onGene
 
   // Get violations from dispute data
   const violations = dispute.violation_data || [];
+  const discrepancies = dispute.discrepancies_data || [];
+  const allItems = [
+    ...violations,
+    ...discrepancies.map(d => ({
+      violation_id: d.discrepancy_id,
+      violation_type: 'CROSS_BUREAU',
+      creditor_name: d.creditor_name,
+      account_number_masked: d.account_number_masked,
+      description: `${d.field_name} mismatch across bureaus`,
+      logged_response: d.logged_response,
+      severity: 'MEDIUM',
+    })),
+  ];
+
+  // Consolidated response state - map of violation_id -> response_type
+  const [responseTypes, setResponseTypes] = useState(() => {
+    const initial = {};
+    allItems.forEach(item => {
+      initial[item.violation_id] = item.logged_response || '';
+    });
+    return initial;
+  });
+  const [sharedResponseDate, setSharedResponseDate] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [success, setSuccess] = useState(false);
+
+  // Inline letter state (replaces dialog)
+  const [generatedLetter, setGeneratedLetter] = useState(null);
+  const [letterLoading, setLetterLoading] = useState(false);
+  const [editableContent, setEditableContent] = useState('');
+  const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [lastSaved, setLastSaved] = useState(null);
+  const [copiedToClipboard, setCopiedToClipboard] = useState(false);
+
+  const isLocked = dispute.locked || (dispute.tier_reached || 0) >= 3;
+
+  // Check if any responses are pending (selected but not yet saved)
+  const pendingResponses = allItems.filter(
+    item => responseTypes[item.violation_id] && !item.logged_response
+  );
+  const hasPendingResponses = pendingResponses.length > 0;
+
+  // Check if any pending responses require enforcement letter
+  const hasEnforcementResponses = pendingResponses.some(
+    item => ['NO_RESPONSE', 'VERIFIED', 'REJECTED', 'REINSERTION'].includes(responseTypes[item.violation_id])
+  );
 
   useEffect(() => {
     const fetchTimeline = async () => {
@@ -889,6 +663,128 @@ const ExpandedRowContent = ({ dispute, onResponseLogged, onStartTracking, onGene
     };
     fetchTimeline();
   }, [dispute.id]);
+
+  // Update response types when dispute data changes
+  useEffect(() => {
+    const updated = {};
+    allItems.forEach(item => {
+      updated[item.violation_id] = item.logged_response || responseTypes[item.violation_id] || '';
+    });
+    setResponseTypes(updated);
+  }, [dispute.violation_data, dispute.discrepancies_data]);
+
+  const handleResponseTypeChange = (violationId, newType) => {
+    setResponseTypes(prev => ({ ...prev, [violationId]: newType }));
+  };
+
+  const handleSaveAndLog = async () => {
+    if (!hasPendingResponses) {
+      setError('Please select at least one response type');
+      return;
+    }
+
+    setSubmitting(true);
+    setError(null);
+
+    try {
+      // Save all pending responses
+      const responseDate = sharedResponseDate
+        ? sharedResponseDate.format('YYYY-MM-DD')
+        : new Date().toISOString().split('T')[0];
+
+      for (const item of pendingResponses) {
+        await logResponse(dispute.id, {
+          violation_id: item.violation_id,
+          response_type: responseTypes[item.violation_id],
+          response_date: responseDate,
+        });
+      }
+
+      setSuccess(true);
+
+      // If enforcement responses, auto-generate letter inline
+      if (hasEnforcementResponses) {
+        const enforcementItem = pendingResponses.find(
+          item => ['NO_RESPONSE', 'VERIFIED', 'REJECTED', 'REINSERTION'].includes(responseTypes[item.violation_id])
+        );
+        if (enforcementItem) {
+          setLetterLoading(true);
+          try {
+            const result = await generateResponseLetter(dispute.id, {
+              response_type: responseTypes[enforcementItem.violation_id],
+              violation_id: enforcementItem.violation_id,
+              include_willful_notice: true,
+              test_context: testMode,
+            });
+            setGeneratedLetter(result);
+            setEditableContent(result.content);
+          } catch (letterErr) {
+            console.error('Failed to generate letter:', letterErr);
+          } finally {
+            setLetterLoading(false);
+          }
+        }
+      }
+
+      onResponseLogged?.();
+      setTimeout(() => setSuccess(false), 2000);
+    } catch (err) {
+      console.error('Failed to save responses:', err);
+      setError('Failed to save responses');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleCopyLetter = async () => {
+    try {
+      await navigator.clipboard.writeText(editableContent);
+      setCopiedToClipboard(true);
+      setTimeout(() => setCopiedToClipboard(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  };
+
+  const handleSaveLetter = async () => {
+    if (!editableContent) return;
+    setIsSaving(true);
+    try {
+      await saveResponseLetter(dispute.id, {
+        content: editableContent,
+        response_type: generatedLetter?.response_type,
+        test_context: testMode,
+      });
+      setLastSaved(new Date());
+    } catch (err) {
+      console.error('Failed to save letter:', err);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDownloadPDF = () => {
+    if (!editableContent) return;
+    const pdf = new jsPDF({ unit: 'pt', format: 'letter' });
+    const margin = 50;
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const maxWidth = pageWidth - (margin * 2);
+    pdf.setFont('times', 'normal');
+    pdf.setFontSize(12);
+    const lines = pdf.splitTextToSize(editableContent, maxWidth);
+    let y = margin;
+    const lineHeight = 18;
+    lines.forEach((line) => {
+      if (y + lineHeight > pageHeight - margin) {
+        pdf.addPage();
+        y = margin;
+      }
+      pdf.text(line, margin, y);
+      y += lineHeight;
+    });
+    pdf.save(`enforcement_letter_${new Date().toISOString().split('T')[0]}.pdf`);
+  };
 
   const stateConfig = ESCALATION_STATES[dispute.current_state] || {};
 
@@ -1018,95 +914,202 @@ const ExpandedRowContent = ({ dispute, onResponseLogged, onStartTracking, onGene
         </Alert>
       )}
 
-      {violations.length === 0 && (!dispute.discrepancies_data || dispute.discrepancies_data.length === 0) ? (
+      {allItems.length === 0 ? (
         <Alert severity="info" sx={{ mb: 3 }}>
           No violation data available for this dispute. This may be an older dispute created before tracking was enabled.
         </Alert>
       ) : (
         <Box sx={{ mb: 3 }}>
-          {/* DOFD Violations */}
-          {violations.map((violation, idx) => (
-            <ViolationResponseRow
-              key={violation.violation_id || idx}
-              violation={violation}
-              disputeId={dispute.id}
-              entityName={dispute.entity_name}
-              onResponseLogged={onResponseLogged}
-              onGenerateLetter={(v, responseType) => onGenerateLetter(dispute, v, responseType)}
+          {/* Violation Cards */}
+          {allItems.map((item, idx) => (
+            <ViolationResponseCard
+              key={item.violation_id || idx}
+              violation={item}
+              responseType={responseTypes[item.violation_id] || ''}
+              onResponseTypeChange={handleResponseTypeChange}
               trackingStarted={dispute.tracking_started}
               deadlineDate={dispute.deadline_date}
               testMode={testMode}
-              // Tier-2 props
-              tier2NoticeSent={dispute.tier2_notice_sent}
-              tier2NoticeSentAt={dispute.tier2_notice_sent_at}
-              disputeLocked={dispute.locked}
-              disputeTierReached={dispute.tier_reached}
+              isLocked={isLocked}
             />
           ))}
 
-          {/* Cross-Bureau Discrepancies (same row component, adapted shape) */}
-          {dispute.discrepancies_data?.map((d, idx) => (
-            <ViolationResponseRow
-              key={`discrepancy-${d.discrepancy_id || idx}`}
-              violation={{
-                violation_id: d.discrepancy_id,
-                violation_type: 'CROSS_BUREAU',
-                creditor_name: d.creditor_name,
-                account_number_masked: d.account_number_masked,
-                description: `${d.field_name} mismatch across bureaus`,
-                logged_response: d.logged_response,
-                severity: 'MEDIUM',
+          {/* Consolidated Save Section */}
+          {!isLocked && (
+            <Paper
+              sx={{
+                p: 3,
+                bgcolor: '#f0f9ff',
+                border: '1px solid',
+                borderColor: 'primary.light',
+                borderRadius: 2,
               }}
-              disputeId={dispute.id}
-              entityName={dispute.entity_name}
-              onResponseLogged={onResponseLogged}
-              onGenerateLetter={(v, responseType) => onGenerateLetter(dispute, v, responseType)}
-              trackingStarted={dispute.tracking_started}
-              deadlineDate={dispute.deadline_date}
-              testMode={testMode}
-              tier2NoticeSent={dispute.tier2_notice_sent}
-              tier2NoticeSentAt={dispute.tier2_notice_sent_at}
-              disputeLocked={dispute.locked}
-              disputeTierReached={dispute.tier_reached}
-            />
-          ))}
+            >
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems="center">
+                <LocalizationProvider dateAdapter={AdapterDayjs}>
+                  <DatePicker
+                    label="Response Date"
+                    value={sharedResponseDate}
+                    onChange={setSharedResponseDate}
+                    maxDate={dayjs()}
+                    slotProps={{
+                      textField: {
+                        size: 'small',
+                        sx: { minWidth: 200 },
+                        placeholder: 'Select date received',
+                      },
+                    }}
+                  />
+                </LocalizationProvider>
+
+                <Button
+                  variant="contained"
+                  size="large"
+                  onClick={handleSaveAndLog}
+                  disabled={submitting || !hasPendingResponses}
+                  disableElevation
+                  startIcon={submitting ? <CircularProgress size={18} color="inherit" /> : <SaveIcon />}
+                  sx={{ minWidth: 160, height: 42 }}
+                >
+                  {submitting ? 'Saving...' : 'Save & Log'}
+                </Button>
+
+                {success && (
+                  <Chip label="Saved!" size="small" color="success" variant="filled" sx={{ height: 28 }} />
+                )}
+              </Stack>
+
+              {hasPendingResponses && (
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>
+                  {pendingResponses.length} response(s) selected.
+                  {hasEnforcementResponses && ' A letter will be generated after saving.'}
+                </Typography>
+              )}
+            </Paper>
+          )}
+
+          {/* Inline Generated Letter */}
+          {letterLoading && (
+            <Paper sx={{ p: 4, mt: 3, textAlign: 'center', borderRadius: 2 }}>
+              <CircularProgress size={24} sx={{ mb: 2 }} />
+              <Typography variant="body2" color="text.secondary">
+                Generating enforcement letter...
+              </Typography>
+            </Paper>
+          )}
+
+          {generatedLetter && !letterLoading && (
+            <Paper sx={{ mt: 3, borderRadius: 2, overflow: 'hidden' }}>
+              {/* Letter Header */}
+              <Box sx={{ p: 2, bgcolor: 'grey.50', borderBottom: '1px solid', borderColor: 'divider' }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <DescriptionIcon color="primary" />
+                    <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                      Generated Letter
+                    </Typography>
+                    <Chip label={`${editableContent.split(/\s+/).filter(w => w).length} words`} size="small" variant="outlined" />
+                  </Box>
+                  <Stack direction="row" spacing={1}>
+                    <Button size="small" startIcon={isEditing ? <VisibilityIcon /> : <EditIcon />} onClick={() => setIsEditing(!isEditing)} variant="outlined">
+                      {isEditing ? 'View' : 'Edit'}
+                    </Button>
+                    <Button size="small" startIcon={<ContentCopyIcon />} onClick={handleCopyLetter} variant="outlined" color={copiedToClipboard ? 'success' : 'inherit'}>
+                      {copiedToClipboard ? 'Copied!' : 'Copy'}
+                    </Button>
+                    <Button size="small" startIcon={<DownloadIcon />} onClick={handleDownloadPDF} variant="contained" disableElevation>
+                      Download
+                    </Button>
+                    <Button size="small" startIcon={isSaving ? <CircularProgress size={14} /> : <SaveIcon />} onClick={handleSaveLetter} variant="contained" color="success" disabled={isSaving} disableElevation>
+                      Save
+                    </Button>
+                  </Stack>
+                </Box>
+                {lastSaved && (
+                  <Typography variant="caption" color="success.main" sx={{ mt: 1, display: 'block' }}>
+                    Last saved: {lastSaved.toLocaleTimeString()}
+                  </Typography>
+                )}
+              </Box>
+
+              {/* Letter Content */}
+              <Box sx={{ p: 3, maxHeight: 400, overflow: 'auto' }}>
+                {isEditing ? (
+                  <TextField
+                    fullWidth
+                    multiline
+                    minRows={15}
+                    value={editableContent}
+                    onChange={(e) => setEditableContent(e.target.value)}
+                    variant="outlined"
+                    sx={{ '& .MuiInputBase-root': { fontFamily: '"Times New Roman", serif', fontSize: '11pt', lineHeight: 1.6 } }}
+                  />
+                ) : (
+                  <Box sx={{ fontFamily: '"Times New Roman", serif', fontSize: '11pt', lineHeight: 1.8, whiteSpace: 'pre-wrap', color: '#111' }}>
+                    {editableContent}
+                  </Box>
+                )}
+              </Box>
+            </Paper>
+          )}
         </Box>
       )}
 
-      <Divider sx={{ mb: 3 }} />
-
-      {/* Timeline */}
-      <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 2 }}>
-        Timeline
-      </Typography>
-
-      {loadingTimeline ? (
-        <CircularProgress size={20} />
-      ) : timeline.length === 0 ? (
-        <Typography variant="body2" color="text.secondary">
-          No events yet
+      {/* Activity Timeline - Elegant Design */}
+      <Box sx={{ mt: 4 }}>
+        <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+          Activity
         </Typography>
-      ) : (
-        <Stack spacing={1}>
-          {timeline.map((entry, i) => (
-            <Box
-              key={entry.id || i}
-              sx={{
-                p: 2,
-                bgcolor: 'white',
-                borderRadius: 1,
-                borderLeft: '3px solid',
-                borderLeftColor: entry.actor === 'SYSTEM' ? 'warning.main' : 'primary.main',
-              }}
-            >
-              <Typography variant="body2">{entry.description}</Typography>
-              <Typography variant="caption" color="text.secondary">
-                {new Date(entry.timestamp).toLocaleString()} • {entry.actor === 'SYSTEM' ? 'System' : 'You'}
+
+        {loadingTimeline ? (
+          <Box sx={{ py: 2 }}><CircularProgress size={16} /></Box>
+        ) : timeline.length === 0 ? (
+          <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
+            No activity yet
+          </Typography>
+        ) : (
+          <Box sx={{ mt: 2, position: 'relative' }}>
+            {/* Vertical timeline line */}
+            <Box sx={{ position: 'absolute', left: 7, top: 8, bottom: 8, width: 2, bgcolor: 'divider', borderRadius: 1 }} />
+
+            {timeline.slice(0, 10).map((entry, i) => (
+              <Box key={entry.id || i} sx={{ display: 'flex', gap: 2, mb: 2, position: 'relative' }}>
+                {/* Timeline dot */}
+                <Box sx={{
+                  width: 16,
+                  height: 16,
+                  borderRadius: '50%',
+                  bgcolor: entry.actor === 'SYSTEM' ? 'warning.main' : 'primary.main',
+                  border: '3px solid white',
+                  boxShadow: '0 0 0 2px #e5e7eb',
+                  flexShrink: 0,
+                  zIndex: 1,
+                }} />
+
+                {/* Event content */}
+                <Box sx={{ flex: 1, pb: 1 }}>
+                  <Typography variant="body2" sx={{ color: 'text.primary', lineHeight: 1.4 }}>
+                    {entry.description}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {new Date(entry.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                    {' · '}
+                    <Box component="span" sx={{ color: entry.actor === 'SYSTEM' ? 'warning.main' : 'primary.main' }}>
+                      {entry.actor === 'SYSTEM' ? 'System' : 'You'}
+                    </Box>
+                  </Typography>
+                </Box>
+              </Box>
+            ))}
+
+            {timeline.length > 10 && (
+              <Typography variant="caption" color="text.secondary" sx={{ pl: 4 }}>
+                + {timeline.length - 10} more events
               </Typography>
-            </Box>
-          ))}
-        </Stack>
-      )}
+            )}
+          </Box>
+        )}
+      </Box>
     </Box>
   );
 };

@@ -5,7 +5,7 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ThemeProvider, CssBaseline } from '@mui/material';
-import { DashboardPage, UploadPage, AuditPage, LetterPage, LettersPage, ReportHistoryPage, RegisterPage, ProfilePage, LandingPage, DisputesPage } from './pages';
+import { DashboardPage, UploadPage, AuditPage, LetterPage, LettersPage, ReportHistoryPage, RegisterPage, ProfilePage, LandingPage } from './pages';
 import { AdminLogin, AdminDashboard, AdminUsers, AdminUserDetail, DisputeIntel, CopilotPerf } from './pages/admin';
 import DashboardLayout from './layouts/DashboardLayout';
 import AdminLayout from './layouts/AdminLayout';
@@ -64,7 +64,7 @@ const AppLayout = () => {
         <Route path="/letters" element={<LettersPage />} />
         <Route path="/audit/:reportId" element={<AuditPage />} />
         <Route path="/letter/:reportId" element={<LetterPage />} />
-        <Route path="/disputes" element={<DisputesPage />} />
+        <Route path="/disputes" element={<Navigate to="/letters" replace />} />
         <Route path="/profile" element={<ProfilePage />} />
       </Route>
 

@@ -77,15 +77,17 @@ const ToneSelector = () => {
         </Typography>
       </Box>
 
-      {/* Channel Selection Cards - Equal thirds grid */}
+      {/* Channel Selection Cards - Two columns (Litigation removed) */}
       <Box
         sx={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(3, 1fr)',
+          gridTemplateColumns: 'repeat(2, 1fr)',
           gap: 2,
         }}
       >
-        {Object.entries(CHANNEL_CONFIG).map(([channel, config]) => {
+        {Object.entries(CHANNEL_CONFIG)
+          .filter(([channel]) => channel !== 'LITIGATION')
+          .map(([channel, config]) => {
           const Icon = config.icon;
           const isSelected = documentChannel === channel;
 
@@ -174,12 +176,6 @@ const ToneSelector = () => {
             <>
               <strong>CFPB Complaint</strong> generates a structured complaint for the Consumer Financial Protection Bureau
               with formatted allegations and relief requests.
-            </>
-          )}
-          {documentChannel === 'LITIGATION' && (
-            <>
-              <strong>Litigation Packet</strong> generates an attorney-ready evidence bundle including demand letter,
-              evidence index, and violation timeline.
             </>
           )}
         </Typography>
