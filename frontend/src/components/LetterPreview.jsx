@@ -25,7 +25,7 @@ import { jsPDF } from 'jspdf';
 import { useUIStore } from '../state';
 import { copyLetterToClipboard, formatToneLabel } from '../utils';
 
-const LetterPreview = ({ letter, isLoading, error, onRegenerate, isRegenerating, stats, isResponseLetter = false }) => {
+const LetterPreview = ({ letter, isLoading, error, onRegenerate, isRegenerating, stats, isResponseLetter = false, compact = false }) => {
   const [copied, setCopied] = React.useState(false);
   const [isEditing, setIsEditing] = React.useState(false);
   const autosaveTimerRef = useRef(null);
@@ -210,15 +210,12 @@ const LetterPreview = ({ letter, isLoading, error, onRegenerate, isRegenerating,
   const violationsCount = stats?.violations || 0;
   const accountsCount = stats?.accounts || 0;
 
-  return (
-    <Box>
-      <Paper
-        elevation={2}
+  const content = (
+    <>
+      <Box
         sx={{
           p: 3,
-          mb: 2,
-          borderRadius: 3,
-          boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
+          ...(compact ? {} : { mb: 2 }),
         }}
       >
         {/* Action Bar - All buttons together */}
@@ -370,6 +367,26 @@ const LetterPreview = ({ letter, isLoading, error, onRegenerate, isRegenerating,
             </Box>
           </Box>
         )}
+      </Box>
+    </>
+  );
+
+  // In compact mode, render without outer Paper wrapper
+  if (compact) {
+    return content;
+  }
+
+  return (
+    <Box>
+      <Paper
+        elevation={2}
+        sx={{
+          borderRadius: 3,
+          boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
+          overflow: 'hidden',
+        }}
+      >
+        {content}
       </Paper>
     </Box>
   );

@@ -736,22 +736,6 @@ const LetterPage = () => {
         </Paper>
       )}
 
-      {/* Letter Preview */}
-      <LetterPreview
-        letter={{
-          ...currentLetter,
-          // Use URL param as fallback if letter doesn't have response_type
-          response_type: currentLetter?.response_type || responseTypeFromUrl,
-        }}
-        isLoading={isGeneratingLetter}
-        error={error}
-        onRegenerate={currentLetter ? handleRegenerate : null}
-        isRegenerating={isGeneratingLetter}
-        stats={stats}
-        isResponseLetter={isResponseLetter}
-      />
-
-
       {currentLetter && (
         <>
           {/* Dispute Tracking Stages - Hide for response letters */}
@@ -806,41 +790,56 @@ const LetterPage = () => {
                         </Box>
                       </Box>
                     </AccordionSummary>
-                    <AccordionDetails sx={{ p: 3 }}>
-                      <Alert severity="success" sx={{ mb: 2 }}>
-                        Letter generated! Enter the date you mailed it to start tracking.
-                      </Alert>
-                      {responseError && (
-                        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setResponseError(null)}>
-                          {responseError}
-                        </Alert>
-                      )}
-                      <Stack direction="row" spacing={2} alignItems="center">
-                        <TextField
-                          type="date"
-                          label="Date Mailed"
-                          size="small"
-                          InputLabelProps={{ shrink: true }}
-                          sx={{ width: 180 }}
-                          onChange={(e) => setStageData(prev => ({
-                            ...prev,
-                            initial: { ...prev.initial, sentDate: e.target.value }
-                          }))}
-                        />
-                        <Button
-                          variant="contained"
-                          onClick={handleStartTracking}
-                          disabled={!stageData.initial.sentDate || isStartingTracking}
-                          startIcon={isStartingTracking ? <CircularProgress size={18} color="inherit" /> : null}
-                        >
-                          {isStartingTracking ? 'Starting...' : 'Start Tracking'}
-                        </Button>
-                      </Stack>
-                      {stageData.initial.sentDate && (
-                        <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                          Deadline will be: {dayjs(stageData.initial.sentDate).add(30, 'day').format('MMMM D, YYYY')}
-                        </Typography>
-                      )}
+                    <AccordionDetails sx={{ p: 0 }}>
+                      {/* Letter Preview inside accordion */}
+                      <LetterPreview
+                        letter={{
+                          ...currentLetter,
+                          response_type: currentLetter?.response_type || responseTypeFromUrl,
+                        }}
+                        isLoading={isGeneratingLetter}
+                        error={error}
+                        onRegenerate={currentLetter ? handleRegenerate : null}
+                        isRegenerating={isGeneratingLetter}
+                        stats={stats}
+                        isResponseLetter={isResponseLetter}
+                        compact
+                      />
+
+                      {/* Tracking section */}
+                      <Box sx={{ p: 3, bgcolor: '#f8f9fa', borderTop: '1px solid', borderColor: 'divider' }}>
+                        {responseError && (
+                          <Alert severity="error" sx={{ mb: 2 }} onClose={() => setResponseError(null)}>
+                            {responseError}
+                          </Alert>
+                        )}
+                        <Stack direction="row" spacing={2} alignItems="center">
+                          <TextField
+                            type="date"
+                            label="Date Mailed"
+                            size="small"
+                            InputLabelProps={{ shrink: true }}
+                            sx={{ width: 180, bgcolor: 'white' }}
+                            onChange={(e) => setStageData(prev => ({
+                              ...prev,
+                              initial: { ...prev.initial, sentDate: e.target.value }
+                            }))}
+                          />
+                          <Button
+                            variant="contained"
+                            onClick={handleStartTracking}
+                            disabled={!stageData.initial.sentDate || isStartingTracking}
+                            startIcon={isStartingTracking ? <CircularProgress size={18} color="inherit" /> : null}
+                          >
+                            {isStartingTracking ? 'Starting...' : 'Start Tracking'}
+                          </Button>
+                        </Stack>
+                        {stageData.initial.sentDate && (
+                          <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                            Deadline will be: {dayjs(stageData.initial.sentDate).add(30, 'day').format('MMMM D, YYYY')}
+                          </Typography>
+                        )}
+                      </Box>
                     </AccordionDetails>
                   </Accordion>
 
