@@ -2,15 +2,7 @@
  * CFPB Channel API
  * Frontend functions for CFPB complaint lifecycle
  */
-import axios from 'axios';
-
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
-
-// Get auth header
-const getAuthHeader = () => {
-  const token = localStorage.getItem('token');
-  return token ? { Authorization: `Bearer ${token}` } : {};
-};
+import apiClient from './apiClient';
 
 /**
  * Generate CFPB complaint letter
@@ -18,14 +10,10 @@ const getAuthHeader = () => {
  * @param {string} stage - 'initial' | 'escalation' | 'final'
  */
 export const generateCFPBLetter = async (disputeSessionId, stage = 'initial') => {
-  const response = await axios.post(
-    `${API_BASE}/cfpb/letters/generate`,
-    {
-      dispute_session_id: disputeSessionId,
-      cfpb_stage: stage,
-    },
-    { headers: getAuthHeader() }
-  );
+  const response = await apiClient.post('/cfpb/letters/generate', {
+    dispute_session_id: disputeSessionId,
+    cfpb_stage: stage,
+  });
   return response.data;
 };
 
@@ -37,16 +25,12 @@ export const generateCFPBLetter = async (disputeSessionId, stage = 'initial') =>
  * @param {string} cfpbCaseNumber - Optional CFPB portal case number
  */
 export const submitCFPBComplaint = async (disputeSessionId, stage, payload, cfpbCaseNumber = null) => {
-  const response = await axios.post(
-    `${API_BASE}/cfpb/complaints/submit`,
-    {
-      dispute_session_id: disputeSessionId,
-      cfpb_stage: stage,
-      submission_payload: payload,
-      cfpb_case_number: cfpbCaseNumber,
-    },
-    { headers: getAuthHeader() }
-  );
+  const response = await apiClient.post('/cfpb/complaints/submit', {
+    dispute_session_id: disputeSessionId,
+    cfpb_stage: stage,
+    submission_payload: payload,
+    cfpb_case_number: cfpbCaseNumber,
+  });
   return response.data;
 };
 
@@ -58,16 +42,12 @@ export const submitCFPBComplaint = async (disputeSessionId, stage, payload, cfpb
  * @param {string} responseDate - ISO8601 date (YYYY-MM-DD)
  */
 export const logCFPBResponse = async (cfpbCaseId, responseText, respondingEntity, responseDate) => {
-  const response = await axios.post(
-    `${API_BASE}/cfpb/complaints/response`,
-    {
-      cfpb_case_id: cfpbCaseId,
-      response_text: responseText,
-      responding_entity: respondingEntity,
-      response_date: responseDate,
-    },
-    { headers: getAuthHeader() }
-  );
+  const response = await apiClient.post('/cfpb/complaints/response', {
+    cfpb_case_id: cfpbCaseId,
+    response_text: responseText,
+    responding_entity: respondingEntity,
+    response_date: responseDate,
+  });
   return response.data;
 };
 
@@ -76,11 +56,9 @@ export const logCFPBResponse = async (cfpbCaseId, responseText, respondingEntity
  * @param {string} cfpbCaseId - CFPB case ID
  */
 export const evaluateCFPBResponse = async (cfpbCaseId) => {
-  const response = await axios.post(
-    `${API_BASE}/cfpb/evaluate`,
-    { cfpb_case_id: cfpbCaseId },
-    { headers: getAuthHeader() }
-  );
+  const response = await apiClient.post('/cfpb/evaluate', {
+    cfpb_case_id: cfpbCaseId,
+  });
   return response.data;
 };
 
@@ -89,10 +67,7 @@ export const evaluateCFPBResponse = async (cfpbCaseId) => {
  * @param {string} cfpbCaseId - CFPB case ID
  */
 export const getCFPBCase = async (cfpbCaseId) => {
-  const response = await axios.get(
-    `${API_BASE}/cfpb/cases/${cfpbCaseId}`,
-    { headers: getAuthHeader() }
-  );
+  const response = await apiClient.get(`/cfpb/cases/${cfpbCaseId}`);
   return response.data;
 };
 
@@ -101,10 +76,7 @@ export const getCFPBCase = async (cfpbCaseId) => {
  * @param {string} cfpbCaseId - CFPB case ID
  */
 export const getCFPBEvents = async (cfpbCaseId) => {
-  const response = await axios.get(
-    `${API_BASE}/cfpb/cases/${cfpbCaseId}/events`,
-    { headers: getAuthHeader() }
-  );
+  const response = await apiClient.get(`/cfpb/cases/${cfpbCaseId}/events`);
   return response.data;
 };
 
@@ -112,10 +84,7 @@ export const getCFPBEvents = async (cfpbCaseId) => {
  * List all CFPB cases for current user
  */
 export const listCFPBCases = async () => {
-  const response = await axios.get(
-    `${API_BASE}/cfpb/cases`,
-    { headers: getAuthHeader() }
-  );
+  const response = await apiClient.get('/cfpb/cases');
   return response.data;
 };
 

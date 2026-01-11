@@ -102,6 +102,16 @@ class CFPBLetterGenerator:
             timeline=self._serialize_timeline(timeline_events),
         )
 
+    def _format_entity_name(self, entity_name: str) -> str:
+        """Format entity name properly (e.g., 'transunion' -> 'TransUnion LLC')."""
+        entity_map = {
+            "transunion": "TransUnion LLC",
+            "equifax": "Equifax Inc.",
+            "experian": "Experian Information Solutions, Inc.",
+        }
+        lower_name = entity_name.lower().strip()
+        return entity_map.get(lower_name, entity_name.title())
+
     def _generate_initial(
         self,
         consumer: Consumer,
@@ -110,11 +120,13 @@ class CFPBLetterGenerator:
         entity_name: str,
         account_info: str,
     ) -> str:
-        """Generate CFPB Initial letter with proper regulatory framing."""
+        """Generate CFPB Initial letter - examiner-grade, litigation-ready format."""
         today = date.today().strftime("%B %d, %Y")
+        formatted_entity = self._format_entity_name(entity_name)
 
         # Group violations by type
         violations_by_type = self._group_violations_by_type(contradictions)
+        all_violation_types = list(violations_by_type.keys())
 
         lines = [
             "CONSUMER FINANCIAL PROTECTION BUREAU COMPLAINT",
@@ -122,17 +134,17 @@ class CFPBLetterGenerator:
             "Complaint Type: Credit Reporting Dispute",
             f"Date: {today}",
             f"Consumer: {consumer.full_name}",
-            f"Entity Complained Against: {entity_name}",
+            f"Entity Complained Against: {formatted_entity}",
             "",
             "=" * 60,
             "",
             "FACTUAL SUMMARY",
             "",
-            f"I am filing this complaint against {entity_name} for reporting inaccurate",
-            "information on my consumer credit file. I previously disputed this matter",
-            "directly with the credit reporting agency. Their reinvestigation response",
-            "failed to address the specific factual inaccuracies I identified and consisted",
-            "only of a generic verification statement.",
+            f"I am filing this complaint against {formatted_entity} for reporting inaccurate",
+            "information on my consumer credit file. I previously disputed these matters",
+            f"directly with the credit reporting agency. {formatted_entity}'s reinvestigation",
+            "response failed to address the specific factual inaccuracies identified and",
+            "consisted only of a generic verification statement.",
             "",
             "=" * 60,
             "",
@@ -149,14 +161,15 @@ class CFPBLetterGenerator:
             lines.append(f"• {statute}")
         lines.append("")
 
-        # Issues Presented - grouped by type
+        # Issues Presented - grouped by type with --- separators
         lines.append("=" * 60)
         lines.append("")
         lines.append("ISSUES PRESENTED")
         lines.append("")
 
         issue_num = 1
-        for violation_type, violations in violations_by_type.items():
+        violation_items = list(violations_by_type.items())
+        for idx, (violation_type, violations) in enumerate(violation_items):
             lines.append(f"{issue_num}. {self._format_issue_title(violation_type)}")
             lines.append("")
 
@@ -166,14 +179,22 @@ class CFPBLetterGenerator:
                 lines.append(statutory_context)
                 lines.append("")
 
+            # List affected accounts - deduplicate by creditor+account
             lines.append("Affected accounts:")
+            seen_accounts = set()
             for v in violations:
-                acct = getattr(v, "account_number_masked", None)
-                if acct and acct.strip():
-                    lines.append(f"  • {v.creditor_name} — Account: {acct}")
-                else:
-                    lines.append(f"  • {v.creditor_name} — Account: (masked)")
+                acct = getattr(v, "account_number_masked", None) or "(masked)"
+                key = (v.creditor_name, acct)
+                if key not in seen_accounts:
+                    seen_accounts.add(key)
+                    lines.append(f"• {v.creditor_name} — Account: {acct}")
             lines.append("")
+
+            # Add separator between issues (but not after the last one)
+            if idx < len(violation_items) - 1:
+                lines.append("---")
+                lines.append("")
+
             issue_num += 1
 
         # Timeline - collapse duplicates and use meaningful descriptions
@@ -196,37 +217,32 @@ class CFPBLetterGenerator:
                 date_str = event.event_date.strftime("%m/%d/%Y")
                 lines.append(f"• {date_str} — {event.event_description}")
         else:
-            # Default timeline if none provided - use realistic flow
-            lines.append(f"• [DATE] — Consumer filed written dispute with {entity_name}")
-            lines.append(f"• [DATE] — {entity_name} responded with generic verification")
-            lines.append(f"• {today} — CFPB complaint filed due to inadequate reinvestigation")
+            # Default timeline if none provided
+            lines.append(f"• [DATE] — Dispute submitted to {formatted_entity}")
+            lines.append("• [DATE] — 30-day statutory reinvestigation deadline")
+            lines.append(f"• [DATE] — {formatted_entity} response received")
         lines.append("")
 
-        # CRA Response Deficiency - statute-anchored
+        # Reinvestigation Deficiency - examiner-grade language
         lines.append("=" * 60)
         lines.append("")
         lines.append("REINVESTIGATION DEFICIENCY")
         lines.append("")
-        lines.append(f"Despite my formal dispute, {entity_name} responded that the accounts were")
-        lines.append("\"verified as accurate\" without addressing the specific inaccuracies documented.")
+        lines.append("Despite my dispute identifying specific, verifiable inaccuracies,")
+        lines.append(f"{formatted_entity} responded that the accounts were \"verified as accurate\"")
+        lines.append("without addressing the documented defects.")
         lines.append("")
-        lines.append("The reinvestigation appears to have consisted solely of querying the furnisher,")
-        lines.append("rather than independently verifying the data as required under 15 U.S.C. § 1681i(a).")
-        lines.append("")
-        lines.append("Specifically, the response failed to:")
+        lines.append("The reinvestigation failed to:")
         lines.append("")
 
-        # List specific failures based on violation types
-        for vtype in list(violations_by_type.keys())[:3]:
+        # List specific failures based on ALL violation types
+        for vtype in all_violation_types:
             failure = self._get_reinvestigation_failure(vtype)
             lines.append(f"• {failure}")
-        # Factual impossibility argument
-        lines.append("• Explain how the accounts could be \"verified as accurate\" when the")
-        lines.append("  Date of First Delinquency — the sole trigger for the seven-year purge")
-        lines.append("  under 15 U.S.C. § 1681c(c) — is absent, rendering any assertion of")
-        lines.append("  reporting accuracy a factual impossibility.")
+        lines.append("• Demonstrate any independent verification beyond furnisher confirmation")
         lines.append("")
-        lines.append("Therefore, the dispute was not reasonably investigated as required by law.")
+        lines.append("Reliance on furnisher affirmation alone does not constitute a reasonable")
+        lines.append("reinvestigation under **15 U.S.C. § 1681i(a)**.")
         lines.append("")
 
         # Consumer Impact and Prejudice section
@@ -234,52 +250,42 @@ class CFPBLetterGenerator:
         lines.append("")
         lines.append("CONSUMER IMPACT AND PREJUDICE")
         lines.append("")
-        lines.append("Without the DOFD, I cannot determine whether these accounts are reporting")
-        lines.append("beyond the seven-year statutory limit. This missing mandatory field effectively")
-        lines.append("grants the furnisher an unlimited reporting period in violation of")
-        lines.append("15 U.S.C. § 1681c(a), suppressing my creditworthiness and access to credit.")
+        lines.append("These inaccuracies cause material harm to my creditworthiness and financial")
+        lines.append("standing:")
+        lines.append("")
+        impact_statements = self._get_consumer_impact_statements(all_violation_types)
+        for statement in impact_statements:
+            # Skip header lines we already added
+            if statement and not statement.startswith("These inaccuracies"):
+                lines.append(statement)
         lines.append("")
 
-        # Requested Resolution - precision legal language
+        # Requested Resolution - dynamic based on violation types
         lines.append("=" * 60)
         lines.append("")
         lines.append("REQUESTED RESOLUTION")
         lines.append("")
-        lines.append(f"I request that the CFPB compel {entity_name} to fulfill its statutory")
+        lines.append(f"I request that the CFPB compel {formatted_entity} to fulfill its statutory")
         lines.append("obligations by performing the following:")
         lines.append("")
 
-        lines.append("1. Mandatory Correction or Deletion")
-        lines.append("   Provide the original Date of First Delinquency (Metro-2 Field 25) used")
-        lines.append("   for reporting purposes, obtained from original source records. If the")
-        lines.append("   DOFD cannot be verified from the furnisher's records, the accounts must")
-        lines.append("   be deleted pursuant to 15 U.S.C. § 1681i(a)(5)(A).")
-        lines.append("")
-
-        lines.append("2. Procedural Disclosure")
-        lines.append("   Provide a full description of the reinvestigation procedures conducted")
-        lines.append("   in response to my dispute, including:")
-        lines.append("   • the records reviewed,")
-        lines.append("   • whether an ACDV/e-OSCAR system was used,")
-        lines.append("   • and the identity or department of the individual(s) at the furnishing")
-        lines.append("     entity who certified the accuracy of the data.")
-        lines.append("")
-
-        lines.append("3. Certification of Accuracy")
-        lines.append("   Provide a written explanation describing how the accounts were deemed")
-        lines.append("   \"verified as accurate\" while the legally-determinative DOFD field")
-        lines.append("   remains null or unreported, and identify the DOFD value relied upon")
-        lines.append("   in making that determination.")
-        lines.append("")
+        resolution_num = 1
+        resolutions = self._get_dynamic_resolutions(all_violation_types, violations_by_type)
+        for title, details in resolutions:
+            lines.append(f"{resolution_num}. {title}")
+            for detail in details:
+                lines.append(f"   {detail}")
+            lines.append("")
+            resolution_num += 1
 
         # Attachments
         lines.append("=" * 60)
         lines.append("")
         lines.append("ATTACHMENTS PROVIDED")
         lines.append("")
-        lines.append("• Copy of dispute letter sent to CRA")
+        lines.append(f"• Copy of dispute letter sent to {formatted_entity}")
         lines.append("• Certified mail receipt (if applicable)")
-        lines.append(f"• {entity_name} response letter")
+        lines.append(f"• {formatted_entity} response letter")
         lines.append("• Credit report excerpts showing disputed information")
         lines.append("")
         lines.append("=" * 60)
@@ -334,6 +340,7 @@ class CFPBLetterGenerator:
     def _format_issue_title(self, violation_type: str) -> str:
         """Format violation type as a proper issue title."""
         title_map = {
+            # Single-bureau violations
             "missing_dofd": "Missing Date of First Delinquency (Metro-2 Field 25)",
             "chargeoff_missing_dofd": "Charge-Off Account Missing Required DOFD",
             "obsolete_account": "Account Exceeds 7-Year Reporting Period",
@@ -343,6 +350,14 @@ class CFPBLetterGenerator:
             "missing_scheduled_payment": "Missing Scheduled Payment Amount",
             "dofd_after_date_opened": "DOFD Precedes Account Open Date (Temporal Impossibility)",
             "payment_history_exceeds_account_age": "Payment History Exceeds Account Age",
+            # Cross-bureau discrepancies
+            "date_opened_mismatch": "Cross-Bureau Date Opened Mismatch",
+            "dofd_mismatch": "Cross-Bureau DOFD Mismatch",
+            "balance_mismatch": "Cross-Bureau Balance Mismatch",
+            "status_mismatch": "Cross-Bureau Account Status Mismatch",
+            "payment_history_mismatch": "Cross-Bureau Payment History Mismatch",
+            "past_due_mismatch": "Cross-Bureau Past Due Amount Mismatch",
+            "closed_vs_open_conflict": "Cross-Bureau Open/Closed Status Conflict",
         }
         return title_map.get(violation_type, violation_type.replace("_", " ").title())
 
@@ -369,12 +384,33 @@ class CFPBLetterGenerator:
                 "A charged-off account balance cannot increase absent documented post-charge-off "
                 "activity. An unexplained balance increase suggests reporting error or data corruption."
             ),
+            # Cross-bureau discrepancies
+            "date_opened_mismatch": (
+                "Different credit bureaus are reporting different account open dates for the same account. "
+                "Under § 1681e(b), CRAs must assure maximum possible accuracy. Conflicting dates across "
+                "bureaus prove at least one (and possibly all) are inaccurate."
+            ),
+            "dofd_mismatch": (
+                "Different credit bureaus report different Dates of First Delinquency for the same account. "
+                "Since DOFD determines the 7-year reporting period under § 1681c(a), conflicting dates "
+                "create legal uncertainty about when the account should be purged."
+            ),
+            "balance_mismatch": (
+                "Different credit bureaus report different balance amounts for the same account. "
+                "This discrepancy violates the accuracy requirements of § 1681e(b) and may be "
+                "artificially inflating or deflating the consumer's apparent debt load."
+            ),
+            "status_mismatch": (
+                "Different credit bureaus report conflicting account statuses. This inconsistency "
+                "proves the information cannot be accurate across all bureaus and violates § 1681e(b)."
+            ),
         }
         return context_map.get(violation_type, "")
 
     def _get_reinvestigation_failure(self, violation_type: str) -> str:
         """Get specific reinvestigation failure for a violation type."""
         failure_map = {
+            # Single-bureau violations
             "missing_dofd": "Provide or verify the Date of First Delinquency",
             "chargeoff_missing_dofd": "Explain why DOFD is missing from charge-off account",
             "obsolete_account": "Verify the account has not exceeded the 7-year reporting period",
@@ -382,6 +418,13 @@ class CFPBLetterGenerator:
             "balance_increase_after_chargeoff": "Explain the basis for post-charge-off balance increase",
             "missing_date_opened": "Verify the account open date from original records",
             "missing_scheduled_payment": "Provide the scheduled payment amount",
+            # Cross-bureau discrepancies
+            "date_opened_mismatch": "Reconcile conflicting Date Opened values reported across bureaus",
+            "dofd_mismatch": "Reconcile conflicting Date of First Delinquency values across bureaus",
+            "balance_mismatch": "Reconcile conflicting balance amounts reported across bureaus",
+            "status_mismatch": "Reconcile conflicting account status values across bureaus",
+            "payment_history_mismatch": "Reconcile conflicting payment history data across bureaus",
+            "past_due_mismatch": "Reconcile conflicting past due amounts across bureaus",
         }
         return failure_map.get(violation_type, f"Address the {violation_type.replace('_', ' ')} issue")
 
@@ -404,6 +447,131 @@ class CFPBLetterGenerator:
         resolutions.append("Identify the documents and records reviewed during verification")
         resolutions.append("Cease reporting inaccurate or unverifiable information")
         resolutions.append("Provide written confirmation of corrections made")
+
+        return resolutions
+
+    def _get_consumer_impact_statements(self, violation_types: List[str]) -> List[str]:
+        """Generate consumer impact statements based on violation types."""
+        statements = []
+
+        # Build impact based on violation categories
+        has_dofd = any("dofd" in vt.lower() for vt in violation_types)
+        has_balance = any("balance" in vt.lower() for vt in violation_types)
+        has_obsolete = any("obsolete" in vt.lower() for vt in violation_types)
+        has_missing = any("missing" in vt.lower() and "dofd" not in vt.lower() for vt in violation_types)
+        has_temporal = any("temporal" in vt.lower() or "exceeds" in vt.lower() or "after" in vt.lower() for vt in violation_types)
+        has_mismatch = any("mismatch" in vt.lower() for vt in violation_types)
+
+        statements.append("These inaccuracies cause material harm to my creditworthiness and financial standing:")
+        statements.append("")
+
+        if has_dofd:
+            statements.append("• Missing DOFD prevents verification of 7-year obsolescence compliance,")
+            statements.append("  effectively granting unlimited reporting in violation of 15 U.S.C. § 1681c(a).")
+
+        if has_balance:
+            statements.append("• Inflated or incorrect balance reporting distorts my debt-to-income ratio,")
+            statements.append("  directly impacting credit decisions and loan eligibility.")
+
+        if has_obsolete:
+            statements.append("• Reporting beyond the statutory 7-year limit violates 15 U.S.C. § 1681c(a),")
+            statements.append("  causing continued damage from information that should have been purged.")
+
+        if has_missing:
+            statements.append("• Missing required Metro-2 fields render the account data incomplete,")
+            statements.append("  violating the maximum accuracy standard of 15 U.S.C. § 1681e(b).")
+
+        if has_temporal:
+            statements.append("• Temporal impossibilities in the reported data (dates that contradict each other)")
+            statements.append("  prove the information cannot be accurate as reported.")
+
+        if has_mismatch:
+            statements.append("• Cross-bureau discrepancies prove that at least one bureau is reporting")
+            statements.append("  inaccurate information, violating the maximum accuracy standard of § 1681e(b).")
+            statements.append("  These inconsistencies create confusion for creditors evaluating my file.")
+
+        # Generic catch-all if no specific matches
+        if not (has_dofd or has_balance or has_obsolete or has_missing or has_temporal or has_mismatch):
+            statements.append("• The documented inaccuracies suppress my creditworthiness")
+            statements.append("  and access to credit on fair and equal terms.")
+
+        return statements
+
+    def _get_dynamic_resolutions(
+        self, violation_types: List[str], violations_by_type: Dict[str, List[Violation]]
+    ) -> List[tuple]:
+        """Generate dynamic resolution requests based on violation types."""
+        resolutions = []
+
+        has_dofd = any("dofd" in vt.lower() for vt in violation_types)
+        has_balance = any("balance" in vt.lower() for vt in violation_types)
+        has_obsolete = any("obsolete" in vt.lower() for vt in violation_types)
+        has_missing = any("missing" in vt.lower() for vt in violation_types)
+        has_mismatch = any("mismatch" in vt.lower() for vt in violation_types)
+
+        # Violation-specific resolutions
+        if has_dofd or has_missing:
+            resolutions.append((
+                "Mandatory Correction or Deletion",
+                [
+                    "Provide original source documentation for the disputed data fields.",
+                    "If documentation cannot be produced, delete the accounts pursuant",
+                    "to 15 U.S.C. § 1681i(a)(5)(A)."
+                ]
+            ))
+
+        if has_balance:
+            resolutions.append((
+                "Balance Verification",
+                [
+                    "Provide documentation supporting the reported balance amount.",
+                    "Explain any balance changes after charge-off date.",
+                    "Correct any balance reporting errors identified."
+                ]
+            ))
+
+        if has_obsolete:
+            resolutions.append((
+                "Obsolete Account Deletion",
+                [
+                    "Delete any accounts exceeding the 7-year reporting period",
+                    "under 15 U.S.C. § 1681c(a)."
+                ]
+            ))
+
+        if has_mismatch:
+            resolutions.append((
+                "Cross-Bureau Discrepancy Resolution",
+                [
+                    "Identify the correct value for each field where cross-bureau",
+                    "discrepancies exist by obtaining original source documentation.",
+                    "Correct the inaccurate reporting to match verified records.",
+                    "Notify all credit bureaus of the corrections made."
+                ]
+            ))
+
+        # Always include procedural disclosure
+        resolutions.append((
+            "Procedural Disclosure",
+            [
+                "Provide a full description of reinvestigation procedures conducted,",
+                "including:",
+                "• the records reviewed,",
+                "• whether an ACDV/e-OSCAR system was used,",
+                "• the identity of individual(s) who certified data accuracy."
+            ]
+        ))
+
+        # Add certification of accuracy for specific types
+        if has_dofd or has_missing or has_balance or has_mismatch:
+            cert_details = ["Provide a written explanation of how accounts were deemed"]
+            cert_details.append("\"verified as accurate\" despite the documented issues:")
+            for vtype in list(violation_types)[:3]:
+                cert_details.append(f"  • {self._format_issue_title(vtype)}")
+            resolutions.append((
+                "Certification of Accuracy",
+                cert_details
+            ))
 
         return resolutions
 

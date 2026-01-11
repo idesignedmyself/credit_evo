@@ -91,27 +91,120 @@ class CFPBService:
         """
         Get unresolved contradictions for a dispute session.
 
-        Pulls from existing audit results and filters by resolution status.
+        For CFPB letters, uses ONLY the selected violations and discrepancies
+        from the letter (violations_cited + discrepancies_cited).
+        CRITICAL: Must preserve BOTH violation types - never omit discrepancies.
         """
-        # For now, return violations from the audit result
-        # In production, this would track which violations have been resolved
+        from app.models.db_models import LetterDB, AuditResultDB
+
         violations = []
+        discrepancies = []
 
-        # Find associated report
-        disputes = self.db.query(DisputeDB).filter(
-            DisputeDB.violation_id.like(f"{dispute_session_id}%")
-        ).all()
+        # PRIORITY 1: Try to find letter by ID - use its selected violations/discrepancies
+        letter = self.db.query(LetterDB).filter(LetterDB.id == dispute_session_id).first()
 
-        for dispute in disputes:
+        if letter:
+            # Get violations from letter
+            if letter.violations_cited:
+                for v_data in letter.violations_cited:
+                    if isinstance(v_data, dict):
+                        # Full violation object stored
+                        v = self._reconstruct_violation(v_data)
+                        if v:
+                            violations.append(v)
+                    elif isinstance(v_data, str):
+                        # Just violation type string - need to look up full data from audit
+                        pass  # Will be handled below
+
+            # If violations_cited contained just strings, look up from audit
+            if not violations and letter.violations_cited and letter.report_id:
+                from collections import Counter
+                audit_result = self.db.query(AuditResultDB).filter(
+                    AuditResultDB.report_id == letter.report_id
+                ).first()
+                if audit_result and audit_result.violations_data:
+                    # Count violation types needed from letter
+                    cited_counts = Counter(
+                        v if isinstance(v, str) else v.get('violation_type')
+                        for v in letter.violations_cited
+                    )
+                    # Match violations from audit by type (respect counts for duplicates)
+                    for v_data in audit_result.violations_data:
+                        if isinstance(v_data, dict):
+                            vtype = v_data.get('violation_type')
+                            if cited_counts.get(vtype, 0) > 0:
+                                v = self._reconstruct_violation(v_data)
+                                if v:
+                                    violations.append(v)
+                                    cited_counts[vtype] -= 1
+                                if sum(cited_counts.values()) <= 0:
+                                    break
+
+            # Use ONLY the discrepancies selected for this letter
+            if letter.discrepancies_cited:
+                for d_data in letter.discrepancies_cited:
+                    if isinstance(d_data, dict):
+                        v = self._reconstruct_discrepancy_as_violation(d_data)
+                        if v:
+                            discrepancies.append(v)
+
+            # Letter found - return its selected items only
+            return violations + discrepancies
+
+        # PRIORITY 2: Try to find by dispute ID
+        dispute = self.db.query(DisputeDB).filter(DisputeDB.id == dispute_session_id).first()
+
+        if dispute:
+            # Get violations from original_violation_data
             if dispute.original_violation_data:
-                # Reconstruct violation from stored data
                 v_data = dispute.original_violation_data
                 if isinstance(v_data, dict):
                     v = self._reconstruct_violation(v_data)
                     if v:
                         violations.append(v)
+                elif isinstance(v_data, list):
+                    for item in v_data:
+                        if isinstance(item, dict):
+                            v = self._reconstruct_violation(item)
+                            if v:
+                                violations.append(v)
 
-        return violations
+            # Get cross-bureau discrepancies from dispute
+            if dispute.discrepancies_data:
+                for d_data in dispute.discrepancies_data:
+                    if isinstance(d_data, dict):
+                        v = self._reconstruct_discrepancy_as_violation(d_data)
+                        if v:
+                            discrepancies.append(v)
+
+            # If dispute has a linked letter, get discrepancies from there
+            if not discrepancies and dispute.letter_id:
+                linked_letter = self.db.query(LetterDB).filter(LetterDB.id == dispute.letter_id).first()
+                if linked_letter and linked_letter.discrepancies_cited:
+                    for d_data in linked_letter.discrepancies_cited:
+                        if isinstance(d_data, dict):
+                            v = self._reconstruct_discrepancy_as_violation(d_data)
+                            if v:
+                                discrepancies.append(v)
+
+            if violations or discrepancies:
+                return violations + discrepancies
+
+        # PRIORITY 3: Fallback - try to find by violation_id prefix pattern
+        disputes = self.db.query(DisputeDB).filter(
+            DisputeDB.violation_id.like(f"{dispute_session_id}%")
+        ).all()
+
+        for d in disputes:
+            if d.original_violation_data:
+                v_data = d.original_violation_data
+                if isinstance(v_data, dict):
+                    v = self._reconstruct_violation(v_data)
+                    if v:
+                        violations.append(v)
+
+        # Combine violations and discrepancies - BOTH must be present
+        return violations + discrepancies
 
     def can_escalate(self, dispute_session_id: str) -> Tuple[bool, Optional[str]]:
         """
@@ -176,13 +269,31 @@ class CFPBService:
         # Get timeline events
         timeline_events = self._build_timeline(dispute_session_id)
 
-        # Get entity info from disputes
-        disputes = self.db.query(DisputeDB).filter(
-            DisputeDB.violation_id.like(f"{dispute_session_id}%")
-        ).first()
+        # Get entity info from dispute or letter
+        from app.models.db_models import LetterDB
 
-        entity_name = disputes.entity_name if disputes else "Credit Bureau"
-        account_info = disputes.account_fingerprint if disputes else "Account"
+        dispute = self.db.query(DisputeDB).filter(DisputeDB.id == dispute_session_id).first()
+        entity_name = "Credit Bureau"
+        account_info = "Account"
+
+        if dispute:
+            entity_name = dispute.entity_name or "Credit Bureau"
+            account_info = dispute.account_fingerprint or "Account"
+        else:
+            # Try letter lookup
+            letter = self.db.query(LetterDB).filter(LetterDB.id == dispute_session_id).first()
+            if letter:
+                entity_name = letter.bureau.title() if letter.bureau else "Credit Bureau"
+                accounts = letter.accounts_disputed or []
+                account_info = ", ".join(accounts[:3]) if accounts else "Account"
+            else:
+                # Fallback to prefix pattern
+                dispute = self.db.query(DisputeDB).filter(
+                    DisputeDB.violation_id.like(f"{dispute_session_id}%")
+                ).first()
+                if dispute:
+                    entity_name = dispute.entity_name or "Credit Bureau"
+                    account_info = dispute.account_fingerprint or "Account"
 
         # Get CFPB case number for escalation/final
         cfpb_case = self._get_or_create_case(dispute_session_id, user_id, create=False)
@@ -477,10 +588,15 @@ class CFPBService:
         """Build timeline of dispute events."""
         events = []
 
-        # Get disputes for this session
-        disputes = self.db.query(DisputeDB).filter(
-            DisputeDB.violation_id.like(f"{dispute_session_id}%")
-        ).all()
+        # First try to find by dispute ID directly
+        dispute = self.db.query(DisputeDB).filter(DisputeDB.id == dispute_session_id).first()
+        disputes = [dispute] if dispute else []
+
+        # Fallback to prefix pattern
+        if not disputes:
+            disputes = self.db.query(DisputeDB).filter(
+                DisputeDB.violation_id.like(f"{dispute_session_id}%")
+            ).all()
 
         for dispute in disputes:
             # Dispute creation
@@ -530,4 +646,55 @@ class CFPBService:
                 evidence=v_data.get("evidence", {}),
             )
         except Exception:
+            return None
+
+    def _reconstruct_discrepancy_as_violation(self, d_data: Dict[str, Any]) -> Optional[Violation]:
+        """Convert a cross-bureau discrepancy to a Violation object for CFPB letter."""
+        try:
+            from app.models.ssot import ViolationType, Severity
+
+            field_name = d_data.get("field_name", "unknown")
+            values_by_bureau = d_data.get("values_by_bureau", {})
+
+            # Build description from the discrepancy data
+            values_str = ", ".join([f"{b}: {v}" for b, v in values_by_bureau.items() if v])
+            description = f"Cross-bureau discrepancy in {field_name}: {values_str}"
+
+            # Normalize field_name for lookup (handle "Date Opened" -> "date_opened")
+            normalized_field = field_name.lower().replace(" ", "_")
+
+            # Map field_name to a violation type (using _mismatch suffix from ViolationType enum)
+            vtype_map = {
+                "date_opened": "date_opened_mismatch",
+                "balance": "balance_mismatch",
+                "high_credit": "balance_mismatch",  # Use balance_mismatch as fallback
+                "payment_status": "status_mismatch",
+                "status": "status_mismatch",
+                "dofd": "dofd_mismatch",
+                "past_due": "past_due_mismatch",
+                "payment_history": "payment_history_mismatch",
+            }
+            violation_type_str = vtype_map.get(normalized_field, f"{normalized_field}_mismatch")
+
+            # Try to use the mapped type, fallback to a generic one
+            try:
+                violation_type = ViolationType(violation_type_str)
+            except ValueError:
+                # If not a valid enum, use a generic cross-bureau type
+                violation_type = ViolationType("missing_dofd")  # Fallback
+
+            return Violation(
+                violation_id=d_data.get("discrepancy_id", str(uuid4())),
+                violation_type=violation_type,
+                severity=Severity(d_data.get("severity", "medium")),
+                account_id=d_data.get("account_id", ""),
+                creditor_name=d_data.get("creditor_name", ""),
+                account_number_masked=d_data.get("account_number_masked", ""),
+                description=description,
+                expected_value=None,
+                actual_value=values_str,
+                evidence={"values_by_bureau": values_by_bureau, "field_name": field_name},
+            )
+        except Exception as e:
+            print(f"Error reconstructing discrepancy: {e}")
             return None
