@@ -330,6 +330,10 @@ const LetterPage = () => {
   const [legalPacket, setLegalPacket] = useState(null);
   const [legalPacketLoading, setLegalPacketLoading] = useState(false);
   const [legalPacketError, setLegalPacketError] = useState(null);
+  const [legalPacketDocument, setLegalPacketDocument] = useState('');
+  const [editableLegalContent, setEditableLegalContent] = useState('');
+  const [isEditingLegal, setIsEditingLegal] = useState(false);
+  const [legalCopied, setLegalCopied] = useState(false);
 
   const { selectedViolationIds, selectedDiscrepancyIds, violations, discrepancies, auditResult, fetchAuditResults } = useViolationStore();
   const {
@@ -463,8 +467,14 @@ const LetterPage = () => {
         setLegalPacketLoading(true);
         setLegalPacketError(null);
         try {
-          const result = await letterApi.getLegalPacket(currentLetter.letter_id, 'json');
-          setLegalPacket(result);
+          // Fetch both JSON and document formats
+          const [jsonResult, docResult] = await Promise.all([
+            letterApi.getLegalPacket(currentLetter.letter_id, 'json'),
+            letterApi.getLegalPacket(currentLetter.letter_id, 'document'),
+          ]);
+          setLegalPacket(jsonResult);
+          setLegalPacketDocument(docResult);
+          setEditableLegalContent(docResult);
         } catch (err) {
           console.error('Failed to generate legal packet:', err);
           setLegalPacketError(err.message || 'Failed to generate legal packet');
@@ -2213,28 +2223,41 @@ const LetterPage = () => {
 
                       <Divider sx={{ my: 2 }} />
 
-                      {/* Violations Summary */}
+                      {/* Violations Summary - Grouped by Category */}
                       <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
-                        Violations Detected ({legalPacket.violation_count})
+                        Violations Detected ({legalPacket.violation_count || legalPacket.violation_type_count || 0})
                       </Typography>
                       <Box sx={{ pl: 2, mb: 2 }}>
-                        {legalPacket.violations?.map((v, idx) => (
-                          <Chip
-                            key={idx}
-                            label={typeof v === 'string' ? v.replace(/_/g, ' ') : v.violation_type?.replace(/_/g, ' ')}
-                            size="small"
-                            sx={{ mr: 0.5, mb: 0.5 }}
-                          />
-                        ))}
-                        {legalPacket.discrepancies?.map((d, idx) => (
-                          <Chip
-                            key={`d-${idx}`}
-                            label={`${d.field_name || 'Cross-Bureau'} Mismatch`}
-                            size="small"
-                            color="warning"
-                            sx={{ mr: 0.5, mb: 0.5 }}
-                          />
-                        ))}
+                        {legalPacket.violations_grouped ? (
+                          Object.entries(legalPacket.violations_grouped).map(([key, group]) => (
+                            <Box key={key} sx={{ mb: 1.5 }}>
+                              <Chip
+                                label={`${group.category} (${group.accounts?.length || 0} accounts)`}
+                                size="small"
+                                color={key.includes('Mismatch') || key.includes('mismatch') ? 'warning' : 'default'}
+                                sx={{ fontWeight: 500 }}
+                              />
+                              <Box sx={{ pl: 2, mt: 0.5 }}>
+                                {group.accounts?.map((acct, idx) => (
+                                  <Typography key={idx} variant="caption" color="text.secondary" display="block">
+                                    • {acct.creditor_name} ({acct.account_number_masked})
+                                  </Typography>
+                                ))}
+                              </Box>
+                            </Box>
+                          ))
+                        ) : (
+                          <>
+                            {legalPacket.violations?.map((v, idx) => (
+                              <Chip
+                                key={idx}
+                                label={typeof v === 'string' ? v.replace(/_/g, ' ') : v.violation_type?.replace(/_/g, ' ')}
+                                size="small"
+                                sx={{ mr: 0.5, mb: 0.5 }}
+                              />
+                            ))}
+                          </>
+                        )}
                       </Box>
 
                       <Divider sx={{ my: 2 }} />
@@ -2253,10 +2276,10 @@ const LetterPage = () => {
                       <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>Potential Damages</Typography>
                       <Box sx={{ pl: 2, mb: 2 }}>
                         <Typography variant="body2">
-                          <strong>Statutory Range:</strong> ${legalPacket.potential_damages?.fcra_statutory_min?.toLocaleString()} – ${legalPacket.potential_damages?.fcra_statutory_max?.toLocaleString()}
+                          <strong>Statutory damages:</strong> $100–$1,000 per willful violation pursuant to {legalPacket.potential_damages?.statutory_citation || '15 U.S.C. §1681n(a)(1)(A)'}
                         </Typography>
                         {legalPacket.potential_damages?.punitive_eligible && (
-                          <Typography variant="body2" color="secondary">
+                          <Typography variant="body2" color="secondary" sx={{ mt: 0.5 }}>
                             <strong>Punitive Damages:</strong> Available (willfulness indicators present)
                           </Typography>
                         )}
@@ -2284,34 +2307,112 @@ const LetterPage = () => {
 
                       <Divider sx={{ my: 2 }} />
 
-                      {/* Actions */}
+                      {/* Document Preview with Edit/Copy/Download Controls */}
+                      <Paper sx={{ mb: 3, borderRadius: 2, overflow: 'hidden' }}>
+                        <Box sx={{ p: 2, bgcolor: '#f3e5f5', borderBottom: '1px solid', borderColor: 'divider' }}>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <GavelIcon color="secondary" />
+                              <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                                Legal Document
+                              </Typography>
+                              <Chip label={`${editableLegalContent.split(/\s+/).filter(w => w).length} words`} size="small" variant="outlined" />
+                            </Box>
+                            <Stack direction="row" spacing={1}>
+                              <Button size="small" startIcon={isEditingLegal ? <VisibilityIcon /> : <EditIcon />} onClick={() => setIsEditingLegal(!isEditingLegal)} variant="outlined">
+                                {isEditingLegal ? 'View' : 'Edit'}
+                              </Button>
+                              <Button
+                                size="small"
+                                startIcon={<ContentCopyIcon />}
+                                onClick={async () => {
+                                  await navigator.clipboard.writeText(editableLegalContent);
+                                  setLegalCopied(true);
+                                  setTimeout(() => setLegalCopied(false), 2000);
+                                }}
+                                variant="outlined"
+                                color={legalCopied ? 'success' : 'inherit'}
+                              >
+                                {legalCopied ? 'Copied!' : 'Copy'}
+                              </Button>
+                              <Button
+                                size="small"
+                                startIcon={<DownloadIcon />}
+                                onClick={() => {
+                                  if (!editableLegalContent) return;
+                                  const pdf = new jsPDF({ unit: 'pt', format: 'letter' });
+                                  const margin = 50;
+                                  const pageWidth = pdf.internal.pageSize.getWidth();
+                                  const pageHeight = pdf.internal.pageSize.getHeight();
+                                  pdf.setFont('times', 'normal');
+                                  pdf.setFontSize(11);
+                                  const lines = pdf.splitTextToSize(editableLegalContent, pageWidth - (margin * 2));
+                                  let y = margin;
+                                  lines.forEach((line) => {
+                                    if (y + 16 > pageHeight - margin) { pdf.addPage(); y = margin; }
+                                    pdf.text(line, margin, y);
+                                    y += 16;
+                                  });
+                                  pdf.save(`legal-packet-${dayjs().format('YYYY-MM-DD')}.pdf`);
+                                }}
+                                variant="contained"
+                                color="secondary"
+                                disableElevation
+                              >
+                                Download PDF
+                              </Button>
+                            </Stack>
+                          </Box>
+                        </Box>
+                        <Box sx={{ p: 3, maxHeight: 400, overflow: 'auto', bgcolor: '#fafafa' }}>
+                          {isEditingLegal ? (
+                            <TextField
+                              fullWidth
+                              multiline
+                              minRows={15}
+                              value={editableLegalContent}
+                              onChange={(e) => setEditableLegalContent(e.target.value)}
+                              variant="outlined"
+                              sx={{ '& .MuiInputBase-root': { fontFamily: 'monospace', fontSize: '10pt', lineHeight: 1.5 } }}
+                            />
+                          ) : (
+                            <Box sx={{ fontFamily: 'monospace', fontSize: '10pt', lineHeight: 1.6, whiteSpace: 'pre-wrap', color: '#111' }}>
+                              {editableLegalContent}
+                            </Box>
+                          )}
+                        </Box>
+                      </Paper>
+
+                      {/* Quick Actions */}
                       <Stack direction="row" spacing={2}>
-                        <Button
-                          variant="contained"
-                          startIcon={<DownloadIcon />}
-                          onClick={handleDownloadLegalPacket}
-                        >
-                          Download Packet
-                        </Button>
                         <Button
                           variant="outlined"
                           onClick={() => {
                             const printWindow = window.open('', '_blank');
-                            letterApi.getLegalPacket(currentLetter.letter_id, 'document').then(doc => {
-                              printWindow.document.write(`<pre style="font-family: monospace; white-space: pre-wrap;">${doc}</pre>`);
-                              printWindow.document.close();
-                              printWindow.print();
-                            });
+                            printWindow.document.write(`<pre style="font-family: monospace; white-space: pre-wrap; font-size: 10pt;">${editableLegalContent}</pre>`);
+                            printWindow.document.close();
+                            printWindow.print();
                           }}
                         >
-                          Print Packet
+                          Print Document
+                        </Button>
+                        <Button
+                          variant="outlined"
+                          onClick={() => {
+                            // Reset to original
+                            setEditableLegalContent(legalPacketDocument);
+                            setIsEditingLegal(false);
+                          }}
+                          disabled={editableLegalContent === legalPacketDocument}
+                        >
+                          Reset to Original
                         </Button>
                       </Stack>
 
                       <Alert severity="info" sx={{ mt: 3 }}>
                         <Typography variant="body2">
                           This packet contains all evidence needed for an FCRA attorney consultation.
-                          Print or download this document to share with your legal counsel.
+                          You can edit the document above, then download or print to share with your legal counsel.
                         </Typography>
                       </Alert>
                     </>

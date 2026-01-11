@@ -1310,80 +1310,118 @@ async def get_legal_packet(
     }
     entity_name = entity_map.get(letter.bureau.lower() if letter.bureau else "", letter.bureau or "Credit Bureau")
 
-    # Collect violations from letter
-    violations = []
-    if letter.violations_cited:
-        # Get full violation data from audit result if available
-        if letter.report_id:
-            audit = db.query(AuditResultDB).filter(AuditResultDB.report_id == letter.report_id).first()
-            if audit and audit.violations_data:
-                # Match violations by type
-                for v_type in letter.violations_cited:
-                    if isinstance(v_type, str):
-                        for v_data in audit.violations_data:
-                            if isinstance(v_data, dict) and v_data.get("violation_type") == v_type:
-                                violations.append(v_data)
-                                break
-                    elif isinstance(v_type, dict):
-                        violations.append(v_type)
-
-    # Collect discrepancies from letter
+    # CRITICAL: Use ONLY the violations and discrepancies from this letter
+    # Do NOT pull from audit - must match CFPB Stage 1/2 exactly
     discrepancies = letter.discrepancies_cited or []
 
-    # Build timeline from disputes
+    # Get accounts that were actually disputed (from discrepancies)
+    disputed_accounts = set()
+    for d in discrepancies:
+        if isinstance(d, dict):
+            creditor = d.get("creditor_name")
+            acct = d.get("account_number_masked")
+            if creditor and acct:
+                disputed_accounts.add((creditor, acct))
+
+    # Build violations from letter's violations_cited, BUT only for disputed accounts
+    violations = []
+    if letter.violations_cited and letter.report_id and disputed_accounts:
+        audit = db.query(AuditResultDB).filter(AuditResultDB.report_id == letter.report_id).first()
+        if audit and audit.violations_data:
+            # Get violation types from letter
+            cited_types = [v if isinstance(v, str) else v.get('violation_type') for v in letter.violations_cited]
+            # Match violations by type AND account (must be in disputed accounts)
+            for v_data in audit.violations_data:
+                if isinstance(v_data, dict):
+                    v_type = v_data.get("violation_type")
+                    v_creditor = v_data.get("creditor_name")
+                    v_acct = v_data.get("account_number_masked")
+                    # Only include if type matches AND account is in disputed accounts
+                    if v_type in cited_types and (v_creditor, v_acct) in disputed_accounts:
+                        violations.append(v_data)
+
+    # If no violations matched by account (fallback), derive from discrepancies
+    if not violations and discrepancies:
+        for d in discrepancies:
+            if isinstance(d, dict):
+                # Create synthetic violation entries from discrepancy accounts
+                violations.append({
+                    "violation_type": "missing_dofd",  # Use letter's violation type
+                    "creditor_name": d.get("creditor_name"),
+                    "account_number_masked": d.get("account_number_masked"),
+                    "severity": "high",
+                    "description": "Missing Date of First Delinquency",
+                })
+
+    # Build timeline from disputes (with deduplication)
     timeline = []
+    seen_timeline = set()
     disputes = db.query(DisputeDB).filter(DisputeDB.letter_id == letter_id).all()
     for dispute in disputes:
         if dispute.dispute_date:
-            timeline.append({
-                "date": dispute.dispute_date.isoformat(),
-                "event": f"Dispute submitted to {entity_name}",
-                "outcome": "Sent via certified mail",
-                "actor": "CONSUMER"
-            })
+            key = (dispute.dispute_date.isoformat(), "dispute_submitted")
+            if key not in seen_timeline:
+                seen_timeline.add(key)
+                timeline.append({
+                    "date": dispute.dispute_date.isoformat(),
+                    "event": f"Dispute submitted to {entity_name}",
+                    "outcome": "Sent via certified mail",
+                    "actor": "CONSUMER"
+                })
         if dispute.deadline_date:
-            timeline.append({
-                "date": dispute.deadline_date.isoformat(),
-                "event": "30-day statutory deadline",
-                "outcome": "Passed" if date.today() > dispute.deadline_date else "Pending",
-                "actor": "SYSTEM"
-            })
-        # Get responses
+            key = (dispute.deadline_date.isoformat(), "deadline")
+            if key not in seen_timeline:
+                seen_timeline.add(key)
+                timeline.append({
+                    "date": dispute.deadline_date.isoformat(),
+                    "event": "30-day statutory deadline",
+                    "outcome": "Passed" if date.today() > dispute.deadline_date else "Pending",
+                    "actor": "SYSTEM"
+                })
+        # Get responses (deduplicated)
         responses = db.query(DisputeResponseDB).filter(DisputeResponseDB.dispute_id == dispute.id).all()
         for resp in responses:
             if resp.response_date:
-                timeline.append({
-                    "date": resp.response_date.isoformat(),
-                    "event": f"{entity_name} response received",
-                    "outcome": resp.response_type.value if resp.response_type else "Unknown",
-                    "actor": "ENTITY"
-                })
+                key = (resp.response_date.isoformat(), "response", resp.response_type.value if resp.response_type else "")
+                if key not in seen_timeline:
+                    seen_timeline.add(key)
+                    timeline.append({
+                        "date": resp.response_date.isoformat(),
+                        "event": f"{entity_name} response received",
+                        "outcome": resp.response_type.value if resp.response_type else "Unknown",
+                        "actor": "ENTITY"
+                    })
 
-    # Check for CFPB case
+    # Check for CFPB case (deduplicated)
     cfpb_case = db.query(CFPBCaseDB).filter(CFPBCaseDB.dispute_session_id == letter_id).first()
     cfpb_events = []
     if cfpb_case:
         events = db.query(CFPBEventDB).filter(CFPBEventDB.cfpb_case_id == cfpb_case.id).order_by(CFPBEventDB.timestamp).all()
         for event in events:
+            event_date = event.timestamp.isoformat() if event.timestamp else None
+            event_type = event.event_type.value if event.event_type else "Unknown"
             cfpb_events.append({
-                "date": event.timestamp.isoformat() if event.timestamp else None,
-                "event_type": event.event_type.value if event.event_type else "Unknown",
+                "date": event_date,
+                "event_type": event_type,
                 "payload": event.payload or {}
             })
-            timeline.append({
-                "date": event.timestamp.isoformat() if event.timestamp else None,
-                "event": f"CFPB {event.event_type.value if event.event_type else 'event'}",
-                "outcome": event.payload.get("stage", "") if event.payload else "",
-                "actor": "REGULATORY"
-            })
+            key = (event_date, "cfpb", event_type)
+            if key not in seen_timeline:
+                seen_timeline.add(key)
+                timeline.append({
+                    "date": event_date,
+                    "event": f"CFPB {event_type}",
+                    "outcome": event.payload.get("stage", "") if event.payload else "",
+                    "actor": "REGULATORY"
+                })
 
     # Sort timeline by date
     timeline.sort(key=lambda x: x.get("date") or "")
 
-    # Determine statutes violated
+    # Determine statutes violated (no duplicates)
     statutes = set()
-    statutes.add("15 U.S.C. § 1681e(b) — Duty to assure maximum possible accuracy")
-    statutes.add("15 U.S.C. § 1681i(a) — Duty to conduct reasonable reinvestigation")
+    statutes.add("15 U.S.C. § 1681e(b) — Maximum possible accuracy")
+    statutes.add("15 U.S.C. § 1681i(a) — Reasonable reinvestigation")
 
     for v in violations:
         v_type = v.get("violation_type", "") if isinstance(v, dict) else str(v)
@@ -1391,26 +1429,93 @@ async def get_legal_packet(
             statutes.add("15 U.S.C. § 1681s-2(a)(1)(A) — Furnishing information known to be inaccurate")
             statutes.add("15 U.S.C. § 1681c(a) — Obsolescence period / 7-year reporting limit")
 
-    if discrepancies:
-        statutes.add("15 U.S.C. § 1681e(b) — Cross-bureau accuracy requirement")
+    # Note: Cross-bureau discrepancies fall under § 1681e(b) already added above
+    # No separate "cross-bureau accuracy requirement" needed
 
-    # Calculate potential damages
-    violation_count = len(violations) + len(discrepancies)
+    # Count violation TYPES (categories), not individual instances
+    violation_types = set()
+    for v in violations:
+        v_type = v.get("violation_type", "") if isinstance(v, dict) else str(v)
+        violation_types.add(v_type)
+    if discrepancies:
+        violation_types.add("date_opened_mismatch")  # Cross-bureau discrepancy type
+
+    # Use type count for legal framing, instance count for damages
+    type_count = len(violation_types)
+    instance_count = len(violations) + len(discrepancies)
+
+    # Calculate potential damages (based on affected accounts)
+    # Get unique accounts
+    unique_accounts = set()
+    for v in violations:
+        if isinstance(v, dict):
+            acct = (v.get("creditor_name"), v.get("account_number_masked"))
+            unique_accounts.add(acct)
+    for d in discrepancies:
+        if isinstance(d, dict):
+            acct = (d.get("creditor_name"), d.get("account_number_masked"))
+            unique_accounts.add(acct)
+
+    account_count = len(unique_accounts)
+
+    # FCRA Statutory damages: $100-$1,000 per willful violation (15 U.S.C. §1681n(a)(1)(A))
+    # Do NOT pre-aggregate - show the per-violation statutory range
     damages = {
-        "fcra_statutory_min": 100 * violation_count,
-        "fcra_statutory_max": 1000 * violation_count,
+        "fcra_statutory_min": 100,  # Per willful violation
+        "fcra_statutory_max": 1000,  # Per willful violation
+        "statutory_citation": "15 U.S.C. §1681n(a)(1)(A)",
         "punitive_eligible": len(timeline) >= 3,  # Multiple dispute rounds
         "willful_indicators": [],
+        "violation_types": type_count,
+        "affected_accounts": account_count,
     }
 
     # Check for willfulness indicators
     verified_count = sum(1 for t in timeline if "VERIFIED" in str(t.get("outcome", "")))
-    if verified_count >= 2:
-        damages["willful_indicators"].append("Verified disputed information multiple times")
-    if len(violations) >= 2:
-        damages["willful_indicators"].append(f"Multiple violations detected ({len(violations)})")
+    if verified_count >= 1:
+        damages["willful_indicators"].append("Verified disputed information despite documented inaccuracies")
+    if type_count >= 2:
+        damages["willful_indicators"].append(f"Multiple violation categories ({type_count} types)")
     if discrepancies:
         damages["willful_indicators"].append("Cross-bureau inconsistencies prove at least one bureau is inaccurate")
+
+    # Group violations by category (legal theory), not per-account instances
+    violations_grouped = {}
+    for v in violations:
+        if isinstance(v, dict):
+            v_type = v.get("violation_type", "unknown")
+            if v_type not in violations_grouped:
+                violations_grouped[v_type] = {
+                    "category": v_type.replace("_", " ").title(),
+                    "accounts": []
+                }
+            acct_info = {
+                "creditor_name": v.get("creditor_name"),
+                "account_number_masked": v.get("account_number_masked")
+            }
+            # Avoid duplicate accounts in same category
+            if acct_info not in violations_grouped[v_type]["accounts"]:
+                violations_grouped[v_type]["accounts"].append(acct_info)
+
+    # Add cross-bureau discrepancies as a separate violation category
+    if discrepancies:
+        # Group discrepancies by field_name
+        discrepancy_fields = {}
+        for d in discrepancies:
+            if isinstance(d, dict):
+                field = d.get("field_name", "Cross-Bureau Mismatch")
+                if field not in discrepancy_fields:
+                    discrepancy_fields[field] = {
+                        "category": f"{field} Mismatch",
+                        "accounts": []
+                    }
+                acct_info = {
+                    "creditor_name": d.get("creditor_name"),
+                    "account_number_masked": d.get("account_number_masked")
+                }
+                if acct_info not in discrepancy_fields[field]["accounts"]:
+                    discrepancy_fields[field]["accounts"].append(acct_info)
+        violations_grouped.update(discrepancy_fields)
 
     # Build the packet data
     packet_data = {
@@ -1421,9 +1526,12 @@ async def get_legal_packet(
         "letter_id": letter_id,
         "channel": letter.channel or "CRA",
         "tier": letter.tier or 0,
-        "violations": violations,
-        "discrepancies": discrepancies,
-        "violation_count": violation_count,
+        "violations": violations,  # Raw violations (for backward compat)
+        "discrepancies": discrepancies,  # Raw discrepancies (for backward compat)
+        "violations_grouped": violations_grouped,  # Grouped by category for UI
+        "violation_count": type_count,  # Number of legal violation categories
+        "violation_type_count": type_count,  # Categories for legal framing
+        "affected_account_count": account_count,  # Accounts for damages
         "timeline": timeline,
         "cfpb_case": {
             "case_number": cfpb_case.cfpb_case_number if cfpb_case else None,
@@ -1558,8 +1666,8 @@ def _render_legal_packet_document(packet: dict) -> str:
     lines.append(section("DAMAGES AVAILABLE"))
     lines.append("")
     damages = packet['potential_damages']
-    lines.append("STATUTORY DAMAGES (15 U.S.C. § 1681n(a)(1)(A))")
-    lines.append(f"  Range: ${damages['fcra_statutory_min']:,} – ${damages['fcra_statutory_max']:,}")
+    lines.append("STATUTORY DAMAGES")
+    lines.append(f"  $100–$1,000 per willful violation pursuant to {damages.get('statutory_citation', '15 U.S.C. §1681n(a)(1)(A)')}")
     lines.append("")
 
     if damages.get('punitive_eligible'):
