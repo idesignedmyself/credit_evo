@@ -1260,6 +1260,362 @@ async def get_letter(
     }
 
 
+@router.get("/{letter_id}/legal-packet")
+async def get_legal_packet(
+    letter_id: str,
+    format: str = Query(
+        default="document",
+        description="Output format: 'document' (printable text) or 'json' (structured data)"
+    ),
+    current_user: UserDB = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Generate attorney-ready legal packet for a letter.
+
+    This endpoint generates a comprehensive litigation packet containing:
+    - All violations and discrepancies from the letter
+    - Complete dispute timeline
+    - CFPB complaint history (if any)
+    - Bureau responses
+    - Statutory analysis
+    - Potential damages calculation
+
+    Use format=document (default) for a printable text document.
+    Use format=json for structured data.
+    """
+    from fastapi.responses import PlainTextResponse
+    from datetime import datetime, timezone
+    from ..models.db_models import DisputeDB, DisputeResponseDB, CFPBCaseDB, CFPBEventDB
+
+    # Verify letter exists and user owns it
+    letter = db.query(LetterDB).filter(
+        LetterDB.id == letter_id,
+        LetterDB.user_id == current_user.id
+    ).first()
+
+    if not letter:
+        raise HTTPException(status_code=404, detail="Letter not found")
+
+    # Get user info for consumer name
+    consumer_name = f"{current_user.first_name or ''} {current_user.last_name or ''}".strip()
+    if not consumer_name:
+        consumer_name = current_user.email
+
+    # Format entity name
+    entity_map = {
+        "transunion": "TransUnion LLC",
+        "equifax": "Equifax Inc.",
+        "experian": "Experian Information Solutions, Inc.",
+    }
+    entity_name = entity_map.get(letter.bureau.lower() if letter.bureau else "", letter.bureau or "Credit Bureau")
+
+    # Collect violations from letter
+    violations = []
+    if letter.violations_cited:
+        # Get full violation data from audit result if available
+        if letter.report_id:
+            audit = db.query(AuditResultDB).filter(AuditResultDB.report_id == letter.report_id).first()
+            if audit and audit.violations_data:
+                # Match violations by type
+                for v_type in letter.violations_cited:
+                    if isinstance(v_type, str):
+                        for v_data in audit.violations_data:
+                            if isinstance(v_data, dict) and v_data.get("violation_type") == v_type:
+                                violations.append(v_data)
+                                break
+                    elif isinstance(v_type, dict):
+                        violations.append(v_type)
+
+    # Collect discrepancies from letter
+    discrepancies = letter.discrepancies_cited or []
+
+    # Build timeline from disputes
+    timeline = []
+    disputes = db.query(DisputeDB).filter(DisputeDB.letter_id == letter_id).all()
+    for dispute in disputes:
+        if dispute.dispute_date:
+            timeline.append({
+                "date": dispute.dispute_date.isoformat(),
+                "event": f"Dispute submitted to {entity_name}",
+                "outcome": "Sent via certified mail",
+                "actor": "CONSUMER"
+            })
+        if dispute.deadline_date:
+            timeline.append({
+                "date": dispute.deadline_date.isoformat(),
+                "event": "30-day statutory deadline",
+                "outcome": "Passed" if date.today() > dispute.deadline_date else "Pending",
+                "actor": "SYSTEM"
+            })
+        # Get responses
+        responses = db.query(DisputeResponseDB).filter(DisputeResponseDB.dispute_id == dispute.id).all()
+        for resp in responses:
+            if resp.response_date:
+                timeline.append({
+                    "date": resp.response_date.isoformat(),
+                    "event": f"{entity_name} response received",
+                    "outcome": resp.response_type.value if resp.response_type else "Unknown",
+                    "actor": "ENTITY"
+                })
+
+    # Check for CFPB case
+    cfpb_case = db.query(CFPBCaseDB).filter(CFPBCaseDB.dispute_session_id == letter_id).first()
+    cfpb_events = []
+    if cfpb_case:
+        events = db.query(CFPBEventDB).filter(CFPBEventDB.cfpb_case_id == cfpb_case.id).order_by(CFPBEventDB.timestamp).all()
+        for event in events:
+            cfpb_events.append({
+                "date": event.timestamp.isoformat() if event.timestamp else None,
+                "event_type": event.event_type.value if event.event_type else "Unknown",
+                "payload": event.payload or {}
+            })
+            timeline.append({
+                "date": event.timestamp.isoformat() if event.timestamp else None,
+                "event": f"CFPB {event.event_type.value if event.event_type else 'event'}",
+                "outcome": event.payload.get("stage", "") if event.payload else "",
+                "actor": "REGULATORY"
+            })
+
+    # Sort timeline by date
+    timeline.sort(key=lambda x: x.get("date") or "")
+
+    # Determine statutes violated
+    statutes = set()
+    statutes.add("15 U.S.C. § 1681e(b) — Duty to assure maximum possible accuracy")
+    statutes.add("15 U.S.C. § 1681i(a) — Duty to conduct reasonable reinvestigation")
+
+    for v in violations:
+        v_type = v.get("violation_type", "") if isinstance(v, dict) else str(v)
+        if "dofd" in v_type.lower() or "missing" in v_type.lower():
+            statutes.add("15 U.S.C. § 1681s-2(a)(1)(A) — Furnishing information known to be inaccurate")
+            statutes.add("15 U.S.C. § 1681c(a) — Obsolescence period / 7-year reporting limit")
+
+    if discrepancies:
+        statutes.add("15 U.S.C. § 1681e(b) — Cross-bureau accuracy requirement")
+
+    # Calculate potential damages
+    violation_count = len(violations) + len(discrepancies)
+    damages = {
+        "fcra_statutory_min": 100 * violation_count,
+        "fcra_statutory_max": 1000 * violation_count,
+        "punitive_eligible": len(timeline) >= 3,  # Multiple dispute rounds
+        "willful_indicators": [],
+    }
+
+    # Check for willfulness indicators
+    verified_count = sum(1 for t in timeline if "VERIFIED" in str(t.get("outcome", "")))
+    if verified_count >= 2:
+        damages["willful_indicators"].append("Verified disputed information multiple times")
+    if len(violations) >= 2:
+        damages["willful_indicators"].append(f"Multiple violations detected ({len(violations)})")
+    if discrepancies:
+        damages["willful_indicators"].append("Cross-bureau inconsistencies prove at least one bureau is inaccurate")
+
+    # Build the packet data
+    packet_data = {
+        "packet_id": f"PKT-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{letter_id[:8].upper()}",
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "consumer_name": consumer_name,
+        "entity_name": entity_name,
+        "letter_id": letter_id,
+        "channel": letter.channel or "CRA",
+        "tier": letter.tier or 0,
+        "violations": violations,
+        "discrepancies": discrepancies,
+        "violation_count": violation_count,
+        "timeline": timeline,
+        "cfpb_case": {
+            "case_number": cfpb_case.cfpb_case_number if cfpb_case else None,
+            "state": cfpb_case.cfpb_state.value if cfpb_case and cfpb_case.cfpb_state else None,
+            "events": cfpb_events
+        } if cfpb_case else None,
+        "statutes_violated": sorted(list(statutes)),
+        "potential_damages": damages,
+    }
+
+    if format.lower() == "json":
+        return packet_data
+
+    # Generate printable document
+    document = _render_legal_packet_document(packet_data)
+    return PlainTextResponse(content=document, media_type="text/plain; charset=utf-8")
+
+
+def _render_legal_packet_document(packet: dict) -> str:
+    """Render legal packet as a printable document."""
+    lines = []
+    w = 80
+
+    def header(text: str) -> str:
+        return "=" * w + "\n" + text.center(w) + "\n" + "=" * w
+
+    def section(text: str) -> str:
+        return "\n" + "=" * w + "\n" + text + "\n" + "=" * w
+
+    # Title
+    lines.append(header("FCRA VIOLATION CASE PACKET\nPrepared for Attorney Consultation"))
+    lines.append("")
+    lines.append(f"CASE REFERENCE: {packet['packet_id']}")
+    lines.append(f"GENERATED:      {packet['generated_at'][:10]}")
+    lines.append(f"STATUS:         ATTORNEY-READY")
+    lines.append("")
+
+    # Parties
+    lines.append(section("PARTIES INVOLVED"))
+    lines.append("")
+    lines.append(f"CONSUMER:           {packet['consumer_name']}")
+    lines.append("")
+    lines.append(f"CREDIT BUREAU:      {packet['entity_name']}")
+    lines.append("")
+
+    # Violations
+    lines.append(section("VIOLATIONS DETECTED"))
+    lines.append("")
+
+    # Group violations by type
+    violations_by_type = {}
+    for v in packet['violations']:
+        v_type = v.get('violation_type', 'Unknown') if isinstance(v, dict) else str(v)
+        if v_type not in violations_by_type:
+            violations_by_type[v_type] = []
+        violations_by_type[v_type].append(v)
+
+    issue_num = 1
+    for v_type, v_list in violations_by_type.items():
+        title = v_type.replace('_', ' ').title()
+        lines.append(f"VIOLATION #{issue_num}: {title}")
+        lines.append("─" * w)
+
+        # List affected accounts
+        lines.append("")
+        lines.append("Affected accounts:")
+        seen = set()
+        for v in v_list:
+            if isinstance(v, dict):
+                creditor = v.get('creditor_name', 'Unknown')
+                acct = v.get('account_number_masked', '****')
+                key = (creditor, acct)
+                if key not in seen:
+                    seen.add(key)
+                    lines.append(f"  • {creditor} — Account: {acct}")
+
+        lines.append("")
+        issue_num += 1
+
+    # Cross-Bureau Discrepancies
+    if packet['discrepancies']:
+        lines.append("")
+        lines.append(f"VIOLATION #{issue_num}: Cross-Bureau Discrepancies")
+        lines.append("─" * w)
+        lines.append("")
+
+        for d in packet['discrepancies']:
+            if isinstance(d, dict):
+                field = d.get('field_name', 'Unknown field')
+                creditor = d.get('creditor_name', 'Unknown')
+                acct = d.get('account_number_masked', '****')
+                lines.append(f"  • {creditor} — {field} mismatch — Account: {acct}")
+        lines.append("")
+
+    # Timeline
+    lines.append(section("DISPUTE HISTORY"))
+    lines.append("")
+    lines.append("DATE           EVENT                                               OUTCOME")
+    lines.append("─" * w)
+
+    for event in packet['timeline']:
+        date_str = event.get('date', 'Unknown')[:10] if event.get('date') else 'Unknown'
+        event_desc = event.get('event', '')[:50]
+        outcome = event.get('outcome', '')[:15]
+        lines.append(f"{date_str:<14} {event_desc:<55} {outcome}")
+
+    lines.append("")
+
+    # CFPB Case
+    if packet.get('cfpb_case') and packet['cfpb_case'].get('case_number'):
+        lines.append(section("CFPB COMPLAINT HISTORY"))
+        lines.append("")
+        lines.append(f"CFPB Case Number: {packet['cfpb_case']['case_number']}")
+        lines.append(f"Current State:    {packet['cfpb_case']['state'] or 'Unknown'}")
+        lines.append("")
+
+        if packet['cfpb_case'].get('events'):
+            for event in packet['cfpb_case']['events']:
+                event_type = event.get('event_type', 'Unknown')
+                event_date = event.get('date', '')[:10] if event.get('date') else ''
+                lines.append(f"  • {event_date} — {event_type}")
+        lines.append("")
+
+    # Statutes
+    lines.append(section("STATUTES VIOLATED"))
+    lines.append("")
+    for statute in packet['statutes_violated']:
+        lines.append(f"  • {statute}")
+    lines.append("")
+
+    # Damages
+    lines.append(section("DAMAGES AVAILABLE"))
+    lines.append("")
+    damages = packet['potential_damages']
+    lines.append("STATUTORY DAMAGES (15 U.S.C. § 1681n(a)(1)(A))")
+    lines.append(f"  Range: ${damages['fcra_statutory_min']:,} – ${damages['fcra_statutory_max']:,}")
+    lines.append("")
+
+    if damages.get('punitive_eligible'):
+        lines.append("PUNITIVE DAMAGES (15 U.S.C. § 1681n(a)(2))")
+        lines.append("  Available where willfulness is established")
+        lines.append("  No statutory cap")
+        lines.append("")
+
+    lines.append("ACTUAL DAMAGES")
+    lines.append("  • Credit denials or adverse terms")
+    lines.append("  • Increased interest rates paid")
+    lines.append("  • Emotional distress")
+    lines.append("  • Time spent disputing")
+    lines.append("")
+
+    lines.append("ATTORNEY'S FEES (15 U.S.C. § 1681n(a)(3))")
+    lines.append("  Recoverable by prevailing plaintiff")
+    lines.append("")
+
+    # Willfulness Indicators
+    if damages.get('willful_indicators'):
+        lines.append(section("WILLFULNESS INDICATORS"))
+        lines.append("")
+        lines.append("The following factors suggest WILLFUL rather than negligent noncompliance:")
+        lines.append("")
+        for indicator in damages['willful_indicators']:
+            lines.append(f"  ☒ {indicator}")
+        lines.append("")
+
+    # Exhibits
+    lines.append(section("ATTACHED EXHIBITS"))
+    lines.append("")
+    lines.append("  Exhibit A:  Credit report with violations highlighted")
+    lines.append("  Exhibit B:  Dispute letters with certified mail receipts")
+    lines.append("  Exhibit C:  Entity response letters")
+    lines.append("  Exhibit D:  Current credit report showing unchanged data")
+    if packet.get('cfpb_case'):
+        lines.append("  Exhibit E:  CFPB complaint submissions and responses")
+    lines.append("")
+
+    # Footer
+    lines.append("=" * w)
+    lines.append("")
+    lines.append("  This packet was generated by an automated FCRA enforcement system.")
+    lines.append("  All violations were detected using deterministic rules applied to")
+    lines.append("  Metro 2 credit data schema fields. No AI interpretation was used")
+    lines.append("  in violation detection.")
+    lines.append("")
+    lines.append(f"  Case Packet ID: {packet['packet_id']}")
+    lines.append(f"  Generated: {packet['generated_at']}")
+    lines.append("")
+    lines.append("=" * w)
+
+    return "\n".join(lines)
+
+
 @router.delete("/{letter_id}")
 async def delete_letter(
     letter_id: str,

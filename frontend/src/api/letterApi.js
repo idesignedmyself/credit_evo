@@ -128,6 +128,17 @@ export const letterApi = {
     const response = await apiClient.delete(`/letters/${letterId}`);
     return response.data;
   },
+
+  /**
+   * Generate legal packet for attorney consultation
+   * @param {string} letterId - The letter UUID
+   * @param {string} format - Output format: 'document' (printable) or 'json' (structured data)
+   * @returns {Promise<string|Object>} - Document text or JSON packet data
+   */
+  getLegalPacket: async (letterId, format = 'json') => {
+    const response = await apiClient.get(`/letters/${letterId}/legal-packet?format=${format}`);
+    return response.data;
+  },
 };
 
 export default letterApi;
