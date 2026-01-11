@@ -585,78 +585,234 @@ class CFPBLetterGenerator:
         cfpb_case_number: Optional[str],
         cra_response_summary: Optional[str],
     ) -> str:
-        """Generate CFPB Escalation letter."""
+        """Generate CFPB Escalation letter - clean, litigation-safe format."""
         today = date.today().strftime("%B %d, %Y")
         case_ref = cfpb_case_number or "[CASE NUMBER]"
+        formatted_entity = self._format_entity_name(entity_name)
+
+        # Group violations by type to avoid duplication
+        violations_by_type = self._group_violations_by_type(contradictions)
+
+        # Collect unique accounts
+        unique_accounts = []
+        seen_accounts = set()
+        for v in contradictions:
+            acct = getattr(v, "account_number_masked", None) or "(masked)"
+            key = (v.creditor_name, acct)
+            if key not in seen_accounts:
+                seen_accounts.add(key)
+                unique_accounts.append((v.creditor_name, acct))
 
         lines = [
-            "CONSUMER FINANCIAL PROTECTION BUREAU COMPLAINT - ESCALATION",
+            "CONSUMER FINANCIAL PROTECTION BUREAU COMPLAINT – ESCALATION",
             "",
-            "Complaint Type: Credit Reporting Dispute - Unresolved",
+            "Complaint Type: Credit Reporting Dispute – Unresolved",
             f"CFPB Case Number: {case_ref}",
             f"Date: {today}",
             f"Consumer: {consumer.full_name}",
-            f"Account: {account_info}",
             "",
-            "ESCALATION BASIS",
-            "",
-            f"This is an escalation of CFPB Case #{case_ref}. The company's response",
-            "to my initial CFPB complaint failed to address the factual contradictions",
-            "I documented. The contradictions remain on my credit file.",
-            "",
-            "UNANSWERED MATERIAL FACTS",
-            "",
+            "Accounts at Issue:",
         ]
 
-        # Add contradictions as unanswered facts
-        for i, v in enumerate(contradictions, 1):
-            lines.append(f"{i}. {self._format_contradiction_title(v)} - UNADDRESSED")
-            lines.append(f"   - {v.description}")
-            lines.append("   - Company response did not explain this impossibility")
+        # List unique accounts
+        for creditor, acct in unique_accounts:
+            lines.append(f"• {creditor} — Account: {acct}")
+
+        lines.append("")
+        lines.append("=" * 60)
+        lines.append("")
+        lines.append("ESCALATION BASIS")
+        lines.append("")
+        lines.append(f"This submission is a formal escalation of CFPB Case #{case_ref}.")
+        lines.append("")
+        lines.append("The company's response to my initial CFPB complaint failed to address the")
+        lines.append("specific, material factual inaccuracies and contradictions identified.")
+        lines.append("The inaccurate information remains unchanged on my credit file.")
+        lines.append("")
+        lines.append("=" * 60)
+        lines.append("")
+        lines.append("UNANSWERED MATERIAL FACTS")
+        lines.append("")
+
+        # Add grouped unanswered facts (no duplication)
+        issue_num = 1
+        violation_items = list(violations_by_type.items())
+        for idx, (violation_type, violations) in enumerate(violation_items):
+            lines.append(f"{issue_num}. {self._format_issue_title(violation_type)}")
             lines.append("")
 
-        # Company response analysis
+            # Get the escalation-specific explanation for this violation type
+            explanation = self._get_escalation_explanation(violation_type)
+            for line in explanation:
+                lines.append(line)
+            lines.append("")
+
+            # Add separator between issues (but not after the last one)
+            if idx < len(violation_items) - 1:
+                lines.append("---")
+                lines.append("")
+
+            issue_num += 1
+
+        lines.append("=" * 60)
+        lines.append("")
         lines.append("COMPANY RESPONSE ANALYSIS")
         lines.append("")
+
         if cra_response_summary:
             lines.append(cra_response_summary)
         else:
-            lines.append("The company's response to my CFPB complaint stated:")
+            lines.append("The company's response stated, in substance:")
             lines.append("\"We have reviewed the consumer's dispute and verified the information")
-            lines.append("with our records. The account information is accurate.\"")
+            lines.append("with our records.\"")
         lines.append("")
-        lines.append("This response is deficient because:")
-        lines.append("")
-        for i, v in enumerate(contradictions[:4], 1):
-            lines.append(f"{i}. It does not explain {self._format_unanswered_question(v).lower()}")
+        lines.append("This response is deficient because it:")
         lines.append("")
 
-        # Timeline
+        # List specific deficiencies based on violation types (no duplication)
+        for vtype in violations_by_type.keys():
+            deficiency = self._get_response_deficiency(vtype)
+            lines.append(f"• {deficiency}")
+        lines.append("• Provides no documentation or factual explanation")
+        lines.append("• Relies on conclusory verification language rather than evidence")
+        lines.append("")
+        lines.append("A generic assertion of accuracy does not constitute a reasonable")
+        lines.append("reinvestigation under 15 U.S.C. § 1681i(a).")
+        lines.append("")
+
+        # Timeline - deduplicated
+        lines.append("=" * 60)
+        lines.append("")
         lines.append("TIMELINE")
         lines.append("")
         lines.append("| Date | Event | Outcome |")
         lines.append("|------|-------|---------|")
+
+        # Deduplicate timeline events
+        seen_events = set()
+        unique_events = []
         for event in timeline_events:
+            key = (event.event_date, event.event_description)
+            if key not in seen_events:
+                seen_events.add(key)
+                unique_events.append(event)
+
+        for event in sorted(unique_events, key=lambda e: e.event_date):
             date_str = event.event_date.strftime("%b %d, %Y")
-            lines.append(f"| {date_str} | {event.event_description} | {event.outcome} |")
+            # Format entity name in timeline
+            desc = event.event_description
+            for raw_name in ["transunion", "equifax", "experian"]:
+                if raw_name in desc.lower():
+                    desc = desc.replace(raw_name, self._format_entity_name(raw_name))
+                    desc = desc.replace(raw_name.title(), self._format_entity_name(raw_name))
+            lines.append(f"| {date_str} | {desc} | {event.outcome} |")
         lines.append("")
 
         # Requested action
-        lines.append("REQUESTED ACTION")
+        lines.append("=" * 60)
         lines.append("")
-        lines.append("I request that the CFPB:")
-        lines.append("1. Require the company to specifically address each documented contradiction")
-        for i, v in enumerate(contradictions[:2], 2):
-            lines.append(f"{i}. Require documentation supporting {v.metro2_field or 'the reported data'}")
+        lines.append("REQUESTED CFPB ACTION")
+        lines.append("")
+        lines.append("I respectfully request that the CFPB:")
+        lines.append("")
+        lines.append("1. Require the company to specifically address each unresolved factual")
+        lines.append("   inaccuracy identified above")
+        lines.append("")
+        lines.append("2. Require production of original source documentation supporting the")
+        lines.append("   reported data fields")
+        lines.append("")
+        lines.append("3. Require correction or deletion of the accounts if documentation cannot")
+        lines.append("   substantiate the reporting")
         lines.append("")
 
         # Attachments
+        lines.append("=" * 60)
+        lines.append("")
         lines.append("ATTACHMENTS")
-        lines.append(f"- Original CFPB complaint (Case #{case_ref})")
-        lines.append("- Company response")
-        lines.append("- Updated credit report showing unchanged contradictions")
+        lines.append("")
+        lines.append(f"• Original CFPB complaint (Case #{case_ref})")
+        lines.append("• Company response")
+        lines.append("• Updated credit report showing unchanged inaccuracies")
 
         return "\n".join(lines)
+
+    def _get_escalation_explanation(self, violation_type: str) -> List[str]:
+        """Get escalation-specific explanation for a violation type."""
+        explanations = {
+            "missing_dofd": [
+                "The company failed to explain or correct the absence of the Date of First",
+                "Delinquency for the accounts listed above.",
+                "",
+                "Without a DOFD, compliance with the 7-year obsolescence requirement under",
+                "15 U.S.C. § 1681c(a) cannot be verified. The company's response did not",
+                "address this impossibility.",
+            ],
+            "chargeoff_missing_dofd": [
+                "The company failed to explain why charge-off accounts are missing the",
+                "required Date of First Delinquency field.",
+                "",
+                "This omission violates Metro-2 reporting standards and prevents verification",
+                "of § 1681c(a) obsolescence compliance.",
+            ],
+            "date_opened_mismatch": [
+                "The same accounts continue to be reported with conflicting \"Date Opened\"",
+                "values across consumer reporting agencies.",
+                "",
+                "The company did not explain how internally inconsistent reporting can",
+                "satisfy the \"maximum possible accuracy\" requirement of 15 U.S.C. § 1681e(b),",
+                "nor did it identify which value is correct.",
+            ],
+            "dofd_mismatch": [
+                "The same accounts are reported with conflicting Dates of First Delinquency",
+                "across consumer reporting agencies.",
+                "",
+                "The company did not reconcile these inconsistencies or identify the correct",
+                "DOFD for § 1681c(a) obsolescence calculation.",
+            ],
+            "balance_mismatch": [
+                "The same accounts are reported with conflicting balance amounts across",
+                "consumer reporting agencies.",
+                "",
+                "The company did not explain these discrepancies or identify the correct",
+                "balance amount.",
+            ],
+            "status_mismatch": [
+                "The same accounts are reported with conflicting status values across",
+                "consumer reporting agencies.",
+                "",
+                "The company did not reconcile these inconsistencies.",
+            ],
+            "obsolete_account": [
+                "The account appears to exceed the 7-year reporting period under",
+                "15 U.S.C. § 1681c(a).",
+                "",
+                "The company did not provide documentation demonstrating the account",
+                "is still within the permissible reporting period.",
+            ],
+        }
+
+        default = [
+            f"The company failed to address the {violation_type.replace('_', ' ')} issue",
+            "identified in the original complaint.",
+            "",
+            "The response did not explain or correct this inaccuracy.",
+        ]
+
+        return explanations.get(violation_type, default)
+
+    def _get_response_deficiency(self, violation_type: str) -> str:
+        """Get specific response deficiency statement for a violation type."""
+        deficiencies = {
+            "missing_dofd": "Fails to address the missing Date of First Delinquency",
+            "chargeoff_missing_dofd": "Fails to explain missing DOFD on charge-off accounts",
+            "date_opened_mismatch": "Fails to address cross-bureau Date Opened inconsistencies",
+            "dofd_mismatch": "Fails to reconcile cross-bureau DOFD discrepancies",
+            "balance_mismatch": "Fails to address cross-bureau balance inconsistencies",
+            "status_mismatch": "Fails to reconcile cross-bureau status conflicts",
+            "obsolete_account": "Fails to demonstrate the account is within reporting period",
+            "stale_reporting": "Fails to confirm data reflects current account status",
+        }
+        return deficiencies.get(violation_type, f"Fails to address the {violation_type.replace('_', ' ')} issue")
 
     def _generate_final(
         self,
