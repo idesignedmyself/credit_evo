@@ -58,6 +58,12 @@ import {
   logTier2Response,
   RESPONSE_TYPES,
 } from '../api/disputeApi';
+import {
+  generateCFPBLetter,
+  submitCFPBComplaint,
+  logCFPBResponse,
+  CFPB_RESPONSE_TYPES,
+} from '../api/cfpbApi';
 
 // =============================================================================
 // VIOLATION RESPONSE CARD - Shows violation info with response dropdown
@@ -294,6 +300,31 @@ const LetterPage = () => {
   const [isEditingTier2, setIsEditingTier2] = useState(false);
   const [isSavingTier2, setIsSavingTier2] = useState(false);
   const [tier2Copied, setTier2Copied] = useState(false);
+
+  // CFPB Stage 1 state
+  const [cfpbCase, setCfpbCase] = useState(null);
+  const [cfpbLetter, setCfpbLetter] = useState(null);
+  const [cfpbLetterLoading, setCfpbLetterLoading] = useState(false);
+  const [editableCfpbContent, setEditableCfpbContent] = useState('');
+  const [isEditingCfpb, setIsEditingCfpb] = useState(false);
+  const [cfpbCopied, setCfpbCopied] = useState(false);
+  const [cfpbFiledDate, setCfpbFiledDate] = useState(null);
+  const [cfpbCaseNumber, setCfpbCaseNumber] = useState('');
+  const [cfpbResponseType, setCfpbResponseType] = useState('');
+  const [cfpbResponseDate, setCfpbResponseDate] = useState(null);
+  const [cfpbResponseText, setCfpbResponseText] = useState('');
+  const [isSubmittingCfpb, setIsSubmittingCfpb] = useState(false);
+
+  // CFPB Stage 2 state
+  const [cfpbEscalationLetter, setCfpbEscalationLetter] = useState(null);
+  const [cfpbEscalationLoading, setCfpbEscalationLoading] = useState(false);
+  const [editableCfpbEscalation, setEditableCfpbEscalation] = useState('');
+  const [isEditingCfpbEscalation, setIsEditingCfpbEscalation] = useState(false);
+  const [cfpbEscalationCopied, setCfpbEscalationCopied] = useState(false);
+  const [cfpbEscalationFiledDate, setCfpbEscalationFiledDate] = useState(null);
+  const [cfpbFinalResponseType, setCfpbFinalResponseType] = useState('');
+  const [cfpbFinalResponseDate, setCfpbFinalResponseDate] = useState(null);
+
   const { selectedViolationIds, selectedDiscrepancyIds, violations, discrepancies, auditResult, fetchAuditResults } = useViolationStore();
   const {
     currentLetter,
@@ -1484,9 +1515,264 @@ const LetterPage = () => {
                   </Box>
                 </AccordionSummary>
                 <AccordionDetails sx={{ p: 3 }}>
-                  <Typography variant="body2" color="text.secondary">
-                    Generate and file your CFPB complaint.
-                  </Typography>
+                  {/* Step 1: Generate CFPB Complaint */}
+                  {!cfpbLetter && !cfpbLetterLoading && (
+                    <Box sx={{ textAlign: 'center', py: 3 }}>
+                      <AccountBalanceIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 2 }} />
+                      <Typography variant="body1" sx={{ mb: 2 }}>
+                        Generate your CFPB complaint based on the bureau's response.
+                      </Typography>
+                      <Button
+                        variant="contained"
+                        onClick={async () => {
+                          setCfpbLetterLoading(true);
+                          try {
+                            const result = await generateCFPBLetter(activeDispute?.id, 'initial');
+                            setCfpbLetter(result);
+                            setEditableCfpbContent(result.content);
+                          } catch (err) {
+                            console.error('Failed to generate CFPB letter:', err);
+                          } finally {
+                            setCfpbLetterLoading(false);
+                          }
+                        }}
+                        disabled={!activeDispute}
+                        sx={{ bgcolor: '#ed6c02', '&:hover': { bgcolor: '#d45a00' } }}
+                      >
+                        Generate CFPB Complaint
+                      </Button>
+                    </Box>
+                  )}
+
+                  {/* Loading state */}
+                  {cfpbLetterLoading && (
+                    <Box sx={{ textAlign: 'center', py: 4 }}>
+                      <CircularProgress size={32} sx={{ mb: 2 }} />
+                      <Typography variant="body2" color="text.secondary">
+                        Generating CFPB complaint...
+                      </Typography>
+                    </Box>
+                  )}
+
+                  {/* Step 2: Show generated letter */}
+                  {cfpbLetter && !cfpbLetterLoading && (
+                    <>
+                      <Paper sx={{ mb: 3, borderRadius: 2, overflow: 'hidden' }}>
+                        <Box sx={{ p: 2, bgcolor: '#fff3e0', borderBottom: '1px solid', borderColor: 'divider' }}>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <AccountBalanceIcon color="warning" />
+                              <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                                CFPB Complaint
+                              </Typography>
+                              <Chip label={`${editableCfpbContent.split(/\s+/).filter(w => w).length} words`} size="small" variant="outlined" />
+                            </Box>
+                            <Stack direction="row" spacing={1}>
+                              <Button size="small" startIcon={isEditingCfpb ? <VisibilityIcon /> : <EditIcon />} onClick={() => setIsEditingCfpb(!isEditingCfpb)} variant="outlined">
+                                {isEditingCfpb ? 'View' : 'Edit'}
+                              </Button>
+                              <Button
+                                size="small"
+                                startIcon={<ContentCopyIcon />}
+                                onClick={async () => {
+                                  await navigator.clipboard.writeText(editableCfpbContent);
+                                  setCfpbCopied(true);
+                                  setTimeout(() => setCfpbCopied(false), 2000);
+                                }}
+                                variant="outlined"
+                                color={cfpbCopied ? 'success' : 'inherit'}
+                              >
+                                {cfpbCopied ? 'Copied!' : 'Copy'}
+                              </Button>
+                              <Button
+                                size="small"
+                                startIcon={<DownloadIcon />}
+                                onClick={() => {
+                                  if (!editableCfpbContent) return;
+                                  const pdf = new jsPDF({ unit: 'pt', format: 'letter' });
+                                  const margin = 50;
+                                  const pageWidth = pdf.internal.pageSize.getWidth();
+                                  const pageHeight = pdf.internal.pageSize.getHeight();
+                                  pdf.setFont('times', 'normal');
+                                  pdf.setFontSize(12);
+                                  const lines = pdf.splitTextToSize(editableCfpbContent, pageWidth - (margin * 2));
+                                  let y = margin;
+                                  lines.forEach((line) => {
+                                    if (y + 18 > pageHeight - margin) { pdf.addPage(); y = margin; }
+                                    pdf.text(line, margin, y);
+                                    y += 18;
+                                  });
+                                  pdf.save(`cfpb_complaint_${dayjs().format('YYYY-MM-DD')}.pdf`);
+                                }}
+                                variant="contained"
+                                disableElevation
+                              >
+                                Download
+                              </Button>
+                            </Stack>
+                          </Box>
+                        </Box>
+                        <Box sx={{ p: 3, maxHeight: 350, overflow: 'auto' }}>
+                          {isEditingCfpb ? (
+                            <TextField
+                              fullWidth
+                              multiline
+                              minRows={12}
+                              value={editableCfpbContent}
+                              onChange={(e) => setEditableCfpbContent(e.target.value)}
+                              variant="outlined"
+                              sx={{ '& .MuiInputBase-root': { fontFamily: '"Times New Roman", serif', fontSize: '11pt', lineHeight: 1.6 } }}
+                            />
+                          ) : (
+                            <Box sx={{ fontFamily: '"Times New Roman", serif', fontSize: '11pt', lineHeight: 1.8, whiteSpace: 'pre-wrap', color: '#111' }}>
+                              {editableCfpbContent}
+                            </Box>
+                          )}
+                        </Box>
+                      </Paper>
+
+                      {/* Step 3: File with CFPB */}
+                      {!cfpbCase && (
+                        <Paper elevation={0} sx={{ p: 2.5, bgcolor: '#fff3e0', borderRadius: 2, mb: 3 }}>
+                          <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 2 }}>
+                            File with CFPB
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                            Copy the complaint above and submit it through the CFPB portal. Then enter the details below.
+                          </Typography>
+                          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems="flex-start">
+                            <LocalizationProvider dateAdapter={AdapterDayjs}>
+                              <DatePicker
+                                label="Date Filed"
+                                value={cfpbFiledDate}
+                                onChange={(newValue) => setCfpbFiledDate(newValue)}
+                                slotProps={{ textField: { size: 'small', sx: { minWidth: 160 } } }}
+                              />
+                            </LocalizationProvider>
+                            <TextField
+                              label="CFPB Case Number (optional)"
+                              size="small"
+                              value={cfpbCaseNumber}
+                              onChange={(e) => setCfpbCaseNumber(e.target.value)}
+                              placeholder="e.g., 240101-12345678"
+                              sx={{ minWidth: 200 }}
+                            />
+                            <Button
+                              variant="contained"
+                              disabled={!cfpbFiledDate || isSubmittingCfpb}
+                              onClick={async () => {
+                                setIsSubmittingCfpb(true);
+                                try {
+                                  const result = await submitCFPBComplaint(
+                                    activeDispute?.id,
+                                    'initial',
+                                    { complaint_text: editableCfpbContent, attachments: [] },
+                                    cfpbCaseNumber || null
+                                  );
+                                  setCfpbCase(result);
+                                } catch (err) {
+                                  console.error('Failed to submit CFPB complaint:', err);
+                                } finally {
+                                  setIsSubmittingCfpb(false);
+                                }
+                              }}
+                              sx={{ bgcolor: '#ed6c02', '&:hover': { bgcolor: '#d45a00' } }}
+                            >
+                              {isSubmittingCfpb ? 'Submitting...' : 'Mark as Filed'}
+                            </Button>
+                          </Stack>
+                        </Paper>
+                      )}
+
+                      {/* Step 4: Log Company Response */}
+                      {cfpbCase && (
+                        <Paper elevation={0} sx={{ p: 2.5, bgcolor: '#e3f2fd', borderRadius: 2 }}>
+                          <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
+                            Log Company Response
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                            Companies typically have 15 days to respond through the CFPB portal.
+                          </Typography>
+
+                          <Stack spacing={2}>
+                            <FormControl size="small" sx={{ minWidth: 280 }}>
+                              <InputLabel>Company Response</InputLabel>
+                              <Select
+                                value={cfpbResponseType}
+                                label="Company Response"
+                                onChange={(e) => setCfpbResponseType(e.target.value)}
+                              >
+                                <MenuItem value="">
+                                  <em>Select response...</em>
+                                </MenuItem>
+                                {Object.entries(CFPB_RESPONSE_TYPES).map(([key, config]) => (
+                                  <MenuItem key={key} value={key}>
+                                    {config.label}
+                                  </MenuItem>
+                                ))}
+                              </Select>
+                            </FormControl>
+
+                            <LocalizationProvider dateAdapter={AdapterDayjs}>
+                              <DatePicker
+                                label="Response Date"
+                                value={cfpbResponseDate}
+                                onChange={(newValue) => setCfpbResponseDate(newValue)}
+                                slotProps={{ textField: { size: 'small', sx: { maxWidth: 200 } } }}
+                              />
+                            </LocalizationProvider>
+
+                            <Button
+                              variant="contained"
+                              startIcon={<SaveIcon />}
+                              disabled={!cfpbResponseType || !cfpbResponseDate}
+                              onClick={async () => {
+                                try {
+                                  await logCFPBResponse(
+                                    cfpbCase.cfpb_case_id,
+                                    cfpbResponseType,
+                                    'CRA',
+                                    cfpbResponseDate.format('YYYY-MM-DD')
+                                  );
+
+                                  // Check if resolved
+                                  const isResolved = CFPB_RESPONSE_TYPES[cfpbResponseType]?.resolved;
+
+                                  setStageData(prev => ({
+                                    ...prev,
+                                    cfpb1: { ...prev.cfpb1, status: 'complete' }
+                                  }));
+
+                                  // If not resolved, expand CFPB Stage 2
+                                  if (!isResolved) {
+                                    setExpandedStage('cfpb2');
+                                  } else {
+                                    // Resolved - show success
+                                    setExpandedStage('legal');
+                                  }
+                                } catch (err) {
+                                  console.error('Failed to log CFPB response:', err);
+                                }
+                              }}
+                            >
+                              Save & Log Response
+                            </Button>
+                          </Stack>
+
+                          {cfpbResponseType && CFPB_RESPONSE_TYPES[cfpbResponseType] && (
+                            <Alert
+                              severity={CFPB_RESPONSE_TYPES[cfpbResponseType].resolved ? 'success' : 'warning'}
+                              sx={{ mt: 2 }}
+                            >
+                              {CFPB_RESPONSE_TYPES[cfpbResponseType].resolved
+                                ? 'This response indicates resolution. Your complaint will be marked as resolved.'
+                                : 'This response indicates the issue is not resolved. You can escalate to CFPB Stage 2.'}
+                            </Alert>
+                          )}
+                        </Paper>
+                      )}
+                    </>
+                  )}
                 </AccordionDetails>
               </Accordion>
 
@@ -1520,9 +1806,230 @@ const LetterPage = () => {
                   </Box>
                 </AccordionSummary>
                 <AccordionDetails sx={{ p: 3 }}>
-                  <Typography variant="body2" color="text.secondary">
-                    File follow-up complaint if not resolved.
-                  </Typography>
+                  {/* Step 1: Generate Escalation Letter */}
+                  {!cfpbEscalationLetter && !cfpbEscalationLoading && (
+                    <Box sx={{ textAlign: 'center', py: 3 }}>
+                      <AccountBalanceIcon sx={{ fontSize: 48, color: 'error.main', mb: 2 }} />
+                      <Typography variant="body1" sx={{ mb: 1 }}>
+                        The company did not resolve your complaint.
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                        Generate an escalation complaint requesting CFPB review.
+                      </Typography>
+                      <Button
+                        variant="contained"
+                        color="error"
+                        onClick={async () => {
+                          setCfpbEscalationLoading(true);
+                          try {
+                            const result = await generateCFPBLetter(activeDispute?.id, 'escalation');
+                            setCfpbEscalationLetter(result);
+                            setEditableCfpbEscalation(result.content);
+                          } catch (err) {
+                            console.error('Failed to generate escalation letter:', err);
+                          } finally {
+                            setCfpbEscalationLoading(false);
+                          }
+                        }}
+                        disabled={!cfpbCase}
+                      >
+                        Generate Escalation Complaint
+                      </Button>
+                    </Box>
+                  )}
+
+                  {/* Loading state */}
+                  {cfpbEscalationLoading && (
+                    <Box sx={{ textAlign: 'center', py: 4 }}>
+                      <CircularProgress size={32} sx={{ mb: 2 }} />
+                      <Typography variant="body2" color="text.secondary">
+                        Generating escalation complaint...
+                      </Typography>
+                    </Box>
+                  )}
+
+                  {/* Step 2: Show escalation letter */}
+                  {cfpbEscalationLetter && !cfpbEscalationLoading && (
+                    <>
+                      <Paper sx={{ mb: 3, borderRadius: 2, overflow: 'hidden' }}>
+                        <Box sx={{ p: 2, bgcolor: '#ffebee', borderBottom: '1px solid', borderColor: 'divider' }}>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <AccountBalanceIcon color="error" />
+                              <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                                CFPB Escalation Complaint
+                              </Typography>
+                              <Chip label={`${editableCfpbEscalation.split(/\s+/).filter(w => w).length} words`} size="small" variant="outlined" />
+                            </Box>
+                            <Stack direction="row" spacing={1}>
+                              <Button size="small" startIcon={isEditingCfpbEscalation ? <VisibilityIcon /> : <EditIcon />} onClick={() => setIsEditingCfpbEscalation(!isEditingCfpbEscalation)} variant="outlined">
+                                {isEditingCfpbEscalation ? 'View' : 'Edit'}
+                              </Button>
+                              <Button
+                                size="small"
+                                startIcon={<ContentCopyIcon />}
+                                onClick={async () => {
+                                  await navigator.clipboard.writeText(editableCfpbEscalation);
+                                  setCfpbEscalationCopied(true);
+                                  setTimeout(() => setCfpbEscalationCopied(false), 2000);
+                                }}
+                                variant="outlined"
+                                color={cfpbEscalationCopied ? 'success' : 'inherit'}
+                              >
+                                {cfpbEscalationCopied ? 'Copied!' : 'Copy'}
+                              </Button>
+                              <Button
+                                size="small"
+                                startIcon={<DownloadIcon />}
+                                onClick={() => {
+                                  if (!editableCfpbEscalation) return;
+                                  const pdf = new jsPDF({ unit: 'pt', format: 'letter' });
+                                  const margin = 50;
+                                  const pageWidth = pdf.internal.pageSize.getWidth();
+                                  const pageHeight = pdf.internal.pageSize.getHeight();
+                                  pdf.setFont('times', 'normal');
+                                  pdf.setFontSize(12);
+                                  const lines = pdf.splitTextToSize(editableCfpbEscalation, pageWidth - (margin * 2));
+                                  let y = margin;
+                                  lines.forEach((line) => {
+                                    if (y + 18 > pageHeight - margin) { pdf.addPage(); y = margin; }
+                                    pdf.text(line, margin, y);
+                                    y += 18;
+                                  });
+                                  pdf.save(`cfpb_escalation_${dayjs().format('YYYY-MM-DD')}.pdf`);
+                                }}
+                                variant="contained"
+                                disableElevation
+                              >
+                                Download
+                              </Button>
+                            </Stack>
+                          </Box>
+                        </Box>
+                        <Box sx={{ p: 3, maxHeight: 350, overflow: 'auto' }}>
+                          {isEditingCfpbEscalation ? (
+                            <TextField
+                              fullWidth
+                              multiline
+                              minRows={12}
+                              value={editableCfpbEscalation}
+                              onChange={(e) => setEditableCfpbEscalation(e.target.value)}
+                              variant="outlined"
+                              sx={{ '& .MuiInputBase-root': { fontFamily: '"Times New Roman", serif', fontSize: '11pt', lineHeight: 1.6 } }}
+                            />
+                          ) : (
+                            <Box sx={{ fontFamily: '"Times New Roman", serif', fontSize: '11pt', lineHeight: 1.8, whiteSpace: 'pre-wrap', color: '#111' }}>
+                              {editableCfpbEscalation}
+                            </Box>
+                          )}
+                        </Box>
+                      </Paper>
+
+                      {/* Step 3: File escalation */}
+                      {!cfpbEscalationFiledDate && (
+                        <Paper elevation={0} sx={{ p: 2.5, bgcolor: '#ffebee', borderRadius: 2, mb: 3 }}>
+                          <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 2 }}>
+                            File Escalation with CFPB
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                            Submit this escalation through the CFPB portal requesting formal review.
+                          </Typography>
+                          <Stack direction="row" spacing={2} alignItems="center">
+                            <LocalizationProvider dateAdapter={AdapterDayjs}>
+                              <DatePicker
+                                label="Date Filed"
+                                value={cfpbEscalationFiledDate}
+                                onChange={(newValue) => setCfpbEscalationFiledDate(newValue)}
+                                slotProps={{ textField: { size: 'small' } }}
+                              />
+                            </LocalizationProvider>
+                            <Button
+                              variant="contained"
+                              color="error"
+                              disabled={!cfpbEscalationFiledDate}
+                              onClick={() => {
+                                // Mark escalation as filed
+                                setCfpbEscalationFiledDate(cfpbEscalationFiledDate);
+                              }}
+                            >
+                              Mark as Filed
+                            </Button>
+                          </Stack>
+                        </Paper>
+                      )}
+
+                      {/* Step 4: Log CFPB Final Response */}
+                      {cfpbEscalationFiledDate && (
+                        <Paper elevation={0} sx={{ p: 2.5, bgcolor: '#e3f2fd', borderRadius: 2 }}>
+                          <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
+                            Log CFPB Final Response
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                            CFPB will review and provide a final determination.
+                          </Typography>
+
+                          <Stack spacing={2}>
+                            <FormControl size="small" sx={{ minWidth: 280 }}>
+                              <InputLabel>CFPB Resolution</InputLabel>
+                              <Select
+                                value={cfpbFinalResponseType}
+                                label="CFPB Resolution"
+                                onChange={(e) => setCfpbFinalResponseType(e.target.value)}
+                              >
+                                <MenuItem value="">
+                                  <em>Select outcome...</em>
+                                </MenuItem>
+                                <MenuItem value="RELIEF_PROVIDED">Relief Provided</MenuItem>
+                                <MenuItem value="CLOSED_WITH_EXPLANATION">Closed with Explanation</MenuItem>
+                                <MenuItem value="CLOSED_NO_RELIEF">Closed - No Relief</MenuItem>
+                                <MenuItem value="IN_PROGRESS">Still In Progress</MenuItem>
+                              </Select>
+                            </FormControl>
+
+                            <LocalizationProvider dateAdapter={AdapterDayjs}>
+                              <DatePicker
+                                label="Resolution Date"
+                                value={cfpbFinalResponseDate}
+                                onChange={(newValue) => setCfpbFinalResponseDate(newValue)}
+                                slotProps={{ textField: { size: 'small', sx: { maxWidth: 200 } } }}
+                              />
+                            </LocalizationProvider>
+
+                            <Button
+                              variant="contained"
+                              startIcon={<SaveIcon />}
+                              disabled={!cfpbFinalResponseType || !cfpbFinalResponseDate || cfpbFinalResponseType === 'IN_PROGRESS'}
+                              onClick={() => {
+                                setStageData(prev => ({
+                                  ...prev,
+                                  cfpb2: { ...prev.cfpb2, status: 'complete' }
+                                }));
+                                setExpandedStage('legal');
+                              }}
+                            >
+                              Complete CFPB Process
+                            </Button>
+                          </Stack>
+
+                          {cfpbFinalResponseType === 'CLOSED_NO_RELIEF' && (
+                            <Alert severity="error" sx={{ mt: 2 }}>
+                              CFPB closed without relief. Your dispute history is now documented for potential legal action.
+                            </Alert>
+                          )}
+                          {cfpbFinalResponseType === 'RELIEF_PROVIDED' && (
+                            <Alert severity="success" sx={{ mt: 2 }}>
+                              Congratulations! CFPB intervention resulted in relief. Your case is resolved.
+                            </Alert>
+                          )}
+                          {cfpbFinalResponseType === 'CLOSED_WITH_EXPLANATION' && (
+                            <Alert severity="warning" sx={{ mt: 2 }}>
+                              CFPB closed with explanation but no relief. Consider consulting an attorney.
+                            </Alert>
+                          )}
+                        </Paper>
+                      )}
+                    </>
+                  )}
                 </AccordionDetails>
               </Accordion>
 
