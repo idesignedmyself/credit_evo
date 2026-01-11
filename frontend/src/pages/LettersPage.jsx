@@ -154,7 +154,15 @@ const LettersPage = () => {
     setDeletingId(letterId);
     try {
       await letterApi.deleteLetter(letterId);
-      setLetters(letters.filter((l) => l.letter_id !== letterId));
+      // Use functional update to ensure we have latest state
+      setLetters(prev => prev.filter((l) => l.letter_id !== letterId));
+      // Also refresh counts
+      const newCounts = await letterApi.getLetterCounts();
+      setCounts(newCounts || {
+        CRA: { total: 0, tier_0: 0, tier_1: 0, tier_2: 0 },
+        CFPB: { total: 0, tier_0: 0, tier_1: 0, tier_2: 0 },
+        LAWYER: { total: 0, tier_0: 0, tier_1: 0, tier_2: 0 },
+      });
     } catch (err) {
       setError(err.message || 'Failed to delete letter');
     } finally {

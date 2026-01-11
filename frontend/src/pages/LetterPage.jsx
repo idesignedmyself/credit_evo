@@ -54,6 +54,8 @@ import {
   logResponse,
   generateResponseLetter,
   saveResponseLetter,
+  markTier2NoticeSent,
+  logTier2Response,
   RESPONSE_TYPES,
 } from '../api/disputeApi';
 
@@ -88,6 +90,24 @@ const ViolationResponseCard = ({
     }
   };
 
+  const isDiscrepancy = violation.item_type === 'discrepancy';
+
+  // Format field name for display
+  const formatFieldName = (fieldName) => {
+    if (!fieldName) return 'Field';
+    return fieldName
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, c => c.toUpperCase());
+  };
+
+  // Get display label for violation type
+  const getDisplayLabel = () => {
+    if (isDiscrepancy) {
+      return `${formatFieldName(violation.field_name)} Mismatch`;
+    }
+    return violation.violation_type?.replace(/_/g, ' ') || getViolationLabel(violation.violation_type) || 'Violation';
+  };
+
   return (
     <Box
       sx={{
@@ -95,7 +115,7 @@ const ViolationResponseCard = ({
         bgcolor: 'white',
         borderRadius: 2,
         border: '1px solid',
-        borderColor: 'divider',
+        borderColor: isDiscrepancy ? '#ffc107' : 'divider',
         mb: 2,
       }}
     >
@@ -109,14 +129,21 @@ const ViolationResponseCard = ({
               </Typography>
             )}
           </Typography>
-          <Stack direction="row" spacing={1} alignItems="center">
+          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" sx={{ gap: 0.5 }}>
             <Chip
-              label={violation.violation_type?.replace(/_/g, ' ') || getViolationLabel(violation.violation_type) || 'Violation'}
+              label={getDisplayLabel()}
               size="small"
-              color="error"
+              color={isDiscrepancy ? 'warning' : 'error'}
               variant="outlined"
               sx={{ textTransform: 'capitalize' }}
             />
+            {isDiscrepancy && (
+              <Chip
+                label="Cross-Bureau"
+                size="small"
+                sx={{ height: 22, fontSize: '0.7rem', bgcolor: '#fff3e0', color: '#e65100' }}
+              />
+            )}
             {violation.severity && (
               <Chip
                 label={violation.severity}
@@ -138,6 +165,22 @@ const ViolationResponseCard = ({
           </Stack>
         </Box>
       </Box>
+
+      {/* Show cross-bureau values for discrepancies */}
+      {isDiscrepancy && violation.values_by_bureau && (
+        <Box sx={{ mb: 2, p: 1.5, bgcolor: '#fffde7', borderRadius: 1, border: '1px solid #fff59d' }}>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, fontWeight: 600 }}>
+            Reported Values:
+          </Typography>
+          <Stack direction="row" spacing={2} flexWrap="wrap">
+            {Object.entries(violation.values_by_bureau).map(([bureau, value]) => (
+              <Typography key={bureau} variant="body2" sx={{ fontSize: '0.85rem' }}>
+                <strong>{bureau.charAt(0).toUpperCase() + bureau.slice(1)}:</strong> {value || '—'}
+              </Typography>
+            ))}
+          </Stack>
+        </Box>
+      )}
 
       <FormControl size="small" sx={{ minWidth: 220 }}>
         <InputLabel>Response *</InputLabel>
@@ -187,8 +230,9 @@ const ViolationResponseCard = ({
       {responseType === 'VERIFIED' && !violation.logged_response && (
         <Alert severity="info" sx={{ mt: 1.5, py: 0.5 }} icon={false}>
           <Typography variant="caption">
-            <strong>Strategic note:</strong> "Verified" means the bureau claims the furnisher confirmed the data.
-            You may demand their Method of Verification and challenge the substantive accuracy.
+            <strong>Strategic note:</strong> {isDiscrepancy
+              ? 'Bureau claims the differing values are accurate. Demand Method of Verification to see what documentation they reviewed.'
+              : '"Verified" means the bureau claims the furnisher confirmed the data. You may demand their Method of Verification and challenge the substantive accuracy.'}
           </Typography>
         </Alert>
       )}
@@ -229,18 +273,28 @@ const LetterPage = () => {
   // Response logging state
   const [responseTypes, setResponseTypes] = useState({});
   const [sharedResponseDate, setSharedResponseDate] = useState(null);
+  const [finalResponseTypes, setFinalResponseTypes] = useState({});
+  const [finalResponseDate, setFinalResponseDate] = useState(null);
   const [submittingResponse, setSubmittingResponse] = useState(false);
   const [responseSuccess, setResponseSuccess] = useState(false);
   const [responseError, setResponseError] = useState(null);
 
-  // Inline letter generation state
+  // Inline letter generation state (Tier-1 rebuttal)
   const [generatedRebuttalLetter, setGeneratedRebuttalLetter] = useState(null);
   const [rebuttalLetterLoading, setRebuttalLetterLoading] = useState(false);
   const [editableRebuttalContent, setEditableRebuttalContent] = useState('');
   const [isEditingRebuttal, setIsEditingRebuttal] = useState(false);
   const [isSavingRebuttal, setIsSavingRebuttal] = useState(false);
   const [rebuttalCopied, setRebuttalCopied] = useState(false);
-  const { selectedViolationIds, selectedDiscrepancyIds, violations, auditResult, fetchAuditResults } = useViolationStore();
+
+  // Tier-2 letter generation state
+  const [generatedTier2Letter, setGeneratedTier2Letter] = useState(null);
+  const [tier2LetterLoading, setTier2LetterLoading] = useState(false);
+  const [editableTier2Content, setEditableTier2Content] = useState('');
+  const [isEditingTier2, setIsEditingTier2] = useState(false);
+  const [isSavingTier2, setIsSavingTier2] = useState(false);
+  const [tier2Copied, setTier2Copied] = useState(false);
+  const { selectedViolationIds, selectedDiscrepancyIds, violations, discrepancies, auditResult, fetchAuditResults } = useViolationStore();
   const {
     currentLetter,
     isGeneratingLetter,
@@ -326,22 +380,30 @@ const LetterPage = () => {
   // Calculate stats from SELECTED violations only
   const selectedViolations = violations.filter(v => selectedViolationIds.includes(v.violation_id));
 
-  // Build violation data from letter for dispute creation
+  // Get selected discrepancies
+  const selectedDiscrepancies = discrepancies.filter(d => selectedDiscrepancyIds.includes(d.discrepancy_id));
+
+  // Build violation data from letter for dispute creation (includes both violations and discrepancies)
   const buildViolationData = () => {
+    const data = [];
+
+    // Add violations
     if (selectedViolations.length > 0) {
-      return selectedViolations.map(v => ({
-        violation_id: v.violation_id,
-        violation_type: v.violation_type,
-        creditor_name: v.creditor_name,
-        account_number_masked: v.account_number_masked,
-        severity: v.severity,
-      }));
+      selectedViolations.forEach(v => {
+        data.push({
+          violation_id: v.violation_id,
+          violation_type: v.violation_type,
+          creditor_name: v.creditor_name,
+          account_number_masked: v.account_number_masked,
+          severity: v.severity,
+          item_type: 'violation',
+        });
+      });
     } else if (currentLetter?.violations_cited || currentLetter?.accounts_disputed) {
       const violationTypes = currentLetter.violations_cited || [];
       const accounts = currentLetter.accounts_disputed || [];
       const accountNumbers = currentLetter.account_numbers || [];
       const maxLen = Math.max(violationTypes.length, accounts.length);
-      const data = [];
       for (let i = 0; i < maxLen; i++) {
         data.push({
           violation_id: `${currentLetter.letter_id}-v${i}`,
@@ -349,11 +411,41 @@ const LetterPage = () => {
           creditor_name: accounts[i] || 'Unknown',
           account_number_masked: accountNumbers[i] || null,
           severity: 'MEDIUM',
+          item_type: 'violation',
         });
       }
-      return data;
     }
-    return [];
+
+    // Add cross-bureau discrepancies
+    if (selectedDiscrepancies.length > 0) {
+      selectedDiscrepancies.forEach(d => {
+        data.push({
+          violation_id: d.discrepancy_id,
+          violation_type: `cross_bureau_${d.field_name}`,
+          creditor_name: d.creditor_name,
+          account_number_masked: d.account_number_masked,
+          severity: d.severity || 'MEDIUM',
+          item_type: 'discrepancy',
+          field_name: d.field_name,
+          values_by_bureau: d.values_by_bureau,
+        });
+      });
+    } else if (currentLetter?.discrepancies_cited?.length > 0) {
+      currentLetter.discrepancies_cited.forEach((d, i) => {
+        data.push({
+          violation_id: d.discrepancy_id || `${currentLetter.letter_id}-d${i}`,
+          violation_type: `cross_bureau_${d.field_name}`,
+          creditor_name: d.creditor_name || 'Unknown',
+          account_number_masked: d.account_number_masked || null,
+          severity: d.severity || 'MEDIUM',
+          item_type: 'discrepancy',
+          field_name: d.field_name,
+          values_by_bureau: d.values_by_bureau,
+        });
+      });
+    }
+
+    return data;
   };
 
   // Start tracking: creates dispute record AND starts the deadline clock
@@ -373,11 +465,12 @@ const LetterPage = () => {
       });
 
       // Start tracking with the sent date
-      await startTracking(dispute.id, stageData.initial.sentDate, null);
+      await startTracking(dispute.dispute_id, stageData.initial.sentDate, null);
 
       // Update local state
       setActiveDispute({
         ...dispute,
+        id: dispute.dispute_id, // Normalize id field for downstream usage
         tracking_started: true,
         dispute_date: stageData.initial.sentDate,
         deadline_date: dayjs(stageData.initial.sentDate).add(30, 'day').format('YYYY-MM-DD'),
@@ -418,6 +511,24 @@ const LetterPage = () => {
       v => responseTypes[v.violation_id] && !v.logged_response
     );
 
+    // Check if all responses are already logged (from a previous session)
+    const allAlreadyLogged = violationData.length > 0 && violationData.every(v => v.logged_response);
+
+    // If all responses are already logged, just proceed to next stage
+    if (allAlreadyLogged) {
+      setResponseSuccess(true);
+      setTimeout(() => setResponseSuccess(false), 2000);
+      // Unlock final stage and auto-expand it
+      setStageData(prev => ({
+        ...prev,
+        response: { ...prev.response, status: 'complete' },
+        final: { ...prev.final, status: 'ready' },
+      }));
+      setExpandedStage('final');
+      return;
+    }
+
+    // If nothing is pending and not all are logged, show error
     if (pendingResponses.length === 0) {
       setResponseError('Please select at least one response type');
       return;
@@ -440,22 +551,29 @@ const LetterPage = () => {
         });
       }
 
-      // Check if any require enforcement letter
-      const hasEnforcement = pendingResponses.some(
-        v => ['NO_RESPONSE', 'VERIFIED', 'REJECTED', 'REINSERTION'].includes(responseTypes[v.violation_id])
+      // Check if any require enforcement letter (check both pending and already logged)
+      const allResponses = violationData.map(v => ({
+        ...v,
+        response_type: responseTypes[v.violation_id] || v.logged_response
+      }));
+      const hasEnforcement = allResponses.some(
+        v => ['NO_RESPONSE', 'VERIFIED', 'REJECTED', 'REINSERTION'].includes(v.response_type)
       );
 
       // Auto-generate rebuttal letter if enforcement response
       if (hasEnforcement) {
         setRebuttalLetterLoading(true);
-        const enforcementItem = pendingResponses.find(
-          v => ['NO_RESPONSE', 'VERIFIED', 'REJECTED', 'REINSERTION'].includes(responseTypes[v.violation_id])
+        // Find all enforcement responses (including already logged ones)
+        const enforcementResponses = allResponses.filter(
+          v => ['NO_RESPONSE', 'VERIFIED', 'REJECTED', 'REINSERTION'].includes(v.response_type)
         );
-        if (enforcementItem) {
+        if (enforcementResponses.length > 0) {
           try {
+            // Use the first enforcement type as the primary response type
+            // Don't pass violation_id to include ALL violations in the letter
             const result = await generateResponseLetter(activeDispute.id, {
-              response_type: responseTypes[enforcementItem.violation_id],
-              violation_id: enforcementItem.violation_id,
+              response_type: enforcementResponses[0].response_type,
+              // violation_id omitted - backend will use all violations
               include_willful_notice: true,
             });
             setGeneratedRebuttalLetter(result);
@@ -480,12 +598,13 @@ const LetterPage = () => {
       setResponseSuccess(true);
       setTimeout(() => setResponseSuccess(false), 2000);
 
-      // Unlock final stage
+      // Unlock final stage and auto-expand it
       setStageData(prev => ({
         ...prev,
         response: { ...prev.response, status: 'complete' },
         final: { ...prev.final, status: 'ready' },
       }));
+      setExpandedStage('final');
     } catch (err) {
       console.error('Failed to save responses:', err);
       setResponseError(err.message || 'Failed to save responses');
@@ -814,17 +933,17 @@ const LetterPage = () => {
                           </Alert>
                         )}
                         <Stack direction="row" spacing={2} alignItems="center">
-                          <TextField
-                            type="date"
-                            label="Date Mailed"
-                            size="small"
-                            InputLabelProps={{ shrink: true }}
-                            sx={{ width: 180, bgcolor: 'white' }}
-                            onChange={(e) => setStageData(prev => ({
-                              ...prev,
-                              initial: { ...prev.initial, sentDate: e.target.value }
-                            }))}
-                          />
+                          <LocalizationProvider dateAdapter={AdapterDayjs}>
+                            <DatePicker
+                              label="Date Mailed"
+                              value={stageData.initial.sentDate ? dayjs(stageData.initial.sentDate) : null}
+                              onChange={(newValue) => setStageData(prev => ({
+                                ...prev,
+                                initial: { ...prev.initial, sentDate: newValue ? newValue.format('YYYY-MM-DD') : null }
+                              }))}
+                              slotProps={{ textField: { size: 'small', sx: { bgcolor: 'white' } } }}
+                            />
+                          </LocalizationProvider>
                           <Button
                             variant="contained"
                             onClick={handleStartTracking}
@@ -1073,9 +1192,258 @@ const LetterPage = () => {
                       </Box>
                     </AccordionSummary>
                     <AccordionDetails sx={{ p: 3 }}>
-                      <Typography variant="body2" color="text.secondary">
-                        Log the final response and generate escalation letter if needed.
+                      {/* Deadline info header */}
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, pb: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
+                        <Box>
+                          <Typography variant="caption" color="text.secondary">Deadline</Typography>
+                          <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                            {activeDispute?.deadline_date ? dayjs(activeDispute.deadline_date).add(15, 'day').format('MMMM D, YYYY') : 'TBD'}
+                          </Typography>
+                        </Box>
+                        <Box>
+                          <Typography variant="caption" color="text.secondary">Days Remaining</Typography>
+                          <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                            {activeDispute?.deadline_date
+                              ? dayjs(activeDispute.deadline_date).add(15, 'day').diff(dayjs(), 'day')
+                              : '—'} days
+                          </Typography>
+                        </Box>
+                        <Box>
+                          <Typography variant="caption" color="text.secondary">Entity</Typography>
+                          <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                            {activeDispute?.entity_name || 'Bureau'}
+                          </Typography>
+                        </Box>
+                      </Box>
+
+                      <Divider sx={{ mb: 3 }} />
+
+                      {/* Log Final Response Section */}
+                      <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
+                        Log Final Response from {activeDispute?.entity_name || 'Bureau'}
                       </Typography>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                        Select how the bureau responded to each violation after receiving your rebuttal letter.
+                      </Typography>
+
+                      {/* Final Response Cards - Same options as Initial Response */}
+                      {(activeDispute?.violation_data || []).map((violation) => (
+                        <ViolationResponseCard
+                          key={`final-${violation.violation_id}`}
+                          violation={{ ...violation, logged_response: null }}
+                          responseType={finalResponseTypes[violation.violation_id] || ''}
+                          onResponseTypeChange={(vId, type) => setFinalResponseTypes(prev => ({ ...prev, [vId]: type }))}
+                          trackingStarted={true}
+                          deadlineDate={activeDispute?.deadline_date ? dayjs(activeDispute.deadline_date).add(15, 'day').format('YYYY-MM-DD') : null}
+                          isLocked={stageData.final.status === 'complete'}
+                        />
+                      ))}
+
+                      {/* Response Date and Save */}
+                      <Paper elevation={0} sx={{ p: 2.5, bgcolor: '#e3f2fd', borderRadius: 2, mt: 2 }}>
+                        <Stack direction="row" spacing={2} alignItems="center">
+                          <LocalizationProvider dateAdapter={AdapterDayjs}>
+                            <DatePicker
+                              label="Response Date"
+                              value={finalResponseDate}
+                              onChange={(newValue) => setFinalResponseDate(newValue)}
+                              slotProps={{ textField: { size: 'small' } }}
+                            />
+                          </LocalizationProvider>
+                          <Button
+                            variant="contained"
+                            startIcon={<SaveIcon />}
+                            disabled={Object.values(finalResponseTypes).every(v => !v) || !finalResponseDate}
+                            onClick={async () => {
+                              // Map user-facing response types to backend Tier2ResponseType
+                              const mapToTier2Type = (type) => {
+                                switch (type) {
+                                  case 'DELETED': return 'CURED';
+                                  case 'VERIFIED': return 'REPEAT_VERIFIED';
+                                  case 'NO_RESPONSE': return 'NO_RESPONSE_AFTER_CURE_WINDOW';
+                                  case 'REJECTED': return 'DEFLECTION_FRIVOLOUS';
+                                  case 'REINSERTION': return 'DEFLECTION_FRIVOLOUS';
+                                  default: return type;
+                                }
+                              };
+
+                              try {
+                                // Mark tier2 notice sent first (if not already)
+                                try {
+                                  await markTier2NoticeSent(activeDispute.id);
+                                } catch (e) {
+                                  // May already be marked, continue
+                                }
+
+                                // Log Tier-2 response - backend expects ONE response per dispute
+                                const responses = Object.entries(finalResponseTypes).filter(([_, type]) => type);
+                                if (responses.length > 0) {
+                                  // Use first selected response type, mapped to backend enum
+                                  const [_, userType] = responses[0];
+                                  const backendType = mapToTier2Type(userType);
+                                  await logTier2Response(activeDispute.id, {
+                                    response_type: backendType,
+                                    response_date: finalResponseDate.format('YYYY-MM-DD'),
+                                  });
+                                }
+
+                                // Check if any require escalation letter (non-DELETED outcomes)
+                                const hasEnforcement = responses.some(
+                                  ([_, type]) => ['VERIFIED', 'NO_RESPONSE', 'REJECTED', 'REINSERTION'].includes(type)
+                                );
+
+                                if (hasEnforcement) {
+                                  setTier2LetterLoading(true);
+                                  // Generate escalation letter using original user type for letter generation
+                                  const enforcementType = responses.find(
+                                    ([_, type]) => ['VERIFIED', 'NO_RESPONSE', 'REJECTED', 'REINSERTION'].includes(type)
+                                  )?.[1] || 'VERIFIED';
+
+                                  try {
+                                    const result = await generateResponseLetter(activeDispute.id, {
+                                      response_type: enforcementType,
+                                      include_willful_notice: true,
+                                    });
+                                    setGeneratedTier2Letter(result);
+                                    setEditableTier2Content(result.content);
+                                  } catch (letterErr) {
+                                    console.error('Failed to generate escalation letter:', letterErr);
+                                  } finally {
+                                    setTier2LetterLoading(false);
+                                  }
+                                }
+
+                                // Mark final stage complete and auto-expand CFPB
+                                setStageData(prev => ({
+                                  ...prev,
+                                  final: { ...prev.final, status: 'complete' }
+                                }));
+                                setExpandedStage('cfpb1');
+                              } catch (err) {
+                                console.error('Failed to save Final Response:', err);
+                              }
+                            }}
+                          >
+                            Save & Log
+                          </Button>
+                        </Stack>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+                          {Object.values(finalResponseTypes).filter(v => v).length} response(s) selected.
+                          {Object.values(finalResponseTypes).some(v => ['VERIFIED', 'NO_RESPONSE', 'REJECTED', 'REINSERTION'].includes(v)) &&
+                            ' An escalation letter will be generated.'}
+                        </Typography>
+                      </Paper>
+
+                      {/* Escalation Letter Loading */}
+                      {tier2LetterLoading && (
+                        <Paper sx={{ p: 4, mt: 3, textAlign: 'center', borderRadius: 2 }}>
+                          <CircularProgress size={24} sx={{ mb: 2 }} />
+                          <Typography variant="body2" color="text.secondary">
+                            Generating escalation letter...
+                          </Typography>
+                        </Paper>
+                      )}
+
+                      {/* Generated Escalation Letter */}
+                      {generatedTier2Letter && !tier2LetterLoading && (
+                        <Paper sx={{ mt: 3, borderRadius: 2, overflow: 'hidden' }}>
+                          <Box sx={{ p: 2, bgcolor: '#ffebee', borderBottom: '1px solid', borderColor: 'divider' }}>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <DescriptionIcon color="error" />
+                                <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                                  Generated Escalation Letter
+                                </Typography>
+                                <Chip label={`${editableTier2Content.split(/\s+/).filter(w => w).length} words`} size="small" variant="outlined" />
+                              </Box>
+                              <Stack direction="row" spacing={1}>
+                                <Button size="small" startIcon={isEditingTier2 ? <VisibilityIcon /> : <EditIcon />} onClick={() => setIsEditingTier2(!isEditingTier2)} variant="outlined">
+                                  {isEditingTier2 ? 'View' : 'Edit'}
+                                </Button>
+                                <Button
+                                  size="small"
+                                  startIcon={<ContentCopyIcon />}
+                                  onClick={async () => {
+                                    await navigator.clipboard.writeText(editableTier2Content);
+                                    setTier2Copied(true);
+                                    setTimeout(() => setTier2Copied(false), 2000);
+                                  }}
+                                  variant="outlined"
+                                  color={tier2Copied ? 'success' : 'inherit'}
+                                >
+                                  {tier2Copied ? 'Copied!' : 'Copy'}
+                                </Button>
+                                <Button
+                                  size="small"
+                                  startIcon={<DownloadIcon />}
+                                  onClick={() => {
+                                    if (!editableTier2Content) return;
+                                    const pdf = new jsPDF({ unit: 'pt', format: 'letter' });
+                                    const margin = 50;
+                                    const pageWidth = pdf.internal.pageSize.getWidth();
+                                    const pageHeight = pdf.internal.pageSize.getHeight();
+                                    pdf.setFont('times', 'normal');
+                                    pdf.setFontSize(12);
+                                    const lines = pdf.splitTextToSize(editableTier2Content, pageWidth - (margin * 2));
+                                    let y = margin;
+                                    lines.forEach((line) => {
+                                      if (y + 18 > pageHeight - margin) { pdf.addPage(); y = margin; }
+                                      pdf.text(line, margin, y);
+                                      y += 18;
+                                    });
+                                    pdf.save(`escalation_letter_${dayjs().format('YYYY-MM-DD')}.pdf`);
+                                  }}
+                                  variant="contained"
+                                  disableElevation
+                                >
+                                  Download
+                                </Button>
+                                <Button
+                                  size="small"
+                                  startIcon={isSavingTier2 ? <CircularProgress size={14} /> : <SaveIcon />}
+                                  onClick={async () => {
+                                    if (!activeDispute || !editableTier2Content) return;
+                                    setIsSavingTier2(true);
+                                    try {
+                                      await saveResponseLetter(activeDispute.id, {
+                                        content: editableTier2Content,
+                                        response_type: generatedTier2Letter?.response_type,
+                                      });
+                                    } catch (err) {
+                                      console.error('Failed to save Tier-2 letter:', err);
+                                    } finally {
+                                      setIsSavingTier2(false);
+                                    }
+                                  }}
+                                  variant="contained"
+                                  color="success"
+                                  disabled={isSavingTier2}
+                                  disableElevation
+                                >
+                                  Save
+                                </Button>
+                              </Stack>
+                            </Box>
+                          </Box>
+                          <Box sx={{ p: 3, maxHeight: 400, overflow: 'auto' }}>
+                            {isEditingTier2 ? (
+                              <TextField
+                                fullWidth
+                                multiline
+                                minRows={15}
+                                value={editableTier2Content}
+                                onChange={(e) => setEditableTier2Content(e.target.value)}
+                                variant="outlined"
+                                sx={{ '& .MuiInputBase-root': { fontFamily: '"Times New Roman", serif', fontSize: '11pt', lineHeight: 1.6 } }}
+                              />
+                            ) : (
+                              <Box sx={{ fontFamily: '"Times New Roman", serif', fontSize: '11pt', lineHeight: 1.8, whiteSpace: 'pre-wrap', color: '#111' }}>
+                                {editableTier2Content}
+                              </Box>
+                            )}
+                          </Box>
+                        </Paper>
+                      )}
                     </AccordionDetails>
                   </Accordion>
                 </>

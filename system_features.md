@@ -775,6 +775,107 @@ CFPB_VIOLATION_CATEGORIES = {
 
 ---
 
+## Unified Dispute Tracking Flow
+
+**Added:** January 2025
+
+### Overview
+Complete dispute lifecycle management from letter generation through escalation. All tracking happens on the LetterPage with accordion stages that auto-expand as the user progresses.
+
+### User Flow
+
+```
+AuditPage → Select violations → [Generate Letter] [Generate CFPB] → LetterPage
+```
+
+### Tracking Stages (Accordion UI)
+
+#### Stage 1: Initial Letter
+- **Purpose:** Generate and send first dispute letter
+- **Actions:**
+  - View/edit generated letter
+  - Download PDF, Copy, Print
+  - Enter "Date Mailed" (when YOU sent it)
+  - Click "Start Tracking" to begin deadline clock
+- **Deadline:** 30 days from mail date
+- **Next:** Unlocks "Initial Response" stage
+
+#### Stage 2: Initial Response
+- **Purpose:** Log how the bureau responded to your letter
+- **Deadline Display:** Shows days remaining until 30-day deadline
+- **Response Options:** (per violation)
+  - Deleted (they fixed it - WIN!)
+  - Verified (they claim it's accurate)
+  - No Response (only clickable AFTER deadline passes)
+  - Rejected/Frivolous (they refused to investigate)
+  - Reinsertion (previously deleted item returned)
+- **"Response Date":** When THEY responded (not when you sent)
+- **Auto-generates:** Rebuttal letter if enforcement response selected
+- **Next:** Auto-expands "Final Response" stage after save
+
+#### Stage 3: Final Response
+- **Purpose:** Log bureau response to your rebuttal letter
+- **Deadline Display:** Original deadline + 15 days (cure window)
+- **Response Options:** Same as Initial Response
+- **"No Response" clickable:** After deadline + 15 days passes
+- **Auto-generates:** Escalation letter if enforcement response selected
+- **Backend Mapping:** (hidden from user)
+  - Deleted → CURED (case closes)
+  - Verified → REPEAT_VERIFIED (escalates to CFPB)
+  - No Response → NO_RESPONSE_AFTER_CURE_WINDOW (escalates)
+  - Rejected → DEFLECTION_FRIVOLOUS (escalates)
+- **Next:** Auto-expands CFPB Stage 1
+
+#### Stage 4+: CFPB Stages & Legal Packet
+- Placeholder stages for regulatory escalation
+- Unlock based on previous stage completion
+
+### Key UI Elements
+
+#### ViolationResponseCard
+Displays each violation with:
+- Creditor name and masked account number
+- Violation type chip (color-coded)
+- Response dropdown
+- Cross-bureau values (for discrepancies)
+- Strategic notes (e.g., "Verified means you can demand Method of Verification")
+
+#### Date Fields Explained
+| Field | Meaning | Example |
+|-------|---------|---------|
+| Date Mailed | When YOU sent the letter | "I mailed it January 5th" |
+| Response Date | When THEY responded | "Bureau replied January 20th" |
+| Deadline | Calculated automatically | Mail date + 30 days |
+
+#### Letter Generation
+Each stage can generate letters:
+- **Initial Letter:** First dispute (auto-generated on arrival)
+- **Rebuttal Letter:** After Initial Response (if Verified/No Response/Rejected)
+- **Escalation Letter:** After Final Response (if not Deleted)
+
+Letters include:
+- Edit/View toggle
+- Copy to clipboard
+- Download as PDF
+- Save to database
+
+### Backend Integration
+
+#### API Endpoints Used
+- `POST /disputes` - Create dispute from letter
+- `POST /disputes/{id}/confirm-sent` - Start tracking with mail date
+- `POST /disputes/{id}/response` - Log Initial Response
+- `POST /disputes/{id}/mark-tier2-sent` - Mark rebuttal as sent
+- `POST /disputes/{id}/tier2-response` - Log Final Response
+- `POST /disputes/{id}/generate-response-letter` - Generate rebuttal/escalation
+
+#### State Management
+- Dispute state stored in `activeDispute` (local component state)
+- Stage completion tracked in `stageData`
+- Response selections in `responseTypes` / `finalResponseTypes`
+
+---
+
 ## Recent Commits
 
 | Commit | Description |

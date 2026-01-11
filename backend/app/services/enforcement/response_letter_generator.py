@@ -892,14 +892,12 @@ Via Certified Mail, Return Receipt Requested"""
         dispute_date: Optional[datetime],
         response_type: Optional[str]
     ) -> str:
-        """Generate opening paragraph asserting the dispute context."""
-        consumer_name = consumer.get('name', 'the undersigned consumer')
-
+        """Generate opening paragraph asserting the dispute context (first-person)."""
         if dispute_date:
             date_str = dispute_date.strftime("%B %d, %Y")
-            dispute_context = f"On {date_str}, {consumer_name} submitted a written dispute"
+            dispute_context = f"On {date_str}, I submitted a written dispute"
         else:
-            dispute_context = f"{consumer_name} previously submitted a written dispute"
+            dispute_context = "I previously submitted a written dispute"
 
         entity_role = {
             "CRA": "credit reporting agency",
@@ -907,7 +905,7 @@ Via Certified Mail, Return Receipt Requested"""
             "COLLECTOR": "debt collector"
         }.get(entity_type, "entity")
 
-        opening = f"""{dispute_context} to {entity_name} regarding inaccurate information appearing in {consumer_name}'s consumer file.
+        opening = f"""{dispute_context} to {entity_name} regarding inaccurate information appearing in my consumer file.
 
 {entity_name}, as a {entity_role} subject to the Fair Credit Reporting Act (FCRA), 15 U.S.C. § 1681 et seq."""
 
@@ -1127,7 +1125,7 @@ On **{notice_date_str}**, I issued a **Supervisory Notice** providing {canonical
 
 As of the date of this correspondence, **no results of reinvestigation have been provided.** This failure, following supervisory notice and a cure opportunity, constitutes a **completed procedural default** under the Fair Credit Reporting Act and triggers the statutory requirement for **permanent deletion** of the disputed information."""
     else:
-        opening = f"""On {dispute_date.strftime('%B %d, %Y')}, {consumer_name} submitted a written dispute regarding inaccurate information appearing in the consumer file maintained by {canonical_entity}.
+        opening = f"""On {dispute_date.strftime('%B %d, %Y')}, I submitted a written dispute regarding inaccurate information appearing in my consumer file maintained by {canonical_entity}.
 
 As of the date of this correspondence, **no results of reinvestigation have been provided**. This correspondence serves as formal notice that {canonical_entity} has failed to comply with mandatory procedural requirements under the Fair Credit Reporting Act, thereby triggering the statutory requirement for **immediate deletion** of the disputed information."""
     letter_parts.append(opening)
@@ -1432,9 +1430,9 @@ Verification Without Reasonable Investigation & Failure to Assure Accuracy"""
     letter_parts.append(subject)
 
     # =========================================================================
-    # OPENING PARAGRAPH - Fact-focused, establishes what happened
+    # OPENING PARAGRAPH - Fact-focused, establishes what happened (first-person)
     # =========================================================================
-    opening = f"""On {dispute_date.strftime('%B %d, %Y')}, {consumer_name} submitted a written dispute regarding inaccurate information appearing in their consumer file maintained by {canonical_entity}.
+    opening = f"""On {dispute_date.strftime('%B %d, %Y')}, I submitted a written dispute regarding inaccurate information appearing in my consumer file maintained by {canonical_entity}.
 
 On {response_date.strftime('%B %d, %Y')}, {canonical_entity} responded by claiming the disputed information was "VERIFIED."
 
@@ -1729,7 +1727,7 @@ Improper Frivolous / Irrelevant Determination"""
 
 This correspondence serves as **formal notice** that the frivolous determination fails to satisfy the statutory prerequisites under **15 U.S.C. § 1681i(a)(3)(B)** and is therefore **procedurally void and without legal effect.**"""
     else:
-        opening = f"""On {dispute_date.strftime('%B %d, %Y')}, {consumer_name} submitted a written dispute regarding inaccurate information appearing in the consumer file maintained by {canonical_entity}. {canonical_entity} subsequently designated the dispute as "frivolous or irrelevant."
+        opening = f"""On {dispute_date.strftime('%B %d, %Y')}, I submitted a written dispute regarding inaccurate information appearing in my consumer file maintained by {canonical_entity}. {canonical_entity} subsequently designated the dispute as "frivolous or irrelevant."
 
 This correspondence serves as formal notice that the frivolous determination fails to satisfy statutory prerequisites under **15 U.S.C. § 1681i(a)(3)(B)** and is therefore **void as a matter of law**."""
     letter_parts.append(opening)
@@ -2039,9 +2037,9 @@ Reinsertion Without Required Certification and Notice"""
     letter_parts.append(subject)
 
     # =========================================================================
-    # OPENING PARAGRAPH - Fact-focused
+    # OPENING PARAGRAPH - Fact-focused (first-person)
     # =========================================================================
-    opening = f"""{consumer_name} previously disputed inaccurate information appearing in their consumer file maintained by {canonical_entity}.
+    opening = f"""I previously disputed inaccurate information appearing in my consumer file maintained by {canonical_entity}.
 
 Following {canonical_entity}'s prior deletion of the disputed information, the same information was subsequently reinserted into the consumer file.
 
