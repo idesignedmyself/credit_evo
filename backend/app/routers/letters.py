@@ -95,6 +95,9 @@ class LetterRequest(BaseModel):
     include_mov: bool = True
     # Document channel: MAILED (default), CFPB, LITIGATION
     channel: str = "MAILED"
+    # Route detection flags for CFPB channel (determines wording)
+    has_prior_cra_dispute: bool = False  # True if user filed CRA dispute before CFPB
+    has_prior_cra_response: bool = False  # True if CRA responded before CFPB filing
 
 
 class LetterResponse(BaseModel):
@@ -372,7 +375,25 @@ async def generate_letter(
                 timeline_events=timeline_events,
                 entity_name=request.bureau.title(),
                 account_info=filtered_violations[0].account_number_masked if filtered_violations else "N/A",
+                has_prior_cra_dispute=request.has_prior_cra_dispute,
+                has_prior_cra_response=request.has_prior_cra_response,
+                discrepancies=filtered_discrepancies,
             )
+
+            # Build full violation data for CFPB letter (matches LITIGATION format)
+            # This enables the litigation packet to use the same violation bundle
+            violation_data = [
+                {
+                    "violation_id": v.violation_id,
+                    "violation_type": v.violation_type.value,
+                    "creditor_name": v.creditor_name,
+                    "account_number_masked": v.account_number_masked,
+                    "severity": v.severity.value,
+                    "description": v.description,
+                    "evidence": v.evidence,
+                }
+                for v in filtered_violations
+            ]
 
             # Save to database with CFPB channel
             letter_db = LetterDB(
@@ -385,7 +406,8 @@ async def generate_letter(
                 channel="CFPB",
                 tier=0,
                 accounts_disputed=[v.creditor_name for v in filtered_violations],
-                violations_cited=[v.violation_type.value for v in filtered_violations],
+                violations_cited=violation_data,  # Full violation objects, not just types
+                discrepancies_cited=filtered_discrepancies,  # Cross-bureau discrepancy objects
                 account_numbers=[v.account_number_masked or '' for v in filtered_violations],
                 word_count=len(cfpb_letter.content.split()),
             )
@@ -399,8 +421,8 @@ async def generate_letter(
                 word_count=len(cfpb_letter.content.split()),
                 accounts_disputed_count=len(set(v.creditor_name for v in filtered_violations)),
                 violations_cited_count=len(filtered_violations),
-                discrepancies_cited=[],
-                discrepancy_count=0,
+                discrepancies_cited=filtered_discrepancies,  # Actual discrepancy data
+                discrepancy_count=len(filtered_discrepancies),
                 variation_seed_used=0,
                 quality_score=0.9,
                 structure_type="cfpb_complaint",
@@ -445,7 +467,7 @@ async def generate_letter(
                 channel="LITIGATION",
                 tier=0,
                 accounts_disputed=[v.creditor_name for v in filtered_violations],
-                violations_cited=[v.violation_type.value for v in filtered_violations],
+                violations_cited=violation_data,  # Full violation objects (matches CFPB)
                 account_numbers=[v.account_number_masked or '' for v in filtered_violations],
                 word_count=len(packet.get("demand_letter", "").split()),
             )
@@ -1314,43 +1336,36 @@ async def get_legal_packet(
     # Do NOT pull from audit - must match CFPB Stage 1/2 exactly
     discrepancies = letter.discrepancies_cited or []
 
-    # Get accounts that were actually disputed (from discrepancies)
-    disputed_accounts = set()
-    for d in discrepancies:
-        if isinstance(d, dict):
-            creditor = d.get("creditor_name")
-            acct = d.get("account_number_masked")
-            if creditor and acct:
-                disputed_accounts.add((creditor, acct))
-
-    # Build violations from letter's violations_cited, BUT only for disputed accounts
+    # Build violations directly from letter's violations_cited
+    # Now stores full violation objects (not just type strings) for CFPB letters
     violations = []
-    if letter.violations_cited and letter.report_id and disputed_accounts:
-        audit = db.query(AuditResultDB).filter(AuditResultDB.report_id == letter.report_id).first()
-        if audit and audit.violations_data:
-            # Get violation types from letter
-            cited_types = [v if isinstance(v, str) else v.get('violation_type') for v in letter.violations_cited]
-            # Match violations by type AND account (must be in disputed accounts)
-            for v_data in audit.violations_data:
-                if isinstance(v_data, dict):
-                    v_type = v_data.get("violation_type")
-                    v_creditor = v_data.get("creditor_name")
-                    v_acct = v_data.get("account_number_masked")
-                    # Only include if type matches AND account is in disputed accounts
-                    if v_type in cited_types and (v_creditor, v_acct) in disputed_accounts:
-                        violations.append(v_data)
+    if letter.violations_cited:
+        for i, v in enumerate(letter.violations_cited):
+            if isinstance(v, dict):
+                # Full violation object - use directly
+                violations.append(v)
+            elif isinstance(v, str):
+                # Legacy: just a type string - create minimal violation entry
+                # Use index i to access parallel arrays (accounts_disputed, account_numbers)
+                violations.append({
+                    "violation_type": v,
+                    "creditor_name": letter.accounts_disputed[i] if i < len(letter.accounts_disputed or []) else "Unknown",
+                    "account_number_masked": letter.account_numbers[i] if i < len(letter.account_numbers or []) else "N/A",
+                    "severity": "high",
+                    "description": v.replace("_", " ").title(),
+                })
 
-    # If no violations matched by account (fallback), derive from discrepancies
+    # Fallback: derive from discrepancies if no violations
     if not violations and discrepancies:
         for d in discrepancies:
             if isinstance(d, dict):
-                # Create synthetic violation entries from discrepancy accounts
+                # Create violation entries from discrepancy accounts
                 violations.append({
-                    "violation_type": "missing_dofd",  # Use letter's violation type
+                    "violation_type": d.get("violation_type", "missing_dofd"),
                     "creditor_name": d.get("creditor_name"),
                     "account_number_masked": d.get("account_number_masked"),
                     "severity": "high",
-                    "description": "Missing Date of First Delinquency",
+                    "description": d.get("description", "Cross-bureau data discrepancy"),
                 })
 
     # Build timeline from disputes (with deduplication)
@@ -1545,183 +1560,11 @@ async def get_legal_packet(
     if format.lower() == "json":
         return packet_data
 
-    # Generate printable document
-    document = _render_legal_packet_document(packet_data)
+    # Generate printable document using the authoritative AttorneyPacket renderer
+    from ..services.artifacts.attorney_packet_builder import AttorneyPacket
+    packet_obj = AttorneyPacket.from_packet_data(packet_data)
+    document = packet_obj.render_document()
     return PlainTextResponse(content=document, media_type="text/plain; charset=utf-8")
-
-
-def _render_legal_packet_document(packet: dict) -> str:
-    """Render legal packet as a printable document."""
-    lines = []
-    w = 80
-
-    def header(text: str) -> str:
-        return "=" * w + "\n" + text.center(w) + "\n" + "=" * w
-
-    def section(text: str) -> str:
-        return "\n" + "=" * w + "\n" + text + "\n" + "=" * w
-
-    # Title
-    lines.append(header("FCRA VIOLATION CASE PACKET\nPrepared for Attorney Consultation"))
-    lines.append("")
-    lines.append(f"CASE REFERENCE: {packet['packet_id']}")
-    lines.append(f"GENERATED:      {packet['generated_at'][:10]}")
-    lines.append(f"STATUS:         ATTORNEY-READY")
-    lines.append("")
-
-    # Parties
-    lines.append(section("PARTIES INVOLVED"))
-    lines.append("")
-    lines.append(f"CONSUMER:           {packet['consumer_name']}")
-    lines.append("")
-    lines.append(f"CREDIT BUREAU:      {packet['entity_name']}")
-    lines.append("")
-
-    # Violations
-    lines.append(section("VIOLATIONS DETECTED"))
-    lines.append("")
-
-    # Group violations by type
-    violations_by_type = {}
-    for v in packet['violations']:
-        v_type = v.get('violation_type', 'Unknown') if isinstance(v, dict) else str(v)
-        if v_type not in violations_by_type:
-            violations_by_type[v_type] = []
-        violations_by_type[v_type].append(v)
-
-    issue_num = 1
-    for v_type, v_list in violations_by_type.items():
-        title = v_type.replace('_', ' ').title()
-        lines.append(f"VIOLATION #{issue_num}: {title}")
-        lines.append("─" * w)
-
-        # List affected accounts
-        lines.append("")
-        lines.append("Affected accounts:")
-        seen = set()
-        for v in v_list:
-            if isinstance(v, dict):
-                creditor = v.get('creditor_name', 'Unknown')
-                acct = v.get('account_number_masked', '****')
-                key = (creditor, acct)
-                if key not in seen:
-                    seen.add(key)
-                    lines.append(f"  • {creditor} — Account: {acct}")
-
-        lines.append("")
-        issue_num += 1
-
-    # Cross-Bureau Discrepancies
-    if packet['discrepancies']:
-        lines.append("")
-        lines.append(f"VIOLATION #{issue_num}: Cross-Bureau Discrepancies")
-        lines.append("─" * w)
-        lines.append("")
-
-        for d in packet['discrepancies']:
-            if isinstance(d, dict):
-                field = d.get('field_name', 'Unknown field')
-                creditor = d.get('creditor_name', 'Unknown')
-                acct = d.get('account_number_masked', '****')
-                lines.append(f"  • {creditor} — {field} mismatch — Account: {acct}")
-        lines.append("")
-
-    # Timeline
-    lines.append(section("DISPUTE HISTORY"))
-    lines.append("")
-    lines.append("DATE           EVENT                                               OUTCOME")
-    lines.append("─" * w)
-
-    for event in packet['timeline']:
-        date_str = event.get('date', 'Unknown')[:10] if event.get('date') else 'Unknown'
-        event_desc = event.get('event', '')[:50]
-        outcome = event.get('outcome', '')[:15]
-        lines.append(f"{date_str:<14} {event_desc:<55} {outcome}")
-
-    lines.append("")
-
-    # CFPB Case
-    if packet.get('cfpb_case') and packet['cfpb_case'].get('case_number'):
-        lines.append(section("CFPB COMPLAINT HISTORY"))
-        lines.append("")
-        lines.append(f"CFPB Case Number: {packet['cfpb_case']['case_number']}")
-        lines.append(f"Current State:    {packet['cfpb_case']['state'] or 'Unknown'}")
-        lines.append("")
-
-        if packet['cfpb_case'].get('events'):
-            for event in packet['cfpb_case']['events']:
-                event_type = event.get('event_type', 'Unknown')
-                event_date = event.get('date', '')[:10] if event.get('date') else ''
-                lines.append(f"  • {event_date} — {event_type}")
-        lines.append("")
-
-    # Statutes
-    lines.append(section("STATUTES VIOLATED"))
-    lines.append("")
-    for statute in packet['statutes_violated']:
-        lines.append(f"  • {statute}")
-    lines.append("")
-
-    # Damages
-    lines.append(section("DAMAGES AVAILABLE"))
-    lines.append("")
-    damages = packet['potential_damages']
-    lines.append("STATUTORY DAMAGES")
-    lines.append(f"  $100–$1,000 per willful violation pursuant to {damages.get('statutory_citation', '15 U.S.C. §1681n(a)(1)(A)')}")
-    lines.append("")
-
-    if damages.get('punitive_eligible'):
-        lines.append("PUNITIVE DAMAGES (15 U.S.C. § 1681n(a)(2))")
-        lines.append("  Available where willfulness is established")
-        lines.append("  No statutory cap")
-        lines.append("")
-
-    lines.append("ACTUAL DAMAGES")
-    lines.append("  • Credit denials or adverse terms")
-    lines.append("  • Increased interest rates paid")
-    lines.append("  • Emotional distress")
-    lines.append("  • Time spent disputing")
-    lines.append("")
-
-    lines.append("ATTORNEY'S FEES (15 U.S.C. § 1681n(a)(3))")
-    lines.append("  Recoverable by prevailing plaintiff")
-    lines.append("")
-
-    # Willfulness Indicators
-    if damages.get('willful_indicators'):
-        lines.append(section("WILLFULNESS INDICATORS"))
-        lines.append("")
-        lines.append("The following factors suggest WILLFUL rather than negligent noncompliance:")
-        lines.append("")
-        for indicator in damages['willful_indicators']:
-            lines.append(f"  ☒ {indicator}")
-        lines.append("")
-
-    # Exhibits
-    lines.append(section("ATTACHED EXHIBITS"))
-    lines.append("")
-    lines.append("  Exhibit A:  Credit report with violations highlighted")
-    lines.append("  Exhibit B:  Dispute letters with certified mail receipts")
-    lines.append("  Exhibit C:  Entity response letters")
-    lines.append("  Exhibit D:  Current credit report showing unchanged data")
-    if packet.get('cfpb_case'):
-        lines.append("  Exhibit E:  CFPB complaint submissions and responses")
-    lines.append("")
-
-    # Footer
-    lines.append("=" * w)
-    lines.append("")
-    lines.append("  This packet was generated by an automated FCRA enforcement system.")
-    lines.append("  All violations were detected using deterministic rules applied to")
-    lines.append("  Metro 2 credit data schema fields. No AI interpretation was used")
-    lines.append("  in violation detection.")
-    lines.append("")
-    lines.append(f"  Case Packet ID: {packet['packet_id']}")
-    lines.append(f"  Generated: {packet['generated_at']}")
-    lines.append("")
-    lines.append("=" * w)
-
-    return "\n".join(lines)
 
 
 @router.delete("/{letter_id}")

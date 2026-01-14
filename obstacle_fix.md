@@ -33,6 +33,7 @@ This document tracks bugs, issues, and obstacles encountered during development 
 25. [B17: LetterDB Invalid `letter_type` Keyword](#b17-letterdb-invalid-letter_type-keyword)
 26. [B17: Account Number Extraction vs Passthrough](#b17-account-number-extraction-vs-passthrough)
 27. [B17: Missing `date` Import in letters.py](#b17-missing-date-import-in-letterspy)
+28. [B18: Litigation Packet Missing DOFD Accounts (Index Bug)](#b18-litigation-packet-missing-dofd-accounts-index-bug)
 
 ---
 
@@ -1048,6 +1049,72 @@ from datetime import date, datetime
 
 **Files Modified:**
 - `backend/app/routers/letters.py`
+
+---
+
+## B18: Litigation Packet Missing DOFD Accounts (Index Bug)
+
+**Date:** January 14, 2026
+
+**Symptom:**
+CFPB Stage 1 & 2 showed 2 accounts for "Missing Date of First Delinquency":
+- 440066301380****
+- 440066175522****
+
+But Litigation packet showed only 1 account:
+- 440066301380****
+
+This under-pleaded the case and weakened willfulness leverage unnecessarily.
+
+**Root Cause:**
+The legal-packet endpoint (`letters.py:1351-1352`) has a legacy fallback for letters that store violations as type strings (e.g., `["missing_dofd", "missing_dofd"]`) instead of full objects.
+
+The bug was in the fallback code:
+```python
+elif isinstance(v, str):
+    violations.append({
+        "violation_type": v,
+        "creditor_name": letter.accounts_disputed[0],      # ← ALWAYS [0]!
+        "account_number_masked": letter.account_numbers[0], # ← ALWAYS [0]!
+        ...
+    })
+```
+
+It **always used index `[0]`** instead of the loop index. When there were 2 `"missing_dofd"` strings with different accounts in the parallel `account_numbers` array, both got mapped to the first account. Deduplication then removed the "duplicate", leaving only 1 account.
+
+**Evidence from database:**
+```
+violations_cited:  ["missing_dofd", "missing_dofd"]
+accounts_disputed: ["BK OF AMER", "BK OF AMER"]
+account_numbers:   ["440066301380****", "440066175522****"]  ← 2 DIFFERENT accounts!
+```
+
+The data was stored correctly in parallel arrays, but the code was accessing them wrong.
+
+**Solution:**
+Use `enumerate()` to get the loop index and access parallel arrays correctly:
+
+```python
+# Before (Bug):
+for v in letter.violations_cited:
+    ...
+    "creditor_name": letter.accounts_disputed[0],
+    "account_number_masked": letter.account_numbers[0],
+
+# After (Fix):
+for i, v in enumerate(letter.violations_cited):
+    ...
+    "creditor_name": letter.accounts_disputed[i] if i < len(letter.accounts_disputed or []) else "Unknown",
+    "account_number_masked": letter.account_numbers[i] if i < len(letter.account_numbers or []) else "N/A",
+```
+
+**Why This Is Safe:**
+1. Full dict violations (CFPB/LITIGATION channels) bypass this code path entirely
+2. Old letters with string violations now work correctly without regeneration
+3. Parallel arrays are guaranteed to be same length (built from same `filtered_violations` loop)
+
+**Files Modified:**
+- `backend/app/routers/letters.py` (line 1343)
 
 ---
 
