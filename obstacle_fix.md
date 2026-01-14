@@ -34,6 +34,7 @@ This document tracks bugs, issues, and obstacles encountered during development 
 26. [B17: Account Number Extraction vs Passthrough](#b17-account-number-extraction-vs-passthrough)
 27. [B17: Missing `date` Import in letters.py](#b17-missing-date-import-in-letterspy)
 28. [B18: Litigation Packet Missing DOFD Accounts (Index Bug)](#b18-litigation-packet-missing-dofd-accounts-index-bug)
+29. [B18: Litigation Packet CRA-First Language for CFPB Routes](#b18-litigation-packet-cra-first-language-for-cfpb-routes)
 
 ---
 
@@ -1049,6 +1050,68 @@ from datetime import date, datetime
 
 **Files Modified:**
 - `backend/app/routers/letters.py`
+
+---
+
+## B18: Litigation Packet CRA-First Language for CFPB Routes
+
+**Date:** January 14, 2026
+
+**Symptom:**
+Litigation packet showed CRA-dispute-first language for CFPB-route cases:
+- "Consumer filed 0 formal dispute(s)"
+- "0 formal disputes filed by consumer"
+- "CONSUMER PROVIDED NOTICE VIA DISPUTE"
+
+This was inconsistent for cases initiated via CFPB regulatory complaint, not traditional §1681i CRA dispute.
+
+**Root Cause:**
+The `render_document()` method in `attorney_packet_builder.py` had hardcoded CRA-dispute-first template language. It didn't detect the case route (CFPB vs CRA) to adjust language accordingly.
+
+**Solution:**
+Added route detection and conditional template language:
+
+```python
+# Detect if this is CFPB-first route
+is_cfpb_route = (
+    self.tier3_classification == "CFPB" or
+    any("cfpb" in t.event_type.lower() for t in self.timeline)
+)
+
+# Phase 2: Route-aware language
+if is_cfpb_route:
+    lines.append("PHASE 2: POST-NOTICE PERSISTENCE (CFPB)")
+    lines.append("    • Consumer filed CFPB regulatory complaint identifying violations")
+    lines.append("    • Defendant received formal notice via CFPB complaint process")
+else:
+    lines.append("PHASE 2: POST-DISPUTE PERSISTENCE")
+    lines.append(f"    • Consumer filed {dispute_count} formal dispute(s)")
+```
+
+**CFPB-route output:**
+```
+PHASE 2: POST-NOTICE PERSISTENCE (CFPB)
+    • Consumer filed CFPB regulatory complaint identifying violations
+    • Defendant received formal notice via CFPB complaint process
+    • Defendant had full opportunity to cure after regulatory notice
+    • Violations PERSISTED after notice — Defendant failed to cure
+
+2. CONSUMER PROVIDED NOTICE VIA CFPB COMPLAINT
+    Evidence: CFPB complaint and company response attached
+```
+
+**CRA-route output (unchanged):**
+```
+PHASE 2: POST-DISPUTE PERSISTENCE
+    • Consumer filed 1 formal dispute(s)
+    • Defendant received written notice identifying specific inaccuracies
+
+2. CONSUMER PROVIDED NOTICE VIA DISPUTE
+    Evidence: Dispute letters with certified mail receipts attached
+```
+
+**Files Modified:**
+- `backend/app/services/artifacts/attorney_packet_builder.py`
 
 ---
 

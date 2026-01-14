@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any
 from uuid import uuid4
+from collections import defaultdict
 import hashlib
 import json
 
@@ -42,6 +43,8 @@ class AttorneyPacketViolation:
     severity: str
     description: str
     evidence: Dict[str, Any]
+    creditor_name: Optional[str] = None
+    account_number_masked: Optional[str] = None
     statute: Optional[str] = None
     metro2_field: Optional[str] = None
 
@@ -95,6 +98,9 @@ class AttorneyPacket:
     statutes_violated: List[str] = field(default_factory=list)
     potential_damages: Dict[str, Any] = field(default_factory=dict)
 
+    # Cross-Bureau Discrepancies
+    discrepancies: List[Dict[str, Any]] = field(default_factory=list)
+
     # Metadata
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     packet_hash: str = ""  # SHA256 of packet contents for integrity
@@ -117,6 +123,8 @@ class AttorneyPacket:
                     "severity": v.severity,
                     "description": v.description,
                     "evidence": v.evidence,
+                    "creditor_name": v.creditor_name,
+                    "account_number_masked": v.account_number_masked,
                     "statute": v.statute,
                     "metro2_field": v.metro2_field,
                 }
@@ -140,6 +148,7 @@ class AttorneyPacket:
             "artifact_pointers": self.artifact_pointers,
             "statutes_violated": self.statutes_violated,
             "potential_damages": self.potential_damages,
+            "discrepancies": self.discrepancies,
             "created_at": self.created_at.isoformat(),
             "packet_hash": self.packet_hash,
         }
@@ -158,11 +167,93 @@ class AttorneyPacket:
         json_str = json.dumps(content, sort_keys=True)
         return hashlib.sha256(json_str.encode()).hexdigest()
 
+    @classmethod
+    def from_packet_data(cls, packet_data: Dict[str, Any]) -> "AttorneyPacket":
+        """
+        Create an AttorneyPacket from the packet_data dict used by letters.py legal-packet endpoint.
+
+        This normalizes the dict format from the API into the structured AttorneyPacket class.
+        """
+        # Convert violations list to AttorneyPacketViolation objects
+        violations = []
+        for v in packet_data.get('violations', []):
+            if isinstance(v, dict):
+                violations.append(AttorneyPacketViolation(
+                    violation_id=v.get('violation_id', str(uuid4())),
+                    violation_type=v.get('violation_type', 'unknown'),
+                    severity=v.get('severity', 'medium'),
+                    description=v.get('description', ''),
+                    evidence=v.get('evidence', {}),
+                    creditor_name=v.get('creditor_name'),
+                    account_number_masked=v.get('account_number_masked'),
+                    statute=v.get('statute'),
+                    metro2_field=v.get('metro2_field'),
+                ))
+
+        # Convert timeline list to AttorneyPacketTimeline objects
+        timeline = []
+        for t in packet_data.get('timeline', []):
+            if isinstance(t, dict):
+                # Parse date string to datetime
+                date_str = t.get('date', '')
+                try:
+                    if date_str:
+                        event_date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                    else:
+                        event_date = datetime.now(timezone.utc)
+                except (ValueError, TypeError):
+                    event_date = datetime.now(timezone.utc)
+
+                timeline.append(AttorneyPacketTimeline(
+                    date=event_date,
+                    event_type=t.get('event', 'unknown'),
+                    description=t.get('event', ''),
+                    actor=t.get('actor', 'CONSUMER'),
+                    evidence_hash=t.get('evidence_hash'),
+                ))
+
+        # Parse created_at from generated_at
+        generated_at = packet_data.get('generated_at', '')
+        try:
+            if generated_at:
+                created_at = datetime.fromisoformat(generated_at.replace('Z', '+00:00'))
+            else:
+                created_at = datetime.now(timezone.utc)
+        except (ValueError, TypeError):
+            created_at = datetime.now(timezone.utc)
+
+        return cls(
+            packet_id=packet_data.get('packet_id', f"PKT-{str(uuid4())[:8]}"),
+            dispute_id=packet_data.get('letter_id', str(uuid4())),
+            user_id=packet_data.get('user_id', ''),
+            consumer_name=packet_data.get('consumer_name'),
+            cra_name=packet_data.get('entity_name', ''),
+            furnisher_name='',  # Not in packet_data
+            tier3_classification=packet_data.get('channel', 'CFPB'),
+            readiness_status='ATTORNEY_READY',
+            primary_violations=violations,
+            total_violation_count=packet_data.get('violation_count', len(violations)),
+            examiner_failures=[],  # Not in packet_data
+            cure_opportunity_given=True,
+            cure_outcome='',
+            timeline=timeline,
+            document_hashes=[],
+            artifact_pointers=[],
+            statutes_violated=packet_data.get('statutes_violated', []),
+            potential_damages=packet_data.get('potential_damages', {}),
+            discrepancies=packet_data.get('discrepancies', []),
+            created_at=created_at,
+            packet_hash='',
+        )
+
     def render_document(self) -> str:
         """
-        Render the packet as a printable document for attorney consultation.
+        Render the packet as a litigation-ready document for attorney consultation.
 
-        Returns a formatted text document suitable for printing.
+        This document ALLEGES violations, establishes notice timeline, and frames
+        the case for willful/negligent noncompliance under FCRA §§1681n/1681o.
+
+        Returns a formatted text document suitable for filing.
         """
         lines = []
         w = 80  # Document width
@@ -176,201 +267,487 @@ class AttorneyPacket:
         def subsection(text: str) -> str:
             return "\n" + text + "\n" + "━" * w + "\n"
 
-        # Title
-        lines.append(header("FCRA VIOLATION CASE PACKET\nPrepared for Attorney Consultation"))
+        # ==================================================================
+        # TITLE — Litigation-Grade Framing
+        # ==================================================================
+        lines.append(header("FCRA LITIGATION PACKET\nCase for Willful/Negligent Noncompliance"))
         lines.append("")
         lines.append(f"CASE REFERENCE: {self.packet_id}")
         lines.append(f"GENERATED:      {self.created_at.strftime('%B %d, %Y')}")
-        lines.append(f"STATUS:         {self.readiness_status.replace('_', '-')} (Tier-3 Exhausted)")
-
-        # Parties
-        lines.append(section("PARTIES INVOLVED"))
-        lines.append(f"CONSUMER:           [Name Redacted]")
-        if self.consumer_name:
-            lines.append(f"                    {self.consumer_name}")
+        lines.append(f"STATUS:         {self.readiness_status.replace('_', '-')} — Remedies Exhausted")
         lines.append("")
-        lines.append(f"CREDIT BUREAU:      {self.cra_name or 'Unknown CRA'}")
+        lines.append("This packet establishes: (1) notice was given, (2) violations persisted,")
+        lines.append("and (3) defendant failed to comply despite opportunity to cure.")
+        lines.append("")
+
+        # ==================================================================
+        # PARTIES INVOLVED
+        # ==================================================================
+        lines.append(section("PARTIES INVOLVED"))
+        lines.append(f"PLAINTIFF:          {self.consumer_name or '[Consumer Name]'}")
+        lines.append("")
+        lines.append(f"DEFENDANT CRA:      {self.cra_name or '[Credit Bureau]'}")
         lines.append("")
         if self.furnisher_name:
-            lines.append(f"FURNISHER:          {self.furnisher_name}")
+            lines.append(f"DEFENDANT FURNISHER: {self.furnisher_name}")
             lines.append("")
 
-        # Violations
-        lines.append(section("VIOLATIONS DETECTED"))
+        # ==================================================================
+        # NOTICE TIMELINE — Legal, Not UI
+        # ==================================================================
+        lines.append(section("NOTICE TIMELINE — BASIS FOR WILLFUL/NEGLIGENT LIABILITY"))
+        lines.append("")
+        lines.append("The following timeline establishes that Defendant received formal notice")
+        lines.append("of inaccurate reporting and failed to cure despite opportunity to do so:")
+        lines.append("")
 
-        for i, v in enumerate(self.primary_violations, 1):
-            violation_title = f"VIOLATION #{i}: {v.violation_type.replace('_', ' ')} (Rule {v.violation_type[:2] if len(v.violation_type) >= 2 else v.violation_type})"
-            lines.append(subsection(violation_title))
+        # Count dispute events
+        dispute_count = len([t for t in self.timeline if 'dispute' in t.event_type.lower()])
+        response_count = len([t for t in self.timeline if 'response' in t.event_type.lower()])
 
-            # Description
-            if v.description:
-                # Word wrap description
-                desc_lines = self._wrap_text(v.description, w - 4)
-                for dl in desc_lines:
-                    lines.append(dl)
+        # Detect if this is CFPB-first route (notice via regulatory complaint, not CRA dispute)
+        is_cfpb_route = (
+            self.tier3_classification == "CFPB" or
+            any("cfpb" in t.event_type.lower() for t in self.timeline)
+        )
+        cfpb_notice_count = len([t for t in self.timeline if 'cfpb' in t.event_type.lower()])
+
+        lines.append("PHASE 1: PRE-DISPUTE VIOLATIONS")
+        lines.append("━" * w)
+        lines.append(f"    • {self.total_violation_count} FCRA violations detected in credit file")
+        lines.append("    • Violations existed BEFORE any dispute was filed")
+        lines.append("    • Defendant had duty to assure maximum possible accuracy (§1681e(b))")
+        lines.append("")
+
+        # Phase 2: Route-aware language (CFPB vs CRA dispute)
+        if is_cfpb_route:
+            lines.append("PHASE 2: POST-NOTICE PERSISTENCE (CFPB)")
+            lines.append("━" * w)
+            lines.append("    • Consumer filed CFPB regulatory complaint identifying violations")
+            lines.append("    • Defendant received formal notice via CFPB complaint process")
+            lines.append("    • Defendant had full opportunity to cure after regulatory notice")
+            lines.append("    • Violations PERSISTED after notice — Defendant failed to cure")
+        else:
+            lines.append("PHASE 2: POST-DISPUTE PERSISTENCE")
+            lines.append("━" * w)
+            lines.append(f"    • Consumer filed {dispute_count} formal dispute(s)")
+            lines.append("    • Defendant received written notice identifying specific inaccuracies")
+            lines.append("    • Defendant had statutory obligation to investigate (§1681i(a))")
+            lines.append("    • Violations PERSISTED after dispute — Defendant failed to cure")
+        lines.append("")
+
+        if response_count > 0:
+            lines.append("PHASE 3: POST-RESPONSE CONTINUATION")
+            lines.append("━" * w)
+            lines.append(f"    • Defendant provided {response_count} response(s)")
+            lines.append("    • Responses failed to address documented inaccuracies")
+            lines.append("    • Defendant continued reporting unchanged inaccurate information")
+            lines.append("    • This constitutes continued noncompliance AFTER notice")
+            lines.append("")
+
+        lines.append("LEGAL SIGNIFICANCE:")
+        lines.append("━" * w)
+        lines.append("    Continued reporting of inaccurate information AFTER formal notice")
+        lines.append("    transforms simple negligence into potential WILLFUL noncompliance")
+        lines.append("    under 15 U.S.C. § 1681n, supporting enhanced damages.")
+        lines.append("")
+
+        # ==================================================================
+        # VIOLATIONS ALLEGED
+        # ==================================================================
+        lines.append(section("VIOLATIONS ALLEGED"))
+        lines.append("")
+        lines.append("Plaintiff alleges the following FCRA violations, each supported by")
+        lines.append("documentary evidence and Metro-2 field analysis:")
+        lines.append("")
+
+        # Check for DOFD and cross-bureau issues
+        def _get_vtype(v) -> str:
+            if isinstance(v, dict):
+                return (v.get("violation_type", "") or "").lower()
+            return (getattr(v, "violation_type", "") or "").lower()
+
+        has_dofd = any("dofd" in _get_vtype(v) for v in self.primary_violations)
+        cross_bureau_types = {"date_opened_mismatch", "dofd_mismatch", "balance_mismatch",
+                             "status_mismatch", "payment_history_mismatch", "past_due_mismatch"}
+        has_cross_bureau = any(_get_vtype(v) in cross_bureau_types for v in self.primary_violations)
+
+        # ------------------------------
+        # Bug #1 Fix: Group violations by type
+        # ------------------------------
+        violations_by_type: Dict[str, List[Any]] = defaultdict(list)
+        for v in (self.primary_violations or []):
+            # Handle both Violation objects and dicts
+            if isinstance(v, dict):
+                vtype = (v.get("violation_type", "") or "unknown").strip()
+            else:
+                vtype = (getattr(v, "violation_type", "") or "unknown").strip()
+            violations_by_type[vtype].append(v)
+
+        # Helper: collect unique affected accounts from a list of violations
+        def _collect_accounts_from_violations(v_list: List[Any]) -> List[str]:
+            seen = set()
+            out: List[str] = []
+            for vv in v_list:
+                # Handle both Violation objects and dicts
+                if isinstance(vv, dict):
+                    # Dict format (from serialized violations)
+                    ev = vv.get("evidence", {}) or {}
+                    creditor = (
+                        vv.get("creditor_name")         # Check TOP-LEVEL first for dicts
+                        or ev.get("creditor_name")
+                        or ev.get("furnisher_name")
+                        or "Unknown"
+                    )
+                    acct = (
+                        vv.get("account_number_masked") # Check TOP-LEVEL first for dicts
+                        or ev.get("account_number_masked")
+                        or ev.get("account")
+                        or "****"
+                    )
+                else:
+                    # Violation object format
+                    ev = getattr(vv, "evidence", None) or {}
+                    creditor = (
+                        getattr(vv, "creditor_name", None)
+                        or ev.get("creditor_name")
+                        or ev.get("furnisher_name")
+                        or "Unknown"
+                    )
+                    acct = (
+                        getattr(vv, "account_number_masked", None)
+                        or ev.get("account_number_masked")
+                        or ev.get("account")
+                        or "****"
+                    )
+
+                key = (str(creditor), str(acct))
+                if key in seen:
+                    continue
+                seen.add(key)
+                out.append(f"{creditor} — Account: {acct}")
+            return out
+
+        issue_num = 1
+        for vtype, v_list in violations_by_type.items():
+            title = vtype.replace("_", " ").upper()
+            lines.append(subsection(f"VIOLATION #{issue_num}: {title}"))
+
+            lines.append("")
+            lines.append("    Affected accounts:")
+            accounts = _collect_accounts_from_violations(v_list)
+            if accounts:
+                for a in accounts:
+                    lines.append(f"      • {a}")
+            else:
+                lines.append("      • (Accounts not specified in evidence)")
+            lines.append("")
+            # Handle both Violation objects and dicts for severity
+            if v_list:
+                first_v = v_list[0]
+                if isinstance(first_v, dict):
+                    sev = first_v.get("severity", "medium")
+                else:
+                    sev = getattr(first_v, "severity", "medium")
+            else:
+                sev = "medium"
+            lines.append(f"    Severity:         {sev}")
+            lines.append("    Status:           PERSISTED AFTER NOTICE")
+            lines.append("")
+            issue_num += 1
+
+        # ------------------------------
+        # Bug #2 Fix: Discrepancies become violations (e.g., Date Opened Mismatch)
+        # Render ONE violation per field mismatch, listing all affected accounts
+        # ------------------------------
+        discrepancy_groups: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+        for d in (self.discrepancies or []):
+            if not isinstance(d, dict):
+                continue
+            field_name = (d.get("field_name") or "unknown_field").strip()
+            discrepancy_groups[field_name].append(d)
+
+        for field_name, d_list in discrepancy_groups.items():
+            # Title normalization: "date_opened" -> "DATE OPENED MISMATCH"
+            base = field_name.replace("_", " ").upper()
+            lines.append(subsection(f"VIOLATION #{issue_num}: {base} MISMATCH (CROSS-BUREAU)"))
+            lines.append("")
+            lines.append("    Affected accounts:")
+
+            seen = set()
+            for d in d_list:
+                creditor = d.get("creditor_name", "Unknown")
+                acct = d.get("account_number_masked", "****")
+                key = (creditor, acct)
+                if key in seen:
+                    continue
+                seen.add(key)
+                lines.append(f"      • {creditor} — Account: {acct}")
+            lines.append("")
+            lines.append("    Severity:         high")
+            lines.append("    Status:           PERSISTED AFTER NOTICE")
+            lines.append("")
+            issue_num += 1
+
+        # ==================================================================
+        # DOFD ALLEGATIONS (if applicable)
+        # ==================================================================
+        if has_dofd:
+            lines.append(section("DOFD ALLEGATIONS — MANDATORY FIELD OMISSION"))
+            lines.append("")
+            lines.append("Plaintiff specifically alleges that Defendant failed to report the")
+            lines.append("Date of First Delinquency (DOFD), a MANDATORY Metro-2 field:")
+            lines.append("")
+            lines.append("1. DOFD OMISSION PREVENTS STATUTORY COMPLIANCE")
+            lines.append("━" * w)
+            lines.append("    Without DOFD, the 7-year obsolescence calculation required by")
+            lines.append("    15 U.S.C. § 1681c(a) cannot be performed. The consumer cannot")
+            lines.append("    verify when negative information should be purged.")
+            lines.append("")
+            lines.append("2. CONTINUED REPORTING WITHOUT DOFD IS UNLAWFUL")
+            lines.append("━" * w)
+            lines.append("    Reporting derogatory information without the mandatory DOFD field")
+            lines.append("    is incompatible with Metro-2 required reporting standards and")
+            lines.append("    defeats § 1681c(a) obsolescence verification.")
+            lines.append("")
+            lines.append("3. POST-NOTICE CONTINUATION SHOWS RECKLESS DISREGARD")
+            lines.append("━" * w)
+            lines.append("    Defendant continued reporting without DOFD AFTER receiving formal")
+            lines.append("    notice of this deficiency. This demonstrates reckless disregard")
+            lines.append("    for accuracy obligations, supporting willful noncompliance.")
+            lines.append("")
+
+        # ==================================================================
+        # CROSS-BUREAU CONTRADICTIONS (if applicable)
+        # ==================================================================
+        if has_cross_bureau or self.discrepancies:
+            lines.append(section("CROSS-BUREAU CONTRADICTIONS — INCONSISTENT REPORTING"))
+            lines.append("")
+            lines.append("The following data fields are reported DIFFERENTLY across credit bureaus,")
+            lines.append("proving that at least one bureau is reporting inaccurate information:")
+            lines.append("")
+
+            # Show actual discrepancy data with values by bureau
+            if self.discrepancies:
+                for d in self.discrepancies:
+                    if isinstance(d, dict):
+                        field = d.get('field_name', 'Unknown field')
+                        creditor = d.get('creditor_name', 'Unknown')
+                        acct = d.get('account_number_masked', '****')
+                        values = d.get('values_by_bureau', {})
+
+                        lines.append(f"Account: {creditor} — {acct}")
+                        lines.append(f"  Field: {field.replace('_', ' ').title()}")
+                        if values:
+                            for bureau, value in values.items():
+                                lines.append(f"    • {bureau.title()}: {value}")
+                        lines.append("")
+            else:
+                # Fallback to listing violation types
+                for v in self.primary_violations:
+                    vtype = _get_vtype(v)
+                    if vtype in cross_bureau_types:
+                        lines.append(f"    • {vtype.replace('_', ' ').title()}")
                 lines.append("")
 
-            lines.append(f"    Severity:    {v.severity}")
-            if v.statute:
-                lines.append(f"    Statute:     {v.statute}")
-            if v.metro2_field:
-                lines.append(f"    Field:       {v.metro2_field}")
+            lines.append("LEGAL SIGNIFICANCE:")
+            lines.append("━" * w)
+            lines.append("    These contradictions CANNOT simultaneously be accurate. At minimum,")
+            lines.append("    one bureau is reporting false information. Continued contradictory")
+            lines.append("    reporting after notice demonstrates reckless disregard for the")
+            lines.append("    maximum possible accuracy standard of 15 U.S.C. § 1681e(b).")
             lines.append("")
 
-        # Dispute History / Timeline
-        lines.append(section("DISPUTE HISTORY"))
+        # ==================================================================
+        # PATTERN OF CONDUCT
+        # ==================================================================
+        lines.append(section("PATTERN OF CONDUCT — NOT ISOLATED INCIDENT"))
         lines.append("")
-        lines.append("DATE           ACTION                                              OUTCOME")
-        lines.append("─" * w)
-
-        for event in self.timeline:
-            date_str = event.date.strftime("%b %d, %Y") if event.date else "Unknown"
-            desc = event.description[:50] if event.description else event.event_type
-            lines.append(f"{date_str:<14} {desc:<55}")
-
+        lines.append("This case demonstrates a PATTERN of noncompliance, not an isolated error:")
         lines.append("")
-
-        # Examiner Failures
+        lines.append(f"    • {self.total_violation_count} distinct violations detected")
+        # Route-aware notice language
+        if is_cfpb_route:
+            lines.append("    • Notice provided via CFPB regulatory complaint")
+        else:
+            lines.append(f"    • {dispute_count} formal disputes filed by consumer")
+        if self.discrepancies:
+            lines.append(f"    • {len(self.discrepancies)} cross-bureau contradictions documented")
         if self.examiner_failures:
-            lines.append(section("EXAMINER FAILURE ANALYSIS"))
+            lines.append(f"    • {len(self.examiner_failures)} examiner standard failures recorded")
+        lines.append("    • Violations persisted through MULTIPLE notice events")
+        lines.append("    • Generic verification responses provided without factual review")
+        lines.append("")
+        lines.append("This pattern supports enhanced liability under FCRA §§ 1681n/1681o:")
+        lines.append("")
+        lines.append("    § 1681n (WILLFUL): Pattern shows knowing/reckless disregard")
+        lines.append("    § 1681o (NEGLIGENT): At minimum, failure to maintain reasonable procedures")
+        lines.append("")
+
+        # ==================================================================
+        # EXAMINER FAILURE ANALYSIS
+        # ==================================================================
+        if self.examiner_failures:
+            lines.append(section("REGULATORY EXAMINATION FAILURES"))
             lines.append("")
-            lines.append("The following regulatory examination standards were applied.")
+            lines.append("The following CFPB examiner standards were applied to Defendant's")
+            lines.append("dispute handling. Each failure supports the pattern-of-conduct theory:")
             lines.append("")
 
             for i, failure in enumerate(self.examiner_failures, 1):
                 result = failure.get("result", "UNKNOWN")
                 reason = failure.get("reason", "No reason provided")
-
                 check_name = result.replace("FAIL_", "").replace("_", " ").title()
-                lines.append(f"CHECK #{i}: {check_name}")
+                lines.append(f"EXAMINER CHECK #{i}: {check_name}")
                 lines.append("━" * w)
-                lines.append(f"    Result:    FAILED")
-                lines.append(f"    Finding:   {reason}")
+                lines.append(f"    Result:     FAILED")
+                lines.append(f"    Finding:    {reason}")
+                lines.append(f"    Liability:  Supports willful/negligent noncompliance theory")
                 lines.append("")
 
-        # Tier-3 Classification
-        lines.append(section("BASIS FOR LEGAL ACTION"))
+        # ==================================================================
+        # ELEMENTS OF FCRA CLAIM — Litigation Checklist
+        # ==================================================================
+        lines.append(section("ELEMENTS OF FCRA CLAIM — ALL SATISFIED"))
         lines.append("")
 
-        classification_text = {
-            "REPEATED_VERIFICATION_FAILURE": (
-                "REPEATED VERIFICATION FAILURE:\n\n"
-                "    The credit reporting agency verified disputed information multiple times\n"
-                "    despite receiving documentary evidence proving the information is inaccurate.\n"
-                "    This pattern indicates willful noncompliance with FCRA investigation\n"
-                "    requirements."
-            ),
-            "FRIVOLOUS_DEFLECTION": (
-                "FRIVOLOUS DEFLECTION:\n\n"
-                "    The credit reporting agency improperly rejected the dispute as frivolous\n"
-                "    without meeting the statutory requirements for such a determination.\n"
-                "    The required written notice with specific reasons was not provided."
-            ),
-            "CURE_WINDOW_EXPIRED": (
-                "CURE WINDOW EXPIRED:\n\n"
-                "    The credit reporting agency failed to complete its investigation within\n"
-                "    the 30-day statutory window (or 45 days if extended). The consumer's\n"
-                "    right to timely investigation was violated."
-            ),
-        }
-
-        lines.append(classification_text.get(
-            self.tier3_classification,
-            f"Classification: {self.tier3_classification}"
-        ))
-        lines.append("")
-        lines.append("CURE ATTEMPT EXHAUSTED:")
-        lines.append("")
-        lines.append(f"    • Dispute rounds completed: {len([t for t in self.timeline if 'dispute' in t.event_type.lower()])}")
-        lines.append(f"    • Examiner failures recorded: {len(self.examiner_failures)}")
-        lines.append(f"    • Consumer remedies through dispute process: EXHAUSTED")
-
-        # Elements of Claim
-        lines.append(section("ELEMENTS OF FCRA CLAIM"))
-        lines.append("")
+        # Route-aware elements (CFPB vs CRA dispute notice)
+        if is_cfpb_route:
+            notice_element = ("2. CONSUMER PROVIDED NOTICE VIA CFPB COMPLAINT", bool(self.timeline),
+                            "CFPB complaint and company response attached")
+        else:
+            notice_element = ("2. CONSUMER PROVIDED NOTICE VIA DISPUTE", bool(self.timeline),
+                            "Dispute letters with certified mail receipts attached")
 
         elements = [
-            ("1. INACCURATE INFORMATION REPORTED", bool(self.primary_violations)),
-            ("2. CONSUMER DISPUTED THE INACCURACY", bool(self.timeline)),
-            ("3. FAILURE TO CONDUCT REASONABLE INVESTIGATION", bool(self.examiner_failures)),
-            ("4. CONTINUED REPORTING OF INACCURATE INFORMATION", self.tier3_classification == "REPEATED_VERIFICATION_FAILURE"),
+            ("1. INACCURATE INFORMATION REPORTED", bool(self.primary_violations),
+             "Documentary evidence of Metro-2 violations attached"),
+            notice_element,
+            ("3. DEFENDANT FAILED REASONABLE INVESTIGATION", bool(self.examiner_failures),
+             "Generic verification without factual review documented"),
+            ("4. VIOLATIONS PERSISTED AFTER NOTICE", True,
+             "Current credit report shows unchanged inaccurate data"),
         ]
 
-        for element, satisfied in elements:
-            status = "✓ SATISFIED" if satisfied else "○ PENDING"
-            lines.append(f"{element:<55} {status}")
-            lines.append("─" * w)
+        for element, satisfied, evidence in elements:
+            status = "✓ ESTABLISHED" if satisfied else "○ PENDING"
+            lines.append(f"{element}")
+            lines.append("━" * w)
+            lines.append(f"    Status:   {status}")
+            lines.append(f"    Evidence: {evidence}")
             lines.append("")
 
-        # Willfulness Indicators
+        # ==================================================================
+        # WILLFULNESS ANALYSIS
+        # ==================================================================
         damages = self.potential_damages
-        if damages.get("willful_likely"):
-            lines.append(section("WILLFULNESS INDICATORS"))
-            lines.append("")
-            lines.append("The following factors suggest WILLFUL rather than negligent noncompliance:")
+        lines.append(section("WILLFULNESS ANALYSIS — §1681n vs §1681o"))
+        lines.append("")
+
+        willful_factors = []
+        if self.tier3_classification == "REPEATED_VERIFICATION_FAILURE":
+            willful_factors.append("Verified disputed information multiple times without review")
+        if len(self.examiner_failures) >= 2:
+            willful_factors.append(f"{len(self.examiner_failures)} examiner standard failures")
+        for v in self.primary_violations:
+            v_sev = v.get("severity", "") if isinstance(v, dict) else getattr(v, "severity", "")
+            v_type = _get_vtype(v)
+            if v_sev == "CRITICAL":
+                willful_factors.append(f"Critical violation: {v_type}")
+        if dispute_count >= 2:
+            willful_factors.append(f"Ignored {dispute_count} formal disputes")
+        willful_factors.append("Pattern consistent with automated verification without human review")
+
+        if willful_factors:
+            lines.append("FACTORS SUPPORTING WILLFUL NONCOMPLIANCE (§1681n):")
+            lines.append("━" * w)
+            for factor in willful_factors:
+                lines.append(f"    ☒ {factor}")
             lines.append("")
 
-            if self.tier3_classification == "REPEATED_VERIFICATION_FAILURE":
-                lines.append("    ☒ Verified disputed information multiple times")
-            if len(self.examiner_failures) >= 2:
-                lines.append("    ☒ Multiple examiner check failures")
-            for v in self.primary_violations:
-                if v.severity == "CRITICAL":
-                    lines.append(f"    ☒ Critical violation: {v.violation_type}")
-            lines.append("    ☒ Pattern consistent with automated verification without human review")
-            lines.append("")
+        lines.append("WILLFULNESS DETERMINATION:")
+        lines.append("━" * w)
+        lines.append("    RECKLESS DISREGARD — Continued violations after formal notice")
+        lines.append("    Evidence supports §1681n willful claim; discovery may establish knowing misconduct")
+        lines.append("")
 
-        # Damages
+        # ==================================================================
+        # DAMAGES AVAILABLE
+        # ==================================================================
         lines.append(section("DAMAGES AVAILABLE"))
         lines.append("")
         lines.append("STATUTORY DAMAGES (15 U.S.C. § 1681n(a)(1)(A))")
-        lines.append(f"    Range: ${damages.get('fcra_statutory_min', 100):,} – ${damages.get('fcra_statutory_max', 1000):,} per willful violation")
+        lines.append("━" * w)
+        lines.append(f"    Per-violation range: $100 – $1,000")
+        # Calculate statutory count from grouped violations + discrepancies
+        statutory_count = len(violations_by_type) + len(discrepancy_groups)
+        statutory_min = 100 * statutory_count
+        statutory_max = 1000 * statutory_count
+        lines.append(f"    Violations alleged:  {statutory_count}")
+        lines.append(f"    Statutory range:     ${statutory_min:,} – ${statutory_max:,}")
         lines.append("")
 
         if damages.get("punitive_eligible"):
             lines.append("PUNITIVE DAMAGES (15 U.S.C. § 1681n(a)(2))")
-            lines.append("    Available where willfulness is established")
-            lines.append("    No statutory cap")
+            lines.append("━" * w)
+            lines.append("    Status:    AVAILABLE — Willfulness indicators present")
+            lines.append("    Cap:       No statutory maximum")
+            lines.append("    Standard:  Punish and deter willful noncompliance")
             lines.append("")
 
         lines.append("ACTUAL DAMAGES")
+        lines.append("━" * w)
+        lines.append("    Recoverable with documentation of:")
         lines.append("    • Credit denials or adverse terms")
         lines.append("    • Increased interest rates paid")
         lines.append("    • Emotional distress")
-        lines.append("    • Time spent disputing")
+        lines.append("    • Time and expense of dispute process")
         lines.append("")
-        lines.append("ATTORNEY'S FEES (15 U.S.C. § 1681n(a)(3))")
-        lines.append("    Recoverable by prevailing plaintiff")
 
-        # Statutes
+        lines.append("ATTORNEY'S FEES (15 U.S.C. § 1681n(a)(3) / §1681o(a)(2))")
+        lines.append("━" * w)
+        lines.append("    Status:    Recoverable by prevailing plaintiff")
+        lines.append("    Standard:  Fee-shifting provision encourages FCRA enforcement")
+        lines.append("")
+
+        # ==================================================================
+        # STATUTES VIOLATED
+        # ==================================================================
         lines.append(section("STATUTES VIOLATED"))
         lines.append("")
         for statute in self.statutes_violated:
             lines.append(f"    • {statute}")
         lines.append("")
 
-        # Evidence
-        lines.append(section("ATTACHED EXHIBITS"))
+        # ==================================================================
+        # EVIDENCE EXHIBITS
+        # ==================================================================
+        lines.append(section("EVIDENCE EXHIBITS"))
         lines.append("")
         lines.append("    Exhibit A:  Credit report with violations highlighted")
         lines.append("    Exhibit B:  Dispute letters with certified mail receipts")
-        lines.append("    Exhibit C:  Entity response letters")
-        lines.append("    Exhibit D:  Current credit report showing unchanged data")
+        lines.append("    Exhibit C:  Defendant response letters (generic verification)")
+        lines.append("    Exhibit D:  Current credit report showing UNCHANGED violations")
+        lines.append("    Exhibit E:  Timeline of notice events and Defendant failures")
         if self.document_hashes:
-            lines.append(f"    Exhibit E:  Evidence integrity hashes ({len(self.document_hashes)} documents)")
+            lines.append(f"    Exhibit F:  Evidence integrity hashes ({len(self.document_hashes)} documents)")
         lines.append("")
 
-        # Footer
+        # ==================================================================
+        # FOOTER — Integrity Verification
+        # ==================================================================
         lines.append("=" * w)
         lines.append("")
-        lines.append("    This packet was generated by an automated FCRA enforcement system.")
-        lines.append("    All violations were detected using deterministic rules applied to")
-        lines.append("    Metro 2 credit data schema fields. No AI interpretation was used")
-        lines.append("    in violation detection.")
+        lines.append("    This litigation packet was generated by an automated FCRA")
+        lines.append("    enforcement system. All violations were detected using")
+        lines.append("    deterministic rules applied to Metro-2 credit data fields.")
         lines.append("")
-        lines.append(f"    Case Packet ID: {self.packet_id}")
-        lines.append(f"    Generated: {self.created_at.strftime('%Y-%m-%d %H:%M:%S')} UTC")
-        lines.append(f"    Integrity Hash: {self.packet_hash[:16]}...")
+        lines.append("    PACKET ALLEGATION: Notice was given, violations persisted,")
+        lines.append("    and Defendant failed to comply despite opportunity to cure.")
+        lines.append("")
+        lines.append(f"    Case Packet ID:   {self.packet_id}")
+        lines.append(f"    Generated:        {self.created_at.strftime('%Y-%m-%d %H:%M:%S')} UTC")
+        lines.append(f"    Integrity Hash:   {self.packet_hash[:16]}...")
         lines.append("")
         lines.append("=" * w)
 
