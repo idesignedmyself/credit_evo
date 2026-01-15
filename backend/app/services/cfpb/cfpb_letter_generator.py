@@ -58,6 +58,9 @@ class CFPBLetterGenerator:
         account_info: str,
         cfpb_case_number: Optional[str] = None,
         cra_response_summary: Optional[str] = None,
+        has_prior_cra_dispute: bool = False,
+        has_prior_cra_response: bool = False,
+        discrepancies: Optional[List[Dict[str, Any]]] = None,
     ) -> CFPBLetter:
         """
         Generate a CFPB letter for the specified stage.
@@ -71,14 +74,28 @@ class CFPBLetterGenerator:
             account_info: Account identifier (masked)
             cfpb_case_number: CFPB case number (required for escalation/final)
             cra_response_summary: Summary of CRA response (for escalation/final)
+            has_prior_cra_dispute: Whether user filed CRA dispute before CFPB
+            has_prior_cra_response: Whether CRA responded before CFPB filing
+            discrepancies: List of cross-bureau discrepancy dicts (optional)
 
         Returns:
             CFPBLetter with generated content
+
+        Route-Dependent Wording:
+            Mail-First Route (has_prior_cra_response=True):
+                - References prior CRA dispute and response
+                - Uses "REINVESTIGATION DEFICIENCY" section
+
+            CFPB-First Route (has_prior_cra_response=False):
+                - NO claims about prior CRA dispute/response
+                - Uses "FAILURE TO ASSURE MAXIMUM POSSIBLE ACCURACY" section
         """
         if cfpb_stage == "initial":
             content = self._generate_initial(
                 consumer, contradictions, timeline_events,
-                entity_name, account_info
+                entity_name, account_info,
+                has_prior_cra_dispute, has_prior_cra_response,
+                discrepancies or []
             )
         elif cfpb_stage == "escalation":
             content = self._generate_escalation(
@@ -119,8 +136,17 @@ class CFPBLetterGenerator:
         timeline_events: List[TimelineEvent],
         entity_name: str,
         account_info: str,
+        has_prior_cra_dispute: bool = False,
+        has_prior_cra_response: bool = False,
+        discrepancies: List[Dict[str, Any]] = None,
     ) -> str:
-        """Generate CFPB Initial letter - examiner-grade, litigation-ready format."""
+        """Generate CFPB Initial letter - examiner-grade, litigation-ready format.
+
+        Route-dependent wording:
+        - Mail-First (has_prior_cra_response=True): References CRA dispute/response
+        - CFPB-First (has_prior_cra_response=False): No claims about prior CRA actions
+        """
+        discrepancies = discrepancies or []
         today = date.today().strftime("%B %d, %Y")
         formatted_entity = self._format_entity_name(entity_name)
 
@@ -140,11 +166,37 @@ class CFPBLetterGenerator:
             "",
             "FACTUAL SUMMARY",
             "",
-            f"I am filing this complaint against {formatted_entity} for reporting inaccurate",
-            "information on my consumer credit file. I previously disputed these matters",
-            f"directly with the credit reporting agency. {formatted_entity}'s reinvestigation",
-            "response failed to address the specific factual inaccuracies identified and",
-            "consisted only of a generic verification statement.",
+        ]
+
+        # Route-dependent FACTUAL SUMMARY
+        if has_prior_cra_response:
+            # Mail-First Route: CRA dispute + response occurred
+            lines.extend([
+                f"I am filing this complaint against {formatted_entity} for reporting inaccurate",
+                "information on my consumer credit file. I previously disputed these matters",
+                f"directly with the credit reporting agency. {formatted_entity}'s reinvestigation",
+                "response failed to address the specific factual inaccuracies identified and",
+                "consisted only of a generic verification statement.",
+            ])
+        elif has_prior_cra_dispute:
+            # CRA dispute filed but no response yet
+            lines.extend([
+                f"I am filing this complaint against {formatted_entity} for reporting inaccurate",
+                "information on my consumer credit file. I previously submitted a dispute",
+                f"directly to {formatted_entity} identifying specific factual inaccuracies.",
+                f"{formatted_entity} has not yet provided a substantive response addressing",
+                "the documented defects in my credit file.",
+            ])
+        else:
+            # CFPB-First Route: No prior CRA dispute
+            lines.extend([
+                f"I am filing this complaint against {formatted_entity} for reporting inaccurate",
+                "information on my consumer credit file. My credit report contains specific,",
+                "verifiable inaccuracies that violate the Fair Credit Reporting Act's requirement",
+                "for maximum possible accuracy under 15 U.S.C. § 1681e(b).",
+            ])
+
+        lines.extend([
             "",
             "=" * 60,
             "",
@@ -153,7 +205,7 @@ class CFPBLetterGenerator:
             "This complaint concerns violations of the Fair Credit Reporting Act (FCRA),",
             "including but not limited to:",
             "",
-        ]
+        ])
 
         # Determine which statutes apply based on violation types
         statutes = self._get_applicable_statutes(contradictions)
@@ -197,6 +249,49 @@ class CFPBLetterGenerator:
 
             issue_num += 1
 
+        # CROSS-BUREAU CONTRADICTIONS section (if discrepancies exist)
+        if discrepancies:
+            lines.append("=" * 60)
+            lines.append("")
+            lines.append("CROSS-BUREAU CONTRADICTIONS")
+            lines.append("")
+            lines.append("The following data fields are reported inconsistently across credit bureaus,")
+            lines.append("demonstrating that at least one bureau is reporting inaccurate information:")
+            lines.append("")
+
+            # Group discrepancies by account
+            discrepancies_by_account = {}
+            for d in discrepancies:
+                creditor = d.get("creditor_name", "Unknown")
+                acct = d.get("account_number_masked", "(masked)")
+                key = (creditor, acct)
+                if key not in discrepancies_by_account:
+                    discrepancies_by_account[key] = []
+                discrepancies_by_account[key].append(d)
+
+            for (creditor, acct), account_discrepancies in discrepancies_by_account.items():
+                lines.append(f"Account: {creditor} — {acct}")
+                lines.append("")
+
+                for d in account_discrepancies:
+                    field_name = d.get("field_name", "Unknown Field")
+                    values_by_bureau = d.get("values_by_bureau", {})
+
+                    # Format the field name nicely
+                    field_display = field_name.replace("_", " ").title()
+                    lines.append(f"  • {field_display}:")
+
+                    # Show each bureau's value
+                    for bureau, value in values_by_bureau.items():
+                        bureau_display = bureau.title()
+                        lines.append(f"    - {bureau_display}: {value}")
+                    lines.append("")
+
+            lines.append("Under 15 U.S.C. § 1681e(b), credit bureaus must maintain reasonable procedures")
+            lines.append("to assure maximum possible accuracy. Conflicting data across bureaus proves")
+            lines.append("that at least one agency is not meeting this standard.")
+            lines.append("")
+
         # Timeline - collapse duplicates and use meaningful descriptions
         lines.append("=" * 60)
         lines.append("")
@@ -217,32 +312,63 @@ class CFPBLetterGenerator:
                 date_str = event.event_date.strftime("%m/%d/%Y")
                 lines.append(f"• {date_str} — {event.event_description}")
         else:
-            # Default timeline if none provided
-            lines.append(f"• [DATE] — Dispute submitted to {formatted_entity}")
-            lines.append("• [DATE] — 30-day statutory reinvestigation deadline")
-            lines.append(f"• [DATE] — {formatted_entity} response received")
+            # Default timeline if none provided - route-dependent
+            if has_prior_cra_response:
+                # Mail-First Route: include dispute and response
+                lines.append(f"• [DATE] — Dispute submitted to {formatted_entity}")
+                lines.append("• [DATE] — 30-day statutory reinvestigation deadline")
+                lines.append(f"• [DATE] — {formatted_entity} response received")
+            elif has_prior_cra_dispute:
+                # Dispute filed but no response yet
+                lines.append(f"• [DATE] — Dispute submitted to {formatted_entity}")
+                lines.append("• [DATE] — 30-day statutory reinvestigation deadline (pending)")
+            else:
+                # CFPB-First Route: no prior CRA activity
+                lines.append("• [DATE] — Credit report reviewed, inaccuracies identified")
+                lines.append("• [DATE] — CFPB complaint filed")
         lines.append("")
 
-        # Reinvestigation Deficiency - examiner-grade language
+        # Route-dependent section: REINVESTIGATION DEFICIENCY vs FAILURE TO ASSURE MAXIMUM POSSIBLE ACCURACY
         lines.append("=" * 60)
         lines.append("")
-        lines.append("REINVESTIGATION DEFICIENCY")
-        lines.append("")
-        lines.append("Despite my dispute identifying specific, verifiable inaccuracies,")
-        lines.append(f"{formatted_entity} responded that the accounts were \"verified as accurate\"")
-        lines.append("without addressing the documented defects.")
-        lines.append("")
-        lines.append("The reinvestigation failed to:")
-        lines.append("")
 
-        # List specific failures based on ALL violation types
-        for vtype in all_violation_types:
-            failure = self._get_reinvestigation_failure(vtype)
-            lines.append(f"• {failure}")
-        lines.append("• Demonstrate any independent verification beyond furnisher confirmation")
-        lines.append("")
-        lines.append("Reliance on furnisher affirmation alone does not constitute a reasonable")
-        lines.append("reinvestigation under **15 U.S.C. § 1681i(a)**.")
+        if has_prior_cra_response:
+            # Mail-First Route: CRA responded - can claim reinvestigation deficiency
+            lines.append("REINVESTIGATION DEFICIENCY")
+            lines.append("")
+            lines.append("Despite my dispute identifying specific, verifiable inaccuracies,")
+            lines.append(f"{formatted_entity} responded that the accounts were \"verified as accurate\"")
+            lines.append("without addressing the documented defects.")
+            lines.append("")
+            lines.append("The reinvestigation failed to:")
+            lines.append("")
+
+            # List specific failures based on ALL violation types
+            for vtype in all_violation_types:
+                failure = self._get_reinvestigation_failure(vtype)
+                lines.append(f"• {failure}")
+            lines.append("• Demonstrate any independent verification beyond furnisher confirmation")
+            lines.append("")
+            lines.append("Reliance on furnisher affirmation alone does not constitute a reasonable")
+            lines.append("reinvestigation under **15 U.S.C. § 1681i(a)**.")
+        else:
+            # CFPB-First Route: No prior response - cannot claim reinvestigation deficiency
+            lines.append("FAILURE TO ASSURE MAXIMUM POSSIBLE ACCURACY")
+            lines.append("")
+            lines.append(f"The information reported by {formatted_entity} contains specific,")
+            lines.append("verifiable inaccuracies that violate the FCRA's accuracy requirements.")
+            lines.append("")
+            lines.append(f"{formatted_entity} has failed to:")
+            lines.append("")
+
+            # List specific accuracy failures based on ALL violation types
+            for vtype in all_violation_types:
+                failure = self._get_accuracy_failure(vtype)
+                lines.append(f"• {failure}")
+            lines.append("• Verify the accuracy of reported data against original source documents")
+            lines.append("")
+            lines.append("Under 15 U.S.C. § 1681e(b), consumer reporting agencies must follow")
+            lines.append("reasonable procedures to assure maximum possible accuracy of consumer reports.")
         lines.append("")
 
         # Consumer Impact and Prejudice section
@@ -278,15 +404,26 @@ class CFPBLetterGenerator:
             lines.append("")
             resolution_num += 1
 
-        # Attachments
+        # Attachments - route-dependent
         lines.append("=" * 60)
         lines.append("")
         lines.append("ATTACHMENTS PROVIDED")
         lines.append("")
-        lines.append(f"• Copy of dispute letter sent to {formatted_entity}")
-        lines.append("• Certified mail receipt (if applicable)")
-        lines.append(f"• {formatted_entity} response letter")
-        lines.append("• Credit report excerpts showing disputed information")
+        if has_prior_cra_response:
+            # Mail-First Route: include dispute and response letters
+            lines.append(f"• Copy of dispute letter sent to {formatted_entity}")
+            lines.append("• Certified mail receipt (if applicable)")
+            lines.append(f"• {formatted_entity} response letter")
+            lines.append("• Credit report excerpts showing disputed information")
+        elif has_prior_cra_dispute:
+            # Dispute filed but no response yet
+            lines.append(f"• Copy of dispute letter sent to {formatted_entity}")
+            lines.append("• Certified mail receipt (if applicable)")
+            lines.append("• Credit report excerpts showing disputed information")
+        else:
+            # CFPB-First Route: no prior CRA dispute
+            lines.append("• Credit report excerpts showing inaccurate information")
+            lines.append("• Documentation of identified Metro-2 discrepancies")
         lines.append("")
         lines.append("=" * 60)
         lines.append("")
@@ -427,6 +564,27 @@ class CFPBLetterGenerator:
             "past_due_mismatch": "Reconcile conflicting past due amounts across bureaus",
         }
         return failure_map.get(violation_type, f"Address the {violation_type.replace('_', ' ')} issue")
+
+    def _get_accuracy_failure(self, violation_type: str) -> str:
+        """Get specific accuracy failure for a violation type (CFPB-First route - no reinvestigation claim)."""
+        failure_map = {
+            # Single-bureau violations - focus on accuracy, not reinvestigation
+            "missing_dofd": "Report a Date of First Delinquency as required by Metro-2 standards",
+            "chargeoff_missing_dofd": "Include DOFD on charge-off accounts as required by Metro-2 Field 25",
+            "obsolete_account": "Remove accounts that exceed the 7-year reporting period",
+            "stale_reporting": "Ensure reported data reflects current account status",
+            "balance_increase_after_chargeoff": "Report accurate balance without unexplained post-charge-off increases",
+            "missing_date_opened": "Report the account open date as required by Metro-2 standards",
+            "missing_scheduled_payment": "Report the scheduled payment amount as required",
+            # Cross-bureau discrepancies - focus on consistency
+            "date_opened_mismatch": "Report consistent Date Opened values across all bureaus",
+            "dofd_mismatch": "Report consistent Date of First Delinquency values across all bureaus",
+            "balance_mismatch": "Report consistent balance amounts across all bureaus",
+            "status_mismatch": "Report consistent account status values across all bureaus",
+            "payment_history_mismatch": "Report consistent payment history data across all bureaus",
+            "past_due_mismatch": "Report consistent past due amounts across all bureaus",
+        }
+        return failure_map.get(violation_type, f"Assure accuracy of {violation_type.replace('_', ' ')} data")
 
     def _get_requested_resolutions(self, violations_by_type: Dict[str, List[Violation]]) -> List[str]:
         """Generate specific resolution requests based on violation types."""
@@ -585,15 +743,25 @@ class CFPBLetterGenerator:
         cfpb_case_number: Optional[str],
         cra_response_summary: Optional[str],
     ) -> str:
-        """Generate CFPB Escalation letter - clean, litigation-safe format."""
+        """Generate CFPB Escalation letter - regulatory noncompliance after notice."""
         today = date.today().strftime("%B %d, %Y")
         case_ref = cfpb_case_number or "[CASE NUMBER]"
         formatted_entity = self._format_entity_name(entity_name)
 
-        # Group violations by type to avoid duplication
+        # Group violations by type
         violations_by_type = self._group_violations_by_type(contradictions)
+        all_violation_types = list(violations_by_type.keys())
 
-        # Collect unique accounts
+        # Cross-bureau detection: explicit types list
+        cross_bureau_types = {
+            "date_opened_mismatch", "dofd_mismatch", "balance_mismatch",
+            "status_mismatch", "payment_history_mismatch", "past_due_mismatch",
+            "closed_vs_open_conflict"
+        }
+        has_cross_bureau = any(vt.lower() in cross_bureau_types for vt in all_violation_types)
+        has_dofd = any("dofd" in vt.lower() for vt in all_violation_types)
+
+        # Collect unique accounts from ALL violations (not just contradictions subset)
         unique_accounts = []
         seen_accounts = set()
         for v in contradictions:
@@ -604,9 +772,9 @@ class CFPBLetterGenerator:
                 unique_accounts.append((v.creditor_name, acct))
 
         lines = [
-            "CONSUMER FINANCIAL PROTECTION BUREAU COMPLAINT – ESCALATION",
+            "CONSUMER FINANCIAL PROTECTION BUREAU COMPLAINT — ESCALATION",
             "",
-            "Complaint Type: Credit Reporting Dispute – Unresolved",
+            "Complaint Type: Continued Regulatory Noncompliance After Notice",
             f"CFPB Case Number: {case_ref}",
             f"Date: {today}",
             f"Consumer: {consumer.full_name}",
@@ -614,115 +782,198 @@ class CFPBLetterGenerator:
             "Accounts at Issue:",
         ]
 
-        # List unique accounts
         for creditor, acct in unique_accounts:
             lines.append(f"• {creditor} — Account: {acct}")
 
+        # =====================================================================
+        # ESCALATION BASIS — Failure to Comply After Regulatory Notice
+        # =====================================================================
         lines.append("")
         lines.append("=" * 60)
         lines.append("")
-        lines.append("ESCALATION BASIS")
+        lines.append("ESCALATION BASIS — FAILURE TO COMPLY AFTER REGULATORY NOTICE")
         lines.append("")
-        lines.append(f"This submission is a formal escalation of CFPB Case #{case_ref}.")
+        lines.append(f"This escalation is submitted because {formatted_entity} was placed on")
+        lines.append(f"formal notice through CFPB Case #{case_ref} and **failed to cure** the")
+        lines.append("identified violations despite having a full opportunity to do so.")
         lines.append("")
-        lines.append("The company's response to my initial CFPB complaint failed to address the")
-        lines.append("specific, material factual inaccuracies and contradictions identified.")
-        lines.append("The inaccurate information remains unchanged on my credit file.")
+        lines.append("The company's response to the initial CFPB complaint did not:")
         lines.append("")
-        lines.append("=" * 60)
+        lines.append("• Address the specific factual inaccuracies identified")
+        lines.append("• Provide documentation supporting the disputed data fields")
+        lines.append("• Correct the inaccurate information on my credit file")
+        lines.append("• Demonstrate any genuine investigation beyond furnisher confirmation")
         lines.append("")
-        lines.append("UNANSWERED MATERIAL FACTS")
+        lines.append("**The inaccurate information remains unchanged after CFPB intervention.**")
+        lines.append("")
+        lines.append("This transforms the matter from an initial accuracy dispute into a case of")
+        lines.append("**continued regulatory noncompliance after notice** — a materially different")
+        lines.append("liability posture under the FCRA.")
         lines.append("")
 
-        # Add grouped unanswered facts (no duplication)
+        # =====================================================================
+        # POST-CFPB PERSISTENCE OF VIOLATIONS
+        # =====================================================================
+        lines.append("=" * 60)
+        lines.append("")
+        lines.append("POST-CFPB PERSISTENCE OF VIOLATIONS")
+        lines.append("")
+        lines.append("Despite receiving formal notice through the CFPB complaint process,")
+        lines.append(f"{formatted_entity} continues to report the following violations:")
+        lines.append("")
+
         issue_num = 1
-        violation_items = list(violations_by_type.items())
-        for idx, (violation_type, violations) in enumerate(violation_items):
-            lines.append(f"{issue_num}. {self._format_issue_title(violation_type)}")
+        for violation_type, violations in violations_by_type.items():
+            lines.append(f"{issue_num}. **{self._format_issue_title(violation_type)}**")
             lines.append("")
-
-            # Get the escalation-specific explanation for this violation type
-            explanation = self._get_escalation_explanation(violation_type)
-            for line in explanation:
-                lines.append(line)
+            lines.append("   Status: UNCHANGED after CFPB notice")
+            lines.append(f"   Affected accounts: {len(violations)}")
             lines.append("")
-
-            # Add separator between issues (but not after the last one)
-            if idx < len(violation_items) - 1:
-                lines.append("---")
-                lines.append("")
-
             issue_num += 1
 
+        if has_dofd:
+            lines.append("**DOFD Allegation:**")
+            lines.append("The Date of First Delinquency (DOFD) remains missing or inaccurate")
+            lines.append("after CFPB review. Without DOFD, the 7-year obsolescence calculation")
+            lines.append("required by 15 U.S.C. § 1681c(a) cannot be performed. Continued")
+            lines.append("reporting without this mandatory field is incompatible with Metro-2")
+            lines.append("required reporting standards and defeats § 1681c(a) obsolescence verification.")
+            lines.append("")
+
+        # =====================================================================
+        # CROSS-BUREAU CONTRADICTIONS (if applicable)
+        # =====================================================================
+        if has_cross_bureau:
+            lines.append("=" * 60)
+            lines.append("")
+            lines.append("CROSS-BUREAU CONTRADICTIONS")
+            lines.append("")
+            lines.append("The same accounts are reported with **contradictory data** across")
+            lines.append("consumer reporting agencies:")
+            lines.append("")
+            for vtype in all_violation_types:
+                if vtype.lower() in cross_bureau_types:
+                    lines.append(f"• {self._format_issue_title(vtype)}")
+            lines.append("")
+            lines.append("These contradictions **cannot simultaneously be accurate**. At minimum,")
+            lines.append("one bureau is reporting false information. This independently violates")
+            lines.append("15 U.S.C. § 1681e(b)'s requirement for maximum possible accuracy.")
+            lines.append("")
+            lines.append("The company was notified of these cross-bureau contradictions in the")
+            lines.append("initial CFPB complaint. Continued contradictory reporting after notice")
+            lines.append("demonstrates **reckless disregard** for accuracy obligations.")
+            lines.append("")
+
+        # =====================================================================
+        # LIABILITY SHIFT — From Accuracy Failure to Noncompliance After Notice
+        # =====================================================================
+        lines.append("=" * 60)
+        lines.append("")
+        lines.append("LIABILITY POSTURE SHIFT")
+        lines.append("")
+        lines.append("The initial CFPB complaint alleged **accuracy failure** under")
+        lines.append("15 U.S.C. § 1681e(b) — a correctable deficiency.")
+        lines.append("")
+        lines.append("This escalation now alleges **continued noncompliance after regulatory")
+        lines.append("notice** — a materially elevated liability theory:")
+        lines.append("")
+        lines.append(f"• The company received formal notice through CFPB Case #{case_ref}")
+        lines.append("• The company had opportunity and obligation to cure")
+        lines.append("• The company failed to correct the identified violations")
+        lines.append("• The violations persist unchanged after notice")
+        lines.append("")
+        lines.append("This pattern supports findings of **negligent or willful noncompliance**")
+        lines.append("under 15 U.S.C. §§ 1681n (willful) and 1681o (negligent), rather than")
+        lines.append("mere procedural deficiency.")
+        lines.append("")
+
+        # =====================================================================
+        # COMPANY RESPONSE ANALYSIS
+        # =====================================================================
         lines.append("=" * 60)
         lines.append("")
         lines.append("COMPANY RESPONSE ANALYSIS")
         lines.append("")
-
         if cra_response_summary:
             lines.append(cra_response_summary)
         else:
-            lines.append("The company's response stated, in substance:")
-            lines.append("\"We have reviewed the consumer's dispute and verified the information")
-            lines.append("with our records.\"")
+            lines.append("The company's response to the initial complaint stated, in substance:")
+            lines.append("\"We have reviewed the consumer's dispute and verified the information.\"")
         lines.append("")
-        lines.append("This response is deficient because it:")
+        lines.append("This response constitutes **continued noncompliance** because it:")
         lines.append("")
-
-        # List specific deficiencies based on violation types (no duplication)
         for vtype in violations_by_type.keys():
             deficiency = self._get_response_deficiency(vtype)
             lines.append(f"• {deficiency}")
         lines.append("• Provides no documentation or factual explanation")
         lines.append("• Relies on conclusory verification language rather than evidence")
+        lines.append("• Demonstrates no genuine investigation was conducted")
         lines.append("")
-        lines.append("A generic assertion of accuracy does not constitute a reasonable")
-        lines.append("reinvestigation under 15 U.S.C. § 1681i(a).")
+        lines.append("A generic assertion of accuracy after formal CFPB notice does not satisfy")
+        lines.append("the reasonable reinvestigation standard under 15 U.S.C. § 1681i(a).")
         lines.append("")
 
-        # Timeline - deduplicated
+        # =====================================================================
+        # TIMELINE OF ACTIONS
+        # =====================================================================
         lines.append("=" * 60)
         lines.append("")
-        lines.append("TIMELINE")
-        lines.append("")
-        lines.append("| Date | Event | Outcome |")
-        lines.append("|------|-------|---------|")
-
-        # Deduplicate timeline events
-        seen_events = set()
-        unique_events = []
-        for event in timeline_events:
-            key = (event.event_date, event.event_description)
-            if key not in seen_events:
-                seen_events.add(key)
-                unique_events.append(event)
-
-        for event in sorted(unique_events, key=lambda e: e.event_date):
-            date_str = event.event_date.strftime("%b %d, %Y")
-            # Format entity name in timeline
-            desc = event.event_description
-            for raw_name in ["transunion", "equifax", "experian"]:
-                if raw_name in desc.lower():
-                    desc = desc.replace(raw_name, self._format_entity_name(raw_name))
-                    desc = desc.replace(raw_name.title(), self._format_entity_name(raw_name))
-            lines.append(f"| {date_str} | {desc} | {event.outcome} |")
+        lines.append("TIMELINE OF ACTIONS")
         lines.append("")
 
-        # Requested action
+        if timeline_events:
+            lines.append("| Date | Event | Outcome |")
+            lines.append("|------|-------|---------|")
+            # Deduplicate timeline events
+            seen_events = set()
+            unique_events = []
+            for event in timeline_events:
+                key = (event.event_date, event.event_description)
+                if key not in seen_events:
+                    seen_events.add(key)
+                    unique_events.append(event)
+
+            for event in sorted(unique_events, key=lambda e: e.event_date):
+                date_str = event.event_date.strftime("%b %d, %Y")
+                desc = event.event_description
+                for raw_name in ["transunion", "equifax", "experian"]:
+                    if raw_name in desc.lower():
+                        desc = desc.replace(raw_name, self._format_entity_name(raw_name))
+                        desc = desc.replace(raw_name.title(), self._format_entity_name(raw_name))
+                lines.append(f"| {date_str} | {desc} | {event.outcome} |")
+        else:
+            lines.append(f"• [DATE] — CFPB complaint filed (Case #{case_ref})")
+            lines.append("• [DATE] — Company response received; violations remain unchanged")
+        lines.append("")
+
+        # =====================================================================
+        # REQUESTED CFPB ACTION — Escalated Enforcement
+        # =====================================================================
         lines.append("=" * 60)
         lines.append("")
-        lines.append("REQUESTED CFPB ACTION")
+        lines.append("REQUESTED CFPB ACTION — ESCALATED ENFORCEMENT")
         lines.append("")
-        lines.append("I respectfully request that the CFPB:")
+        lines.append("Given the company's failure to comply after formal notice, I request")
+        lines.append("the CFPB take escalated enforcement action:")
         lines.append("")
-        lines.append("1. Require the company to specifically address each unresolved factual")
-        lines.append("   inaccuracy identified above")
+        lines.append("1. **Require Documented Proof, Not Assertions**")
+        lines.append("   The company must produce original source documentation for each")
+        lines.append("   disputed data field. Generic verification statements should be")
+        lines.append("   rejected as non-responsive.")
         lines.append("")
-        lines.append("2. Require production of original source documentation supporting the")
-        lines.append("   reported data fields")
+        lines.append("2. **Treat Continued Reporting as Noncompliance**")
+        lines.append("   Continued reporting of unchanged inaccurate information after")
+        lines.append("   CFPB notice should be treated as regulatory noncompliance,")
+        lines.append("   not mere procedural delay.")
         lines.append("")
-        lines.append("3. Require correction or deletion of the accounts if documentation cannot")
-        lines.append("   substantiate the reporting")
+        lines.append("3. **Escalate Supervisory Action**")
+        lines.append("   If the company fails to substantively respond to this escalation,")
+        lines.append("   I request referral for supervisory examination of the company's")
+        lines.append("   dispute handling procedures under 12 U.S.C. § 5514.")
+        lines.append("")
+        lines.append("4. **Preserve Record for Potential Enforcement**")
+        lines.append("   This escalation should be preserved as part of any pattern-or-")
+        lines.append("   practice analysis of the company's FCRA compliance.")
         lines.append("")
 
         # Attachments
