@@ -15,6 +15,7 @@ import DashboardIcon from '@mui/icons-material/Dashboard';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import HistoryIcon from '@mui/icons-material/History';
 import DescriptionIcon from '@mui/icons-material/Description';
+import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import PersonIcon from '@mui/icons-material/Person';
 import LogoutIcon from '@mui/icons-material/Logout';
 import useAuthStore from '../state/authStore';
@@ -32,6 +33,7 @@ const menuItems = [
   { text: 'Upload Report', icon: <UploadFileIcon />, path: '/upload' },
   { text: 'Report History', icon: <HistoryIcon />, path: '/reports' },
   { text: 'My Letters', icon: <DescriptionIcon />, path: '/letters' },
+  { text: 'Escalation Flow', icon: <TrendingUpIcon />, path: '/escalation' },
 ];
 
 export default function DashboardLayout() {
@@ -59,6 +61,9 @@ export default function DashboardLayout() {
     // For Dashboard, navigate directly to audit page if we have a report
     if (path === '/dashboard' && latestReportId) {
       navigate(`/audit/${latestReportId}`);
+    } else if (path === '/escalation' && latestReportId) {
+      // For Escalation Flow, navigate to letter page with latest report
+      navigate(`/letter/${latestReportId}?channel=MAILED`);
     } else {
       navigate(path);
     }
@@ -83,6 +88,10 @@ export default function DashboardLayout() {
       return location.pathname === '/dashboard' ||
              location.pathname === '/' ||
              location.pathname.startsWith('/audit');
+    }
+    if (path === '/escalation') {
+      // Escalation Flow is active when on /letter/* page
+      return location.pathname.startsWith('/letter');
     }
     return location.pathname.startsWith(path);
   };
