@@ -39,6 +39,14 @@ const isUUID = (str) => {
 // Format violation type for display
 const formatViolationType = (violation) => {
   if (!violation) return null;
+  // Handle case where violation is an object (CFPB letters)
+  if (typeof violation === 'object') {
+    return violation.violation_type
+      ? violation.violation_type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+      : null;
+  }
+  // Handle string violation types
+  if (typeof violation !== 'string') return null;
   if (isUUID(violation)) return null;
   return violation
     .replace(/_/g, ' ')
@@ -167,7 +175,9 @@ const LetterTierSection = ({
                 </TableRow>
               </TableHead>
               <TableBody>
-                {letters.map((letter, index) => (
+                {(letters || []).map((letter, index) => {
+                  if (!letter || !letter.letter_id) return null;
+                  return (
                   <React.Fragment key={letter.letter_id}>
                     <TableRow
                       sx={{
@@ -313,7 +323,7 @@ const LetterTierSection = ({
                             })()}
 
                             {/* Cross-Bureau Discrepancies */}
-                            {letter.discrepancies_cited?.length > 0 && (
+                            {Array.isArray(letter.discrepancies_cited) && letter.discrepancies_cited.length > 0 && (
                               <Box sx={{ mt: 3 }}>
                                 <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 2, color: '#f57c00' }}>
                                   Cross-Bureau Discrepancies ({letter.discrepancy_count || letter.discrepancies_cited.length})
@@ -344,7 +354,8 @@ const LetterTierSection = ({
                       </TableCell>
                     </TableRow>
                   </React.Fragment>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
           </TableContainer>

@@ -35,6 +35,7 @@ This document tracks bugs, issues, and obstacles encountered during development 
 27. [B17: Missing `date` Import in letters.py](#b17-missing-date-import-in-letterspy)
 28. [B18: Litigation Packet Missing DOFD Accounts (Index Bug)](#b18-litigation-packet-missing-dofd-accounts-index-bug)
 29. [B18: Litigation Packet CRA-First Language for CFPB Routes](#b18-litigation-packet-cra-first-language-for-cfpb-routes)
+30. [B19: CFPB Tab White Screen - TypeError in formatViolationType](#b19-cfpb-tab-white-screen---typeerror-in-formatviolationtype)
 
 ---
 
@@ -1178,6 +1179,77 @@ for i, v in enumerate(letter.violations_cited):
 
 **Files Modified:**
 - `backend/app/routers/letters.py` (line 1343)
+
+---
+
+## B19: CFPB Tab White Screen - TypeError in formatViolationType
+
+**Date:** January 15, 2026
+
+**Symptom:**
+Clicking the "CFPB Complaints" tab on the Letters page caused a white screen crash. Browser console showed:
+```
+Uncaught TypeError: violation.replace is not a function
+    at formatViolationType (LetterTierSection.jsx:44:6)
+```
+
+**Root Cause:**
+The `formatViolationType()` function assumed `violation` was always a string and called `.replace()` on it. However, CFPB letters store `violations_cited` as an array of **objects** (with properties like `violation_type`, `creditor_name`, etc.), not strings like standard mailed disputes.
+
+When iterating over CFPB letter violations, passing the object to `formatViolationType()` caused the crash because objects don't have a `.replace()` method.
+
+**Solution:**
+Updated `formatViolationType()` to handle both string and object violations:
+
+```javascript
+// Before (crashes on objects):
+const formatViolationType = (violation) => {
+  if (!violation) return null;
+  if (isUUID(violation)) return null;
+  return violation
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+};
+
+// After (handles both types):
+const formatViolationType = (violation) => {
+  if (!violation) return null;
+  // Handle case where violation is an object (CFPB letters)
+  if (typeof violation === 'object') {
+    return violation.violation_type
+      ? violation.violation_type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+      : null;
+  }
+  // Handle string violation types
+  if (typeof violation !== 'string') return null;
+  if (isUUID(violation)) return null;
+  return violation
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+};
+```
+
+Also added defensive null checks in the map function:
+```javascript
+{(letters || []).map((letter, index) => {
+  if (!letter || !letter.letter_id) return null;
+  return ( ... );
+})}
+```
+
+And for discrepancies array:
+```javascript
+// Before:
+{letter.discrepancies_cited?.length > 0 && (
+
+// After:
+{Array.isArray(letter.discrepancies_cited) && letter.discrepancies_cited.length > 0 && (
+```
+
+**Lesson:** Different letter channels (CRA, CFPB, LITIGATION) may store data in different formats. Always check data types before calling type-specific methods like `.replace()`.
+
+**Files Modified:**
+- `frontend/src/components/LetterTierSection.jsx`
 
 ---
 
