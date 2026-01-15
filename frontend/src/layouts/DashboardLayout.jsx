@@ -8,7 +8,7 @@ import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import {
   AppBar, Box, CssBaseline, Drawer, IconButton, List, ListItem,
   ListItemButton, ListItemIcon, ListItemText, Toolbar, Typography,
-  Avatar, Divider, Button, Fab, Tooltip, useTheme, useMediaQuery
+  Avatar, Divider, Button, useTheme, useMediaQuery
 } from '@mui/material';
 import MenuIcon from '@mui/icons-material/Menu';
 import DashboardIcon from '@mui/icons-material/Dashboard';
@@ -17,7 +17,6 @@ import HistoryIcon from '@mui/icons-material/History';
 import DescriptionIcon from '@mui/icons-material/Description';
 import PersonIcon from '@mui/icons-material/Person';
 import LogoutIcon from '@mui/icons-material/Logout';
-import SmartToyIcon from '@mui/icons-material/SmartToy';
 import useAuthStore from '../state/authStore';
 import useReportStore from '../state/reportStore';
 import useViolationStore from '../state/violationStore';
@@ -285,30 +284,6 @@ export default function DashboardLayout() {
         {/* Page Content */}
         <Outlet />
       </Box>
-
-      {/* Copilot FAB - Toggle drawer */}
-      <FeatureGate feature="copilot">
-        <Tooltip title={copilotDrawerOpen ? 'Close Copilot' : 'Open Credit Copilot'}>
-          <Fab
-            color="primary"
-            size="medium"
-            onClick={toggleCopilotDrawer}
-            sx={{
-              position: 'fixed',
-              bottom: 24,
-              // Position FAB to the left of the drawer when open
-              right: copilotDrawerOpen && !isMobile ? copilotDrawerWidth + 24 : 24,
-              transition: theme.transitions.create('right', {
-                duration: theme.transitions.duration.enteringScreen,
-                easing: theme.transitions.easing.easeOut,
-              }),
-              zIndex: theme.zIndex.drawer + 1,
-            }}
-          >
-            <SmartToyIcon />
-          </Fab>
-        </Tooltip>
-      </FeatureGate>
 
       {/* Copilot Drawer */}
       <FeatureGate feature="copilot">
