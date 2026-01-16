@@ -690,6 +690,7 @@ class DisputeService:
         user_id: str,
         status: DisputeStatus = None,
         state: EscalationState = None,
+        letter_id: str = None,
     ) -> List[Dict[str, Any]]:
         """Get all disputes for a user."""
         query = self.db.query(DisputeDB).filter(DisputeDB.user_id == user_id)
@@ -698,6 +699,8 @@ class DisputeService:
             query = query.filter(DisputeDB.status == status)
         if state:
             query = query.filter(DisputeDB.current_state == state)
+        if letter_id:
+            query = query.filter(DisputeDB.letter_id == letter_id)
 
         disputes = query.order_by(DisputeDB.created_at.desc()).all()
 
@@ -778,6 +781,8 @@ class DisputeService:
                 "locked": d.locked,
                 "tier2_notice_sent": d.tier2_notice_sent,
                 "tier2_notice_sent_at": (d.tier2_notice_sent_at.isoformat() + "Z") if d.tier2_notice_sent_at else None,
+                # UI State Persistence
+                "ui_state": d.ui_state,
             })
 
         return results

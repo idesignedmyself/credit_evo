@@ -5,6 +5,7 @@ PostgreSQL database models for persistent storage
 from datetime import datetime
 from enum import Enum
 from sqlalchemy import Column, String, Integer, Float, DateTime, Text, JSON, ForeignKey, Enum as SQLEnum, Boolean, Date
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from ..database import Base
 
@@ -276,6 +277,19 @@ class DisputeDB(Base):
     locked = Column(Boolean, default=False)  # True when promoted to Tier-3
     tier2_notice_sent = Column(Boolean, default=False)  # True when Tier-2 letter marked as sent
     tier2_notice_sent_at = Column(DateTime, nullable=True)  # When Tier-2 letter was sent
+
+    # UI State Persistence
+    ui_state = Column(
+        JSONB,
+        default=lambda: {
+            "stageData": {},
+            "responseTypes": {},
+            "finalResponseTypes": {},
+            "expandedPanels": [],
+            "activeTab": "tracking"
+        },
+        nullable=False
+    )
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)

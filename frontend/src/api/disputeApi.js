@@ -337,3 +337,27 @@ export const TIER2_RESPONSE_TYPES = {
     outcome: 'tier3',
   },
 };
+
+// =============================================================================
+// UI STATE PERSISTENCE
+// =============================================================================
+
+/**
+ * Get dispute by letter ID
+ * Used for loading UI state when viewing a saved letter
+ */
+export const getDisputeByLetterId = async (letterId) => {
+  const response = await apiClient.get(`/disputes?letter_id=${letterId}`);
+  return response.data.length > 0 ? response.data[0] : null;
+};
+
+/**
+ * Save full UI state snapshot
+ * Frontend owns the schema - backend stores as-is
+ */
+export const saveUIState = async (disputeId, uiState) => {
+  const response = await apiClient.patch(`/disputes/${disputeId}/ui-state`, {
+    ui_state: uiState,
+  });
+  return response.data;
+};

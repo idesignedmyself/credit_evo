@@ -3,7 +3,8 @@
  * Letter customization and generation with modern UI
  * Unified dispute flow - everything happens on this page
  */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
+import { useDebouncedCallback } from 'use-debounce';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Box,
@@ -58,6 +59,8 @@ import {
   saveResponseLetter,
   markTier2NoticeSent,
   logTier2Response,
+  getDisputeByLetterId,
+  saveUIState,
   RESPONSE_TYPES,
 } from '../api/disputeApi';
 import {
@@ -350,6 +353,88 @@ const LetterPage = () => {
     documentChannel,
     setDocumentChannel,
   } = useUIStore();
+
+  // =============================================================================
+  // UI STATE PERSISTENCE
+  // =============================================================================
+
+  // Debounced save to prevent API spam (500ms)
+  const persistUIState = useDebouncedCallback(async () => {
+    if (!activeDispute?.id) return;
+
+    const snapshot = {
+      stageData,
+      responseTypes,
+      finalResponseTypes,
+      expandedStage,
+    };
+
+    try {
+      await saveUIState(activeDispute.id, snapshot);
+    } catch (err) {
+      console.error('Failed to save UI state:', err);
+    }
+  }, 500);
+
+  // Persist UI state when any tracked state changes
+  useEffect(() => {
+    if (activeDispute?.id) {
+      persistUIState();
+    }
+  }, [stageData, responseTypes, finalResponseTypes, expandedStage, activeDispute?.id]);
+
+  // Ensure final write before component unmounts
+  useEffect(() => {
+    return () => {
+      persistUIState.flush();
+    };
+  }, []);
+
+  // Load and restore exact UI state when viewing a saved letter
+  useEffect(() => {
+    const loadDisputeState = async () => {
+      if (!letterId) return;
+
+      try {
+        const dispute = await getDisputeByLetterId(letterId);
+        if (!dispute) return;
+
+        setActiveDispute(dispute);
+
+        // Restore ALL saved state symmetrically
+        if (dispute.ui_state) {
+          // Only restore stageData if it has the expected structure (not empty default)
+          if (dispute.ui_state.stageData && dispute.ui_state.stageData.initial) {
+            setStageData(dispute.ui_state.stageData);
+          }
+          if (dispute.ui_state.responseTypes && Object.keys(dispute.ui_state.responseTypes).length > 0) {
+            setResponseTypes(dispute.ui_state.responseTypes);
+          }
+          if (dispute.ui_state.finalResponseTypes && Object.keys(dispute.ui_state.finalResponseTypes).length > 0) {
+            setFinalResponseTypes(dispute.ui_state.finalResponseTypes);
+          }
+          if (dispute.ui_state.expandedStage) {
+            setExpandedStage(dispute.ui_state.expandedStage);
+          }
+        }
+
+        // Fallback: restore responseTypes from violation_data if not in ui_state
+        if (!dispute.ui_state?.responseTypes && dispute.violation_data) {
+          const types = {};
+          dispute.violation_data.forEach(v => {
+            if (v.logged_response?.response_type) {
+              types[v.violation_id || v.id] = v.logged_response.response_type;
+            }
+          });
+          if (Object.keys(types).length) setResponseTypes(types);
+        }
+      } catch (err) {
+        console.error('Failed to load dispute state:', err);
+      }
+    };
+
+    loadDisputeState();
+  }, [letterId]);
 
   // Read channel from URL param and set it
   const channelFromUrl = searchParams.get('channel');

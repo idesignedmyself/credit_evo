@@ -300,13 +300,14 @@ async def get_user_disputes(
     status: Optional[DisputeStatus] = None,
     state: Optional[EscalationState] = None,
     tier: Optional[int] = Query(None, description="Filter by tier: 0=initial, 1=response, 2=final"),
+    letter_id: Optional[str] = Query(None, description="Filter by letter ID"),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user),
 ):
     """
     Get all disputes for the current user.
 
-    Optional filters by status, state, and tier.
+    Optional filters by status, state, tier, and letter_id.
     """
     from ..models.db_models import DisputeDB, DisputeResponseDB
 
@@ -317,6 +318,7 @@ async def get_user_disputes(
         user_id=current_user.id,
         status=status,
         state=state,
+        letter_id=letter_id,
     )
 
     # If tier filter specified, filter in-memory (could optimize with subquery later)
@@ -1150,6 +1152,44 @@ async def log_tier2_response(
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+# =============================================================================
+# UI STATE PERSISTENCE
+# =============================================================================
+
+class UpdateUIStateRequest(BaseModel):
+    """Request to update UI state for a dispute."""
+    ui_state: dict = Field(..., description="Full UI state snapshot from frontend")
+
+
+@router.patch("/{dispute_id}/ui-state", response_model=dict)
+async def update_ui_state(
+    dispute_id: str,
+    request: UpdateUIStateRequest,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user),
+):
+    """
+    Store the exact UI state from frontend.
+
+    Frontend owns the schema - backend stores whatever is sent.
+    Used for dispute tracking state persistence across page navigation.
+    """
+    from ..models.db_models import DisputeDB
+
+    dispute = db.query(DisputeDB).filter(
+        DisputeDB.id == dispute_id,
+        DisputeDB.user_id == current_user.id
+    ).first()
+
+    if not dispute:
+        raise HTTPException(status_code=404, detail="Dispute not found")
+
+    dispute.ui_state = request.ui_state
+    db.commit()
+
+    return {"status": "updated", "ui_state": dispute.ui_state}
 
 
 # =============================================================================
