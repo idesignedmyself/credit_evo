@@ -28,7 +28,8 @@ import Chip from '@mui/material/Chip';
 
 import {
   useViolationStore,
-  useReportStore
+  useReportStore,
+  useUIStore
 } from '../state';
 
 import { useCreditFilter } from '../hooks/useCreditFilter';
@@ -388,12 +389,27 @@ const ViolationList = ({ hideFilters = false, hideHeader = false, activeTab, onT
             onGenerateLetter={(violationIds, contradictionIds) => {
               // Set violations/discrepancies and navigate to letter page
               console.log('Generate letter for violations:', violationIds, 'contradictions:', contradictionIds);
+
               // Update violation store with selected items
               const violationStore = useViolationStore.getState();
               violationStore.setSelectedViolations(violationIds || []);
               violationStore.setSelectedDiscrepancies(contradictionIds || []);
-              // Navigate to letter page
-              navigate(`/letter/${currentReport?.report_id}`);
+
+              // Get bureau from the first selected violation
+              console.log('[DEBUG] violationIds from batch:', violationIds);
+              console.log('[DEBUG] violations in store:', violations.map(v => ({ id: v.violation_id, bureau: v.bureau })).slice(0, 5));
+              const selectedViolation = violations.find(v => violationIds?.includes(v.violation_id));
+              console.log('[DEBUG] selectedViolation found:', selectedViolation);
+              const violationBureau = selectedViolation?.bureau?.toLowerCase();
+              console.log('[DEBUG] Strategy view - Selected violation bureau:', violationBureau);
+
+              if (violationBureau) {
+                const uiStore = useUIStore.getState();
+                uiStore.setBureau(violationBureau);
+              }
+
+              // Navigate to letter page with channel
+              navigate(`/letter/${currentReport?.report_id}?channel=MAILED`);
             }}
           />
         )}

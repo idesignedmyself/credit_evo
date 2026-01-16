@@ -118,20 +118,26 @@ const AuditPage = () => {
   }, [currentReport, violations]);
 
   const handleGenerateLetter = () => {
-    // DEBUG: Log bureau value
-    console.log('[DEBUG] auditResult.bureau:', auditResult?.bureau);
-    // Set bureau before navigating so letter generation uses correct bureau
-    if (auditResult?.bureau) {
-      console.log('[DEBUG] Setting bureau to:', auditResult.bureau.toLowerCase());
-      setBureau(auditResult.bureau.toLowerCase());
+    // Get bureau from selected violations (not from report - reports are multi-bureau)
+    const selectedViolations = violations.filter(v => selectedViolationIds.includes(v.violation_id));
+    const violationBureau = selectedViolations[0]?.bureau?.toLowerCase();
+
+    console.log('[DEBUG] Selected violation bureau:', violationBureau);
+    console.log('[DEBUG] Selected violations:', selectedViolations.map(v => ({ id: v.violation_id, bureau: v.bureau })));
+
+    if (violationBureau) {
+      setBureau(violationBureau);
     }
     navigate(`/letter/${reportId}?channel=MAILED`);
   };
 
   const handleGenerateCFPB = () => {
-    // Set bureau before navigating so letter generation uses correct bureau
-    if (auditResult?.bureau) {
-      setBureau(auditResult.bureau.toLowerCase());
+    // Get bureau from selected violations (not from report - reports are multi-bureau)
+    const selectedViolations = violations.filter(v => selectedViolationIds.includes(v.violation_id));
+    const violationBureau = selectedViolations[0]?.bureau?.toLowerCase();
+
+    if (violationBureau) {
+      setBureau(violationBureau);
     }
     navigate(`/letter/${reportId}?channel=CFPB`);
   };
