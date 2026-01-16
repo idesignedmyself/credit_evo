@@ -556,7 +556,7 @@ class ExecutionSuppressionEventDB(Base):
 
     # Context
     user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
-    report_id = Column(String(36), ForeignKey("reports.id"), nullable=True)
+    report_id = Column(String(36), ForeignKey("reports.id", ondelete="SET NULL"), nullable=True)
     account_id = Column(String(64), nullable=True)
     credit_goal = Column(String(50), nullable=False)
     copilot_version = Column(String(20), nullable=True)
@@ -586,7 +586,7 @@ class ExecutionEventDB(Base):
 
     # Identity
     user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
-    report_id = Column(String(36), ForeignKey("reports.id"), nullable=True)
+    report_id = Column(String(36), ForeignKey("reports.id", ondelete="SET NULL"), nullable=True)
     account_id = Column(String(64), nullable=True)
     dispute_id = Column(String(36), ForeignKey("disputes.id"), nullable=True)
     letter_id = Column(String(36), ForeignKey("letters.id"), nullable=True)
@@ -689,7 +689,7 @@ class ExecutionOutcomeDB(Base):
     id = Column(String(36), primary_key=True)  # UUID
     execution_id = Column(String(36), ForeignKey("execution_events.id"), nullable=False, index=True)
     dispute_session_id = Column(String(36), nullable=False, index=True)
-    new_report_id = Column(String(36), ForeignKey("reports.id"), nullable=True)
+    new_report_id = Column(String(36), ForeignKey("reports.id", ondelete="SET NULL"), nullable=True)
 
     # Outcome classification
     final_outcome = Column(SQLEnum(FinalOutcome), nullable=False)

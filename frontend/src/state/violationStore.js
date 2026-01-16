@@ -17,10 +17,10 @@ const useViolationStore = create((set, get) => ({
   currentReportId: null,  // Track which report the violations belong to
 
   // Actions
-  fetchAuditResults: async (reportId) => {
-    // Skip if we already have data for this report
+  fetchAuditResults: async (reportId, forceRefresh = false) => {
+    // Skip if we already have data for this report (unless force refresh or missing bureau)
     const state = get();
-    if (state.currentReportId === reportId && state.violations.length > 0) {
+    if (!forceRefresh && state.currentReportId === reportId && state.violations.length > 0 && state.auditResult?.bureau) {
       return state.auditResult;
     }
 

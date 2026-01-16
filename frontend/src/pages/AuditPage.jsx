@@ -19,7 +19,7 @@ import ScoreDashboard from '../components/ScoreDashboard';
 import AuditSkeleton from '../components/AuditSkeleton';
 import CompactFilterBar from '../components/CompactFilterBar';
 import { ViolationList } from '../components';
-import { useReportStore, useViolationStore } from '../state';
+import { useReportStore, useViolationStore, useUIStore } from '../state';
 import { useCreditFilter } from '../hooks/useCreditFilter';
 
 const AuditPage = () => {
@@ -33,7 +33,9 @@ const AuditPage = () => {
     isLoading,
     error,
     fetchAuditResults,
+    auditResult,
   } = useViolationStore();
+  const { setBureau } = useUIStore();
 
   // Tab state lifted from ViolationList for filter coordination
   const [activeTab, setActiveTab] = useState('all');
@@ -116,10 +118,21 @@ const AuditPage = () => {
   }, [currentReport, violations]);
 
   const handleGenerateLetter = () => {
+    // DEBUG: Log bureau value
+    console.log('[DEBUG] auditResult.bureau:', auditResult?.bureau);
+    // Set bureau before navigating so letter generation uses correct bureau
+    if (auditResult?.bureau) {
+      console.log('[DEBUG] Setting bureau to:', auditResult.bureau.toLowerCase());
+      setBureau(auditResult.bureau.toLowerCase());
+    }
     navigate(`/letter/${reportId}?channel=MAILED`);
   };
 
   const handleGenerateCFPB = () => {
+    // Set bureau before navigating so letter generation uses correct bureau
+    if (auditResult?.bureau) {
+      setBureau(auditResult.bureau.toLowerCase());
+    }
     navigate(`/letter/${reportId}?channel=CFPB`);
   };
 

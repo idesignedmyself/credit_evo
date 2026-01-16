@@ -73,6 +73,7 @@ class DiscrepancyResponse(BaseModel):
 class AuditResultResponse(BaseModel):
     audit_id: str
     report_id: str
+    bureau: str
     total_accounts_audited: int
     total_violations_found: int
     violations: List[ViolationResponse]
@@ -528,9 +529,13 @@ async def get_audit_result(
         for d in discrepancies_data
     ]
 
+    # DEBUG: Log bureau value from database
+    logger.info(f"[DEBUG] Audit bureau from DB: '{audit.bureau}' for report {audit.report_id}")
+
     return AuditResultResponse(
         audit_id=audit.id,
         report_id=audit.report_id,
+        bureau=audit.bureau or "unknown",
         total_accounts_audited=audit.total_accounts_audited,
         total_violations_found=audit.total_violations_found,
         violations=violations_response,

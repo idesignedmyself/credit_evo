@@ -116,6 +116,9 @@ const useUIStore = create((set, get) => ({
     try {
       const state = get();
 
+      // DEBUG: Log what bureau is being used for letter generation
+      console.log('[DEBUG] generateLetter - selectedBureau:', state.selectedBureau);
+
       // All channels now route through the same API endpoint
       // Backend handles routing based on channel parameter
       const letter = await letterApi.generate({
