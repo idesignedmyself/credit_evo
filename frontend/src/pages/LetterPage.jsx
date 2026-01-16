@@ -1061,7 +1061,7 @@ const LetterPage = () => {
             Back to Letters
           </Button>
         </Paper>
-      ) : (
+      ) : (selectedViolationIds.length > 0 || currentLetter) && (
         <Paper
           elevation={0}
           sx={{
@@ -1100,17 +1100,7 @@ const LetterPage = () => {
             >
               Back
             </Button>
-            {currentLetter ? (
-              <Button
-                variant="outlined"
-                size="large"
-                onClick={handleRegenerate}
-                disabled={isGeneratingLetter}
-                startIcon={<AutoAwesomeIcon />}
-              >
-                {isGeneratingLetter ? 'Regenerating...' : 'Regenerate'}
-              </Button>
-            ) : (
+            {!currentLetter && (
               <Button
                 variant="contained"
                 size="large"

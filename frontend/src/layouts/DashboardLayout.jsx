@@ -90,8 +90,12 @@ export default function DashboardLayout() {
              location.pathname.startsWith('/audit');
     }
     if (path === '/escalation') {
-      // Escalation Flow is active when on /letter/* page
-      return location.pathname.startsWith('/letter');
+      // Escalation Flow is active when on /letter/{id} pages (not /letters)
+      return location.pathname.startsWith('/letter/');
+    }
+    if (path === '/letters') {
+      // My Letters is active only on exact /letters path
+      return location.pathname === '/letters';
     }
     return location.pathname.startsWith(path);
   };
