@@ -34,7 +34,6 @@ import {
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
-import TrackChangesIcon from '@mui/icons-material/TrackChanges';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import GavelIcon from '@mui/icons-material/Gavel';
@@ -168,11 +167,6 @@ const LettersPage = () => {
     } finally {
       setDeletingId(null);
     }
-  };
-
-  const handleTrack = (letter) => {
-    // Navigate to LetterPage with the letter loaded - tracking UI is there
-    navigate(`/letter/${letter.report_id}?letterId=${letter.letter_id}`);
   };
 
   const formatDateTime = (dateString) => {
@@ -336,7 +330,6 @@ const LettersPage = () => {
               letters={getLettersByChannelAndTier.tier0}
               onView={handleView}
               onDelete={handleDelete}
-              onTrack={handleTrack}
               deletingId={deletingId}
               formatDateTime={formatDateTime}
             />
@@ -345,7 +338,6 @@ const LettersPage = () => {
               letters={getLettersByChannelAndTier.tier1}
               onView={handleView}
               onDelete={handleDelete}
-              onTrack={handleTrack}
               deletingId={deletingId}
               formatDateTime={formatDateTime}
             />
@@ -354,7 +346,6 @@ const LettersPage = () => {
               letters={getLettersByChannelAndTier.tier2}
               onView={handleView}
               onDelete={handleDelete}
-              onTrack={handleTrack}
               deletingId={deletingId}
               formatDateTime={formatDateTime}
             />
