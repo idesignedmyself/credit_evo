@@ -44,6 +44,8 @@ import EditIcon from '@mui/icons-material/Edit';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DownloadIcon from '@mui/icons-material/Download';
+import PrintIcon from '@mui/icons-material/Print';
+import AutorenewIcon from '@mui/icons-material/Autorenew';
 import DescriptionIcon from '@mui/icons-material/Description';
 import { LetterPreview } from '../components';
 import { useViolationStore, useUIStore } from '../state';
@@ -833,6 +835,100 @@ const LetterPage = () => {
       setIsSavingRebuttal(false);
     }
   };
+
+  // Regenerate rebuttal letter
+  const handleGenerateRebuttal = async (responseType) => {
+    if (!activeDispute) return;
+    setRebuttalLetterLoading(true);
+    try {
+      const result = await generateResponseLetter(activeDispute.id, {
+        response_type: responseType || 'VERIFIED',
+        include_willful_notice: true,
+      });
+      setGeneratedRebuttalLetter(result);
+      setEditableRebuttalContent(result.content);
+    } catch (err) {
+      console.error('Failed to regenerate rebuttal letter:', err);
+    } finally {
+      setRebuttalLetterLoading(false);
+    }
+  };
+
+  // Regenerate Tier-2 escalation letter
+  const handleGenerateTier2Letter = async (responseType) => {
+    if (!activeDispute) return;
+    setTier2LetterLoading(true);
+    try {
+      const result = await generateResponseLetter(activeDispute.id, {
+        response_type: responseType || 'VERIFIED',
+        include_willful_notice: true,
+      });
+      setGeneratedTier2Letter(result);
+      setEditableTier2Content(result.content);
+    } catch (err) {
+      console.error('Failed to regenerate Tier-2 letter:', err);
+    } finally {
+      setTier2LetterLoading(false);
+    }
+  };
+
+  // Regenerate CFPB complaint letter
+  const handleGenerateCfpbLetter = async () => {
+    const disputeId = activeDispute?.id || currentLetter?.letter_id;
+    if (!disputeId) return;
+    setCfpbLetterLoading(true);
+    setCfpbError(null);
+    try {
+      const result = await generateCFPBLetter(disputeId, 'initial');
+      setCfpbLetter(result);
+      setEditableCfpbContent(result.content);
+    } catch (err) {
+      console.error('Failed to regenerate CFPB letter:', err);
+      setCfpbError(err.message || 'Failed to regenerate CFPB complaint');
+    } finally {
+      setCfpbLetterLoading(false);
+    }
+  };
+
+  // Regenerate CFPB escalation complaint letter
+  const handleGenerateCfpbEscalation = async () => {
+    const sessionId = activeDispute?.id || currentLetter?.letter_id;
+    if (!sessionId) return;
+    setCfpbEscalationLoading(true);
+    setCfpbEscalationError(null);
+    try {
+      const result = await generateCFPBLetter(sessionId, 'escalation');
+      setCfpbEscalationLetter(result);
+      setEditableCfpbEscalation(result.content);
+    } catch (err) {
+      console.error('Failed to regenerate CFPB escalation:', err);
+      setCfpbEscalationError(err.message || 'Failed to regenerate escalation complaint');
+    } finally {
+      setCfpbEscalationLoading(false);
+    }
+  };
+
+  // Regenerate legal packet
+  const fetchLegalPacket = async () => {
+    if (!currentLetter?.letter_id) return;
+    setLegalPacketLoading(true);
+    setLegalPacketError(null);
+    try {
+      const [jsonResult, docResult] = await Promise.all([
+        letterApi.getLegalPacket(currentLetter.letter_id, 'json'),
+        letterApi.getLegalPacket(currentLetter.letter_id, 'document'),
+      ]);
+      setLegalPacket(jsonResult);
+      setLegalPacketDocument(docResult);
+      setEditableLegalContent(docResult);
+    } catch (err) {
+      console.error('Failed to regenerate legal packet:', err);
+      setLegalPacketError(err.message || 'Failed to regenerate legal packet');
+    } finally {
+      setLegalPacketLoading(false);
+    }
+  };
+
   const stats = {
     violations: selectedViolations.length,
     accounts: [...new Set(selectedViolations.map(v => v.account_id))].length,
@@ -1298,11 +1394,17 @@ const LetterPage = () => {
                                 <Chip label={`${editableRebuttalContent.split(/\s+/).filter(w => w).length} words`} size="small" variant="outlined" />
                               </Box>
                               <Stack direction="row" spacing={1}>
+                                <Button size="small" startIcon={<AutorenewIcon />} onClick={() => handleGenerateRebuttal(stageData.responseType)} variant="outlined" disabled={rebuttalLetterLoading}>
+                                  {rebuttalLetterLoading ? 'Regenerating...' : 'Regenerate'}
+                                </Button>
                                 <Button size="small" startIcon={isEditingRebuttal ? <VisibilityIcon /> : <EditIcon />} onClick={() => setIsEditingRebuttal(!isEditingRebuttal)} variant="outlined">
                                   {isEditingRebuttal ? 'View' : 'Edit'}
                                 </Button>
                                 <Button size="small" startIcon={<ContentCopyIcon />} onClick={handleCopyRebuttal} variant="outlined" color={rebuttalCopied ? 'success' : 'inherit'}>
                                   {rebuttalCopied ? 'Copied!' : 'Copy'}
+                                </Button>
+                                <Button size="small" startIcon={<PrintIcon />} onClick={() => { const w = window.open('', '_blank'); w.document.write(`<html><head><title>Rebuttal Letter</title><style>body{font-family:'Times New Roman',serif;font-size:12pt;line-height:1.6;margin:1in;}</style></head><body><pre style="white-space:pre-wrap;font-family:inherit;">${editableRebuttalContent}</pre></body></html>`); w.document.close(); w.print(); }} variant="outlined">
+                                  Print
                                 </Button>
                                 <Button size="small" startIcon={<DownloadIcon />} onClick={handleDownloadRebuttalPDF} variant="contained" disableElevation>
                                   Download
@@ -1532,6 +1634,9 @@ const LetterPage = () => {
                                 <Chip label={`${editableTier2Content.split(/\s+/).filter(w => w).length} words`} size="small" variant="outlined" />
                               </Box>
                               <Stack direction="row" spacing={1}>
+                                <Button size="small" startIcon={<AutorenewIcon />} onClick={() => handleGenerateTier2Letter(stageData.tier2ResponseType)} variant="outlined" disabled={tier2LetterLoading}>
+                                  {tier2LetterLoading ? 'Regenerating...' : 'Regenerate'}
+                                </Button>
                                 <Button size="small" startIcon={isEditingTier2 ? <VisibilityIcon /> : <EditIcon />} onClick={() => setIsEditingTier2(!isEditingTier2)} variant="outlined">
                                   {isEditingTier2 ? 'View' : 'Edit'}
                                 </Button>
@@ -1547,6 +1652,9 @@ const LetterPage = () => {
                                   color={tier2Copied ? 'success' : 'inherit'}
                                 >
                                   {tier2Copied ? 'Copied!' : 'Copy'}
+                                </Button>
+                                <Button size="small" startIcon={<PrintIcon />} onClick={() => { const w = window.open('', '_blank'); w.document.write(`<html><head><title>Escalation Letter</title><style>body{font-family:'Times New Roman',serif;font-size:12pt;line-height:1.6;margin:1in;}</style></head><body><pre style="white-space:pre-wrap;font-family:inherit;">${editableTier2Content}</pre></body></html>`); w.document.close(); w.print(); }} variant="outlined">
+                                  Print
                                 </Button>
                                 <Button
                                   size="small"
@@ -1693,6 +1801,9 @@ const LetterPage = () => {
                               <Chip label={`${editableCfpbContent.split(/\s+/).filter(w => w).length} words`} size="small" variant="outlined" />
                             </Box>
                             <Stack direction="row" spacing={1}>
+                              <Button size="small" startIcon={<AutorenewIcon />} onClick={handleGenerateCfpbLetter} variant="outlined" disabled={cfpbLetterLoading}>
+                                {cfpbLetterLoading ? 'Regenerating...' : 'Regenerate'}
+                              </Button>
                               <Button size="small" startIcon={isEditingCfpb ? <VisibilityIcon /> : <EditIcon />} onClick={() => setIsEditingCfpb(!isEditingCfpb)} variant="outlined">
                                 {isEditingCfpb ? 'View' : 'Edit'}
                               </Button>
@@ -1708,6 +1819,9 @@ const LetterPage = () => {
                                 color={cfpbCopied ? 'success' : 'inherit'}
                               >
                                 {cfpbCopied ? 'Copied!' : 'Copy'}
+                              </Button>
+                              <Button size="small" startIcon={<PrintIcon />} onClick={() => { const w = window.open('', '_blank'); w.document.write(`<html><head><title>CFPB Complaint</title><style>body{font-family:'Times New Roman',serif;font-size:12pt;line-height:1.6;margin:1in;}</style></head><body><pre style="white-space:pre-wrap;font-family:inherit;">${editableCfpbContent}</pre></body></html>`); w.document.close(); w.print(); }} variant="outlined">
+                                Print
                               </Button>
                               <Button
                                 size="small"
@@ -1733,6 +1847,9 @@ const LetterPage = () => {
                                 disableElevation
                               >
                                 Download
+                              </Button>
+                              <Button size="small" startIcon={<SaveIcon />} onClick={() => {}} variant="contained" color="success" disableElevation>
+                                Save
                               </Button>
                             </Stack>
                           </Box>
@@ -2011,6 +2128,9 @@ const LetterPage = () => {
                               <Chip label={`${editableCfpbEscalation.split(/\s+/).filter(w => w).length} words`} size="small" variant="outlined" />
                             </Box>
                             <Stack direction="row" spacing={1}>
+                              <Button size="small" startIcon={<AutorenewIcon />} onClick={handleGenerateCfpbEscalation} variant="outlined" disabled={cfpbEscalationLoading}>
+                                {cfpbEscalationLoading ? 'Regenerating...' : 'Regenerate'}
+                              </Button>
                               <Button size="small" startIcon={isEditingCfpbEscalation ? <VisibilityIcon /> : <EditIcon />} onClick={() => setIsEditingCfpbEscalation(!isEditingCfpbEscalation)} variant="outlined">
                                 {isEditingCfpbEscalation ? 'View' : 'Edit'}
                               </Button>
@@ -2026,6 +2146,9 @@ const LetterPage = () => {
                                 color={cfpbEscalationCopied ? 'success' : 'inherit'}
                               >
                                 {cfpbEscalationCopied ? 'Copied!' : 'Copy'}
+                              </Button>
+                              <Button size="small" startIcon={<PrintIcon />} onClick={() => { const w = window.open('', '_blank'); w.document.write(`<html><head><title>CFPB Escalation</title><style>body{font-family:'Times New Roman',serif;font-size:12pt;line-height:1.6;margin:1in;}</style></head><body><pre style="white-space:pre-wrap;font-family:inherit;">${editableCfpbEscalation}</pre></body></html>`); w.document.close(); w.print(); }} variant="outlined">
+                                Print
                               </Button>
                               <Button
                                 size="small"
@@ -2051,6 +2174,9 @@ const LetterPage = () => {
                                 disableElevation
                               >
                                 Download
+                              </Button>
+                              <Button size="small" startIcon={<SaveIcon />} onClick={() => {}} variant="contained" color="success" disableElevation>
+                                Save
                               </Button>
                             </Stack>
                           </Box>
@@ -2392,6 +2518,9 @@ const LetterPage = () => {
                               <Chip label={`${editableLegalContent.split(/\s+/).filter(w => w).length} words`} size="small" variant="outlined" />
                             </Box>
                             <Stack direction="row" spacing={1}>
+                              <Button size="small" startIcon={<AutorenewIcon />} onClick={fetchLegalPacket} variant="outlined" disabled={legalPacketLoading}>
+                                {legalPacketLoading ? 'Regenerating...' : 'Regenerate'}
+                              </Button>
                               <Button size="small" startIcon={isEditingLegal ? <VisibilityIcon /> : <EditIcon />} onClick={() => setIsEditingLegal(!isEditingLegal)} variant="outlined">
                                 {isEditingLegal ? 'View' : 'Edit'}
                               </Button>
@@ -2407,6 +2536,9 @@ const LetterPage = () => {
                                 color={legalCopied ? 'success' : 'inherit'}
                               >
                                 {legalCopied ? 'Copied!' : 'Copy'}
+                              </Button>
+                              <Button size="small" startIcon={<PrintIcon />} onClick={() => { const w = window.open('', '_blank'); w.document.write(`<html><head><title>Legal Packet</title><style>body{font-family:'Times New Roman',serif;font-size:12pt;line-height:1.6;margin:1in;}</style></head><body><pre style="white-space:pre-wrap;font-family:inherit;">${editableLegalContent}</pre></body></html>`); w.document.close(); w.print(); }} variant="outlined">
+                                Print
                               </Button>
                               <Button
                                 size="small"
@@ -2433,6 +2565,9 @@ const LetterPage = () => {
                                 disableElevation
                               >
                                 Download PDF
+                              </Button>
+                              <Button size="small" startIcon={<SaveIcon />} onClick={() => {}} variant="contained" color="success" disableElevation>
+                                Save
                               </Button>
                             </Stack>
                           </Box>
