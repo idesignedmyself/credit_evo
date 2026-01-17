@@ -262,7 +262,7 @@ const ViolationResponseCard = ({
 
 const LetterPage = () => {
   const { reportId } = useParams();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const letterId = searchParams.get('letterId');
   const letterType = searchParams.get('type'); // 'response' for response letters
   const responseTypeFromUrl = searchParams.get('responseType'); // REINSERTION, VERIFIED, etc.
@@ -341,7 +341,7 @@ const LetterPage = () => {
   const [isEditingLegal, setIsEditingLegal] = useState(false);
   const [legalCopied, setLegalCopied] = useState(false);
 
-  const { selectedViolationIds, selectedDiscrepancyIds, violations, discrepancies, auditResult, fetchAuditResults } = useViolationStore();
+  const { selectedViolationIds, selectedDiscrepancyIds, violations, discrepancies, auditResult, fetchAuditResults, isLoading: isLoadingViolations } = useViolationStore();
   const {
     currentLetter,
     isGeneratingLetter,
@@ -498,6 +498,16 @@ const LetterPage = () => {
     }
   }, [channelFromUrl, selectedViolationIds, currentLetter, isGeneratingLetter, letterId, reportId, selectedDiscrepancyIds, generateLetter]);
 
+  // Update URL with letterId when letter is generated (enables refresh to reload letter)
+  useEffect(() => {
+    if (currentLetter?.letter_id && !letterId) {
+      setSearchParams(prev => {
+        prev.set('letterId', currentLetter.letter_id);
+        return prev;
+      }, { replace: true });
+    }
+  }, [currentLetter?.letter_id, letterId, setSearchParams]);
+
   // CFPB error state
   const [cfpbError, setCfpbError] = useState(null);
 
@@ -621,7 +631,14 @@ const LetterPage = () => {
 
   const handleGenerate = async () => {
     try {
-      await generateLetter(reportId, selectedViolationIds, selectedDiscrepancyIds);
+      const letter = await generateLetter(reportId, selectedViolationIds, selectedDiscrepancyIds);
+      // Update URL with letterId so refresh will reload the saved letter
+      if (letter?.letter_id) {
+        setSearchParams(prev => {
+          prev.set('letterId', letter.letter_id);
+          return prev;
+        }, { replace: true });
+      }
     } catch (err) {
       // Error handled by store
     }
@@ -1088,6 +1105,31 @@ const LetterPage = () => {
     }
     return {};
   }, [selectedViolations, currentLetter]);
+
+  // Handle page refresh without proper state - redirect to audit page
+  // This happens when user refreshes the URL directly instead of navigating from AuditPage
+  if (!letterId && !currentLetter && selectedViolationIds.length === 0 && !isGeneratingLetter) {
+    // If still loading violations, show loading state
+    if (isLoadingViolations) {
+      return (
+        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '50vh' }}>
+          <CircularProgress />
+        </Box>
+      );
+    }
+    // Otherwise redirect to audit page to select violations
+    return (
+      <Box sx={{ textAlign: 'center', py: 8 }}>
+        <Typography variant="h5" sx={{ mb: 2 }}>No Violations Selected</Typography>
+        <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
+          Please select violations from the audit page to generate a letter.
+        </Typography>
+        <Button variant="contained" onClick={() => navigate(`/audit/${reportId}`)}>
+          Go to Audit Page
+        </Button>
+      </Box>
+    );
+  }
 
   return (
     <Box>
