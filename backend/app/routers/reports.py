@@ -496,10 +496,6 @@ async def get_audit_result(
     # Convert stored violations back to response format
     violations_data = audit.violations_data or []
 
-    # DEBUG: Log what bureau values are stored in violations
-    for i, v in enumerate(violations_data[:5]):  # First 5 violations
-        logger.info(f"[DEBUG] Violation {i}: bureau='{v.get('bureau')}', creditor='{v.get('creditor_name')}'")
-
     violations_response = [
         ViolationResponse(
             violation_id=v.get('violation_id', ''),
@@ -533,9 +529,6 @@ async def get_audit_result(
         )
         for d in discrepancies_data
     ]
-
-    # DEBUG: Log bureau value from database
-    logger.info(f"[DEBUG] Audit bureau from DB: '{audit.bureau}' for report {audit.report_id}")
 
     return AuditResultResponse(
         audit_id=audit.id,

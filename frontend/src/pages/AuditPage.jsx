@@ -122,9 +122,6 @@ const AuditPage = () => {
     const selectedViolations = violations.filter(v => selectedViolationIds.includes(v.violation_id));
     const violationBureau = selectedViolations[0]?.bureau?.toLowerCase();
 
-    console.log('[DEBUG] Selected violation bureau:', violationBureau);
-    console.log('[DEBUG] Selected violations:', selectedViolations.map(v => ({ id: v.violation_id, bureau: v.bureau })));
-
     if (violationBureau) {
       setBureau(violationBureau);
     }

@@ -18,9 +18,9 @@ const useViolationStore = create((set, get) => ({
 
   // Actions
   fetchAuditResults: async (reportId, forceRefresh = false) => {
-    // Skip if we already have data for this report (unless force refresh or missing bureau)
+    // Skip if we already have data for this report (unless force refresh)
     const state = get();
-    if (!forceRefresh && state.currentReportId === reportId && state.violations.length > 0 && state.auditResult?.bureau) {
+    if (!forceRefresh && state.currentReportId === reportId && state.violations.length > 0) {
       return state.auditResult;
     }
 

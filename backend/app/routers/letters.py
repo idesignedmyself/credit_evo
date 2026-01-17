@@ -285,9 +285,6 @@ async def generate_letter(
     """
     report_id = request.report_id
 
-    # DEBUG: Log the bureau from the request
-    logger.info(f"[BUREAU DEBUG] Request bureau: '{request.bureau}'")
-
     # Get report from database - verify ownership
     report = db.query(ReportDB).filter(
         ReportDB.id == report_id,

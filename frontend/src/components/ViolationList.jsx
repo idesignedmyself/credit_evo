@@ -387,21 +387,14 @@ const ViolationList = ({ hideFilters = false, hideHeader = false, activeTab, onT
           <RecommendedPlanTab
             reportId={currentReport?.report_id}
             onGenerateLetter={(violationIds, contradictionIds) => {
-              // Set violations/discrepancies and navigate to letter page
-              console.log('Generate letter for violations:', violationIds, 'contradictions:', contradictionIds);
-
               // Update violation store with selected items
               const violationStore = useViolationStore.getState();
               violationStore.setSelectedViolations(violationIds || []);
               violationStore.setSelectedDiscrepancies(contradictionIds || []);
 
-              // Get bureau from the first selected violation
-              console.log('[DEBUG] violationIds from batch:', violationIds);
-              console.log('[DEBUG] violations in store:', violations.map(v => ({ id: v.violation_id, bureau: v.bureau })).slice(0, 5));
+              // Get bureau from the first selected violation (not from report - reports are multi-bureau)
               const selectedViolation = violations.find(v => violationIds?.includes(v.violation_id));
-              console.log('[DEBUG] selectedViolation found:', selectedViolation);
               const violationBureau = selectedViolation?.bureau?.toLowerCase();
-              console.log('[DEBUG] Strategy view - Selected violation bureau:', violationBureau);
 
               if (violationBureau) {
                 const uiStore = useUIStore.getState();
